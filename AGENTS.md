@@ -1,6 +1,4 @@
-# CLAUDE.md — Stigsim
-
-> **Environment rules, keys, and safety policies:** see [Code/CLAUDE.md](../../CLAUDE.md) when working inside the Protocol Institute development environment.
+# AGENTS.md — Stigsim
 
 Before changing this repository, read:
 

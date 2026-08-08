@@ -1,9 +1,55 @@
 # Stigsim — Stigmergy Simulator
 
-A simulator built for the **Stigmergy Workshop** at the **Protocol Symposium 2026**, part of the Protocol Institute's SIGFPT (Formal Protocol Theory) initiative exploring stigmergy — indirect coordination through traces left in a shared environment — as a formal protocol theory concept.
+Stigsim is a browser-based simulator built for the **Stigmergy Workshop** at the **Protocol Symposium 2026**, part of the Protocol Institute's SIGFPT (Formal Protocol Theory) initiative.
 
-This repository is currently a container: the initial implementation is being contributed separately. Stack, architecture, and usage instructions will be added here once that lands.
+Stigmergy is a coordination mechanism in which agents respond to traces left in a shared environment. In Stigsim, ant colonies explore generated mazes, discover food, and reinforce useful routes with pheromone trails—without direct communication or central control.
 
-## Status
+## Features
 
-See [`status.md`](status.md) for current progress.
+- Generate mazes with adjustable loops and food sources
+- Simulate up to four competing ant colonies
+- Tune colony size, simulation speed, evaporation, trail bias, and gland size
+- Enable cautionary pheromones that discourage unsustainable routes
+- Edit walls and food sources while the simulation is running
+- Observe the colony or control an individual ant
+- Run entirely in the browser with no backend, database, accounts, or analytics
+
+## Play online
+
+The simulator will be published through GitHub Pages after Pages is enabled for this repository:
+
+<https://protocol-institute.github.io/stigsim/>
+
+## Local development
+
+Requirements:
+
+- Node.js 20 or newer
+- pnpm
+
+```bash
+pnpm install
+PORT=3000 BASE_PATH=/ pnpm dev
+```
+
+Open <http://localhost:3000>.
+
+`PORT` selects the development-server port. `BASE_PATH` sets the URL prefix used for assets and is `/` for a root deployment.
+
+## Build
+
+```bash
+pnpm build
+```
+
+The static production site is written to `dist/` and can be hosted on any static hosting service.
+
+## Roadmap
+
+The current simulator runs locally in one browser. A future shared-world mode could let multiple people place colonies, food, and obstacles in the same persistent server-hosted environment.
+
+See [`status.md`](status.md) for current progress and upcoming work. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
+
+## Privacy
+
+Stigsim does not include analytics or tracking and does not send simulation data anywhere. The current version runs locally in the browser.
