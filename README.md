@@ -16,9 +16,9 @@ Stigmergy is a coordination mechanism in which agents respond to traces left in 
 
 ## Play online
 
-The simulator will be published through GitHub Pages after Pages is enabled for this repository:
+The simulator is published through GitHub Pages at:
 
-<https://protocol-institute.github.io/stigsim/>
+<https://stigsim.protocol-institute.org/>
 
 ## Local development
 
