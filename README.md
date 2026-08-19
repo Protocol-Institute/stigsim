@@ -1,25 +1,79 @@
 # Stigsim — Stigmergy Simulator
 
-Stigsim is a browser-based simulator built for the **Stigmergy Workshop** at the **Protocol Symposium 2026**, part of the Protocol Institute's SIGFPT (Formal Protocol Theory) initiative.
+Stigsim is a browser-based ant-colony simulator created for the **Stigmergy
+Workshop** at the **Protocol Symposium 2026**, part of the Protocol Institute's
+SIGFPT (Formal Protocol Theory) initiative.
 
-Stigmergy is a coordination mechanism in which agents respond to traces left in a shared environment. In Stigsim, ant colonies explore generated mazes, discover food, and reinforce useful routes with pheromone trails—without direct communication or central control.
-
-## Features
-
-- Generate mazes with adjustable loops and food sources
-- Simulate up to four competing ant colonies
-- Tune colony size, simulation speed, evaporation, trail bias, and gland size
-- Enable cautionary pheromones that discourage unsustainable routes
-- Edit walls and food sources while the simulation is running
-- Observe the colony or control an individual ant
-- Use the standalone simulator entirely in the browser
-- Join the optional `/infinite` server-authoritative shared world
+Stigmergy is coordination through a shared environment: agents respond to
+traces left by other agents instead of communicating directly or following a
+central controller. In Stigsim, ants explore mazes, discover food, and reinforce
+useful routes with pheromone trails. The project offers two ways to explore that
+idea: a self-contained maze sandbox and a persistent multiplayer world.
 
 ## Play online
 
-The simulator is published through GitHub Pages at:
+### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/)
 
-<https://stigsim.protocol-institute.org/>
+Create a maze, configure competing colonies, and experiment privately in your
+browser. This is the original, self-contained Stigsim experience.
+
+### [Enter the Infinite World →](https://stigsim.protocol-institute.org/infinite)
+
+Join one shared, persistent simulation with other players. Changes made by one
+player become part of the world everyone inhabits.
+
+## Two modes, two kinds of experiment
+
+| | Maze Simulator | Infinite World |
+| --- | --- | --- |
+| **Experience** | A configurable maze sandbox | One continuous shared world |
+| **Players** | Single-player | Multiplayer |
+| **Simulation authority** | Runs entirely in your browser | Runs on the shared simulation server |
+| **World state** | Starts fresh and remains local to the tab | Shared by all connected players and saved to Postgres |
+| **World shape** | Generated, bounded mazes | An expandable world that persists between visits |
+| **Best for** | Controlled experiments and parameter tuning | Emergent collaboration, competition, and long-running colonies |
+
+### Maze Simulator
+
+The Maze Simulator is a laboratory you control. Generate a new maze, add up to
+four competing colonies, and tune the conditions while the simulation runs.
+Because the model executes locally, no account or server connection is needed
+and your experiment is not visible to anyone else.
+
+You can:
+
+- Adjust maze loops and food sources
+- Tune colony size, simulation speed, evaporation, trail bias, and gland size
+- Enable cautionary pheromones that discourage unsustainable routes
+- Edit walls and food sources while the simulation is running
+- Observe whole colonies or control an individual ant
+
+### Infinite World
+
+The Infinite World turns the same stigmergic ideas into a shared environment.
+Every connected player sees the same walls, food, colonies, ants, and pheromone
+activity. Player actions are sent to an authoritative server, broadcast to other
+players in real time, and periodically saved so the world can survive server
+restarts and continue between visits.
+
+You can enter in **God Mode** to shape the environment and observe its colonies,
+or use **Survive Mode** to place a colony and see how long it lasts in the world
+other players have helped create. The leaderboard records colony lifespans.
+
+## How the shared world works
+
+The website is a static React/Vite application hosted on GitHub Pages. Infinite
+World adds two services behind that interface:
+
+1. A Node.js simulation server owns the authoritative world and synchronizes
+   players over WebSockets.
+2. A Neon Postgres database stores snapshots and leaderboard results so the
+   world is durable.
+
+The production simulation server runs as a single Railway replica. Running one
+replica matters because the active simulation lives in server memory between
+database snapshots; multiple independent replicas would create conflicting
+worlds.
 
 ## Local development
 
@@ -28,45 +82,63 @@ Requirements:
 - Node.js 22.13 or newer
 - pnpm
 
+Install dependencies and start the frontend:
+
 ```bash
 pnpm install
 PORT=3000 BASE_PATH=/ pnpm dev
 ```
 
-Open <http://localhost:3000>.
+Open the local [Maze Simulator](http://localhost:3000/) in your browser.
 
-`PORT` selects the development-server port. `BASE_PATH` sets the URL prefix used for assets and is `/` for a root deployment.
+### Run Infinite World locally
 
-### Infinite Mode
-
-Infinite Mode uses a separate authoritative Node server. In another terminal:
+Start the simulation server in a second terminal:
 
 ```bash
 pnpm dev:server
 ```
 
-Then open <http://localhost:3000/infinite>. Vite proxies local `/api` HTTP and
-WebSocket traffic to the server on port 3001. Without `DATABASE_URL`, the
-server uses the bundled seed and keeps state in memory for the current session.
+Then open the local [Infinite World](http://localhost:3000/infinite). Vite
+proxies `/api` HTTP and WebSocket traffic to the server on port 3001.
 
-Production uses `VITE_INFINITE_SERVER_URL` for the public server origin and
-requires `DATABASE_URL` plus `ALLOWED_ORIGINS` on the server. See
-[`server/README.md`](server/README.md).
+No database is required for local experimentation. Without `DATABASE_URL`, the
+server loads the bundled seed and keeps changes in memory for the current server
+session. To test persistence, supply a Postgres connection string before
+starting the server.
 
-## Build
+## Production configuration
+
+The frontend build uses `VITE_INFINITE_SERVER_URL` to locate the public
+simulation server. The server requires:
+
+- `DATABASE_URL` for persistent Postgres storage
+- `ALLOWED_ORIGINS` for the browser origins permitted to use the API and
+  WebSocket
+- `NODE_ENV=production`
+- Exactly one running server replica
+
+See [`server/README.md`](server/README.md) for the server setup and deployment
+details.
+
+## Build and contribute
+
+Before submitting a change, run:
 
 ```bash
+pnpm typecheck
 pnpm build
 ```
 
-The static production site is written to `dist/` and can be hosted on any static hosting service. Infinite Mode additionally requires its long-running server.
+The static site is written to `dist/`. Infinite World additionally requires its
+long-running simulation server and Postgres database.
 
-## Roadmap
-
-The shared-world mode is under active integration and deployment testing.
-
-See [`status.md`](status.md) for current progress and upcoming work. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
+development workflow and architecture, and [`status.md`](status.md) for current
+work and the roadmap.
 
 ## Privacy
 
-Stigsim does not include analytics or tracking. The standalone mode remains local to the browser; Infinite Mode sends simulation commands to the shared server.
+Stigsim does not include analytics or tracking. Maze Simulator activity remains
+inside your browser. Infinite World sends the actions required to participate in
+the shared simulation to its server.
