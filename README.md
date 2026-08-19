@@ -25,7 +25,7 @@ The simulator is published through GitHub Pages at:
 
 Requirements:
 
-- Node.js 20 or newer
+- Node.js 22.13 or newer
 - pnpm
 
 ```bash

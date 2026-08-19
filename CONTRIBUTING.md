@@ -4,7 +4,7 @@ Contributions are welcome. Please open an issue before starting a large change s
 
 ## Development setup
 
-Install Node.js 20 or newer and pnpm, then run:
+Install Node.js 22.13 or newer and pnpm, then run:
 
 ```bash
 pnpm install
