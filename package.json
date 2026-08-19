@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:server": "pnpm --dir server dev",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm --dir server typecheck",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

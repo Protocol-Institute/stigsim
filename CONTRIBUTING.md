@@ -20,20 +20,23 @@ pnpm build
 
 ## Architecture
 
-Stigsim is currently a static React and TypeScript application built with Vite. The simulation runs entirely in the browser.
+Stigsim has a standalone React/Vite simulator and an optional server-authoritative shared-world mode.
 
 - `src/AntSim.tsx` contains the simulation model and interface.
 - `src/App.tsx` is the application entry component.
 - `src/styles.css` contains global styles; most simulation-specific presentation lives with the simulator.
 - `public/` contains static site assets.
 - `vite.config.ts` configures local development and static builds.
+- `src/components/InfiniteSim.tsx` renders the shared world and connects to its API.
+- `shared/infinite-contract.ts` is the wire contract shared by browser and server.
+- `server/` contains the authoritative simulation, WebSocket API, and Postgres persistence.
 
-Keep the core simulation logic independent of React where practical. Avoid adding network services, persistent storage, analytics, or third-party runtime scripts without discussing the change first.
+Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
 
 ## Project guidance
 
 `README.md`, this file, and `status.md` are the tool-neutral sources of truth. Client-specific files such as `CLAUDE.md` and `AGENTS.md` should point here rather than duplicate project instructions.
 
-## Future shared-world mode
+## Shared-world mode
 
-A server-hosted shared-world mode is on the roadmap. It should be designed as an optional extension so the standalone browser simulator remains easy to run, host, and understand.
+Run `pnpm dev:server` alongside `pnpm dev`. Production must use one server replica and Postgres persistence; see `server/README.md`.

@@ -3,12 +3,13 @@
 ## Active
 
 - Point `stigsim.protocol-institute.org` (Cloudflare DNS) at GitHub Pages — repo side done, needs a CNAME DNS record added in Cloudflare.
+- Integrate and deploy Infinite Mode using one Railway simulation server and Neon Postgres.
 
 ## Upcoming
 
 - Add automated tests for core simulation behavior.
 - Improve accessibility and mobile interaction.
-- Design an optional shared-world mode where multiple people can play in the same persistent server-hosted environment.
+- Add automated load and abuse testing for Infinite Mode.
 
 ## Done
 

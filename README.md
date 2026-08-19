@@ -12,7 +12,8 @@ Stigmergy is a coordination mechanism in which agents respond to traces left in 
 - Enable cautionary pheromones that discourage unsustainable routes
 - Edit walls and food sources while the simulation is running
 - Observe the colony or control an individual ant
-- Run entirely in the browser with no backend, database, accounts, or analytics
+- Use the standalone simulator entirely in the browser
+- Join the optional `/infinite` server-authoritative shared world
 
 ## Play online
 
@@ -36,20 +37,36 @@ Open <http://localhost:3000>.
 
 `PORT` selects the development-server port. `BASE_PATH` sets the URL prefix used for assets and is `/` for a root deployment.
 
+### Infinite Mode
+
+Infinite Mode uses a separate authoritative Node server. In another terminal:
+
+```bash
+pnpm dev:server
+```
+
+Then open <http://localhost:3000/infinite>. Vite proxies local `/api` HTTP and
+WebSocket traffic to the server on port 3001. Without `DATABASE_URL`, the
+server uses the bundled seed and keeps state in memory for the current session.
+
+Production uses `VITE_INFINITE_SERVER_URL` for the public server origin and
+requires `DATABASE_URL` plus `ALLOWED_ORIGINS` on the server. See
+[`server/README.md`](server/README.md).
+
 ## Build
 
 ```bash
 pnpm build
 ```
 
-The static production site is written to `dist/` and can be hosted on any static hosting service.
+The static production site is written to `dist/` and can be hosted on any static hosting service. Infinite Mode additionally requires its long-running server.
 
 ## Roadmap
 
-The current simulator runs locally in one browser. A future shared-world mode could let multiple people place colonies, food, and obstacles in the same persistent server-hosted environment.
+The shared-world mode is under active integration and deployment testing.
 
 See [`status.md`](status.md) for current progress and upcoming work. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
 
 ## Privacy
 
-Stigsim does not include analytics or tracking and does not send simulation data anywhere. The current version runs locally in the browser.
+Stigsim does not include analytics or tracking. The standalone mode remains local to the browser; Infinite Mode sends simulation commands to the shared server.
