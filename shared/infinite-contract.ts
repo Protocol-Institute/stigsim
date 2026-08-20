@@ -55,7 +55,7 @@ export interface ColonyInfo {
   foodCollected: number;
 }
 
-/** Food source as serialized in `init` / `foodUpdate` messages. */
+/** Food source as serialized in `init` / `foodUpsert` messages. */
 export interface FoodSourceWire {
   x: number;
   y: number;
@@ -105,10 +105,12 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { type: "init"; walls: string[]; colonies: ColonyInfo[]; foodSources: FoodSourceWire[] }
-  | { type: "tick"; ants: AntWire[]; foodSources: FoodSourceTick[]; fc: { id: number; n: number }[] }
+  | { type: "tick"; ants: AntWire[]; foodSources: FoodSourceTick[]; fc: { id: number; n: number; ageTicks: number }[] }
   | { type: "phero"; colonies: { id: number; chunks: PheroChunkWire[]; cleared: string[] }[] }
   | { type: "wallUpdate"; x: number; y: number; v: number } // v: 1 = now open, 0 = now wall
-  | { type: "foodUpdate"; foodSources: FoodSourceWire[] }
+  | { type: "foodUpsert"; foodSource: FoodSourceWire }
+  | { type: "foodRemoved"; x: number; y: number }
   | { type: "colonyAdded"; colony: ColonyInfo }
+  | { type: "colonyAssigned"; colony: ColonyInfo }
   | { type: "colonyRemoved"; id: number }
   | { type: "colonyDied"; colonyId: number; name: string; lifespanTicks: number };

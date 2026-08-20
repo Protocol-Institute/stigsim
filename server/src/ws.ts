@@ -17,7 +17,19 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { eq, desc } from "drizzle-orm";
 import { db, worldStateTable, colonyRecordsTable } from "./db";
-import { InfiniteSimulation } from "./sim";
+import { InfiniteSimulation, type PersistedColony, type PersistedWorld } from "./sim";
+import { isAllowedWebSocketOrigin } from "./security";
+import {
+  foodUpsertMessage,
+  makeIdempotentCleanup,
+  removeFoodAndCreateMessage,
+  shouldSendVolatileFrame,
+  TokenBucket,
+} from "./transport";
+import { calculateFixedSteps } from "./fixed-step";
+import { ThrottledFailureReporter } from "./degraded-status";
+import { performance } from "node:perf_hooks";
+import { TICKS_PER_SEC } from "../../shared/infinite-contract";
 import type { LeaderboardEntry } from "../../shared/infinite-contract";
 
 export const sim = new InfiniteSimulation();
@@ -30,17 +42,54 @@ const MAX_COLONIES = 100;
 const MAX_FOOD_SOURCES = 2_000;
 const MAX_WALLS = 100_000;
 const MAX_MESSAGES_PER_SECOND = 30;
+const FOOD_EDIT_BURST = 10;
+const FOOD_EDITS_PER_SECOND = 5;
+const MAX_VOLATILE_BUFFER_BYTES = 512 * 1024;
+const SIM_STEP_MS = 1_000 / TICKS_PER_SEC;
+const MAX_CATCH_UP_STEPS = 5;
 
 type WorldData = {
+  version?: number;
+  nextColonyId?: number;
   walls?: string[];
-  colonies?: { nestX: number; nestY: number; params: Record<string, unknown> }[];
+  colonies?: (Partial<PersistedColony> & {
+    nestX: number;
+    nestY: number;
+    params: Record<string, unknown>;
+  })[];
   foodSources?: { x: number; y: number; remaining: number; total: number }[];
 };
 
 function applyWorldData(data: WorldData) {
+  if (data.version === 1 && Number.isSafeInteger(data.nextColonyId)) {
+    sim.restorePersistence(data as PersistedWorld);
+    return;
+  }
+
+  // Backward compatibility for seeds and snapshots created before v1.
   for (const w of data.walls ?? []) sim.walls.add(w);
-  for (const c of data.colonies ?? []) sim.addColony(c.nestX, c.nestY, c.params as never);
-  for (const f of data.foodSources ?? []) if (f.remaining > 0) sim.addFood(f.x, f.y, f.remaining);
+  for (const c of data.colonies ?? []) {
+    if (Number.isSafeInteger(c.id) && c.id! >= 0) {
+      sim.restoreColony({
+        id: c.id!,
+        nestX: c.nestX,
+        nestY: c.nestY,
+        params: c.params as never,
+        foodCollected: Number.isFinite(c.foodCollected) ? Math.max(0, c.foodCollected!) : 0,
+        ageTicks: Number.isFinite(c.ageTicks) ? Math.max(0, c.ageTicks!) : 0,
+      });
+    } else {
+      sim.addColony(c.nestX, c.nestY, c.params as never);
+    }
+  }
+  if (Number.isSafeInteger(data.nextColonyId) && data.nextColonyId! >= 0) {
+    sim.restoreNextColonyId(data.nextColonyId!);
+  }
+  for (const f of data.foodSources ?? []) {
+    if (f.remaining <= 0) continue;
+    const source = sim.addFood(f.x, f.y, f.remaining);
+    source.total = Math.max(source.remaining, f.total);
+  }
 }
 
 async function loadWorld() {
@@ -85,7 +134,7 @@ async function loadWorld() {
 async function saveWorld() {
   if (!db) return; // in-memory mode: nothing to do
   try {
-    const data = JSON.stringify(sim.serializeInit());
+    const data = JSON.stringify(sim.serializePersistence());
     await db
       .insert(worldStateTable)
       .values({ key: WORLD_KEY, data, updatedAt: new Date() })
@@ -118,20 +167,38 @@ async function handleColonyDeath(colony: { id: number; name: string; lifespanTic
   broadcast({ type: "colonyDied", colonyId: colony.id, name: colony.name, lifespanTicks: colony.lifespanTicks });
 }
 
-// Run simulation at ~50 steps/sec
+// Run the simulation against elapsed monotonic time. A capped accumulator
+// catches up ordinary timer delays without allowing an unbounded spiral after
+// a long process pause.
+let lastSimTimeMs = performance.now();
+let simRemainderMs = 0;
 const simInterval = setInterval(() => {
-  const dead = sim.step();
-  for (const colony of dead) {
-    void handleColonyDeath(colony);
+  const nowMs = performance.now();
+  const elapsedMs = nowMs - lastSimTimeMs;
+  lastSimTimeMs = nowMs;
+  const fixedStep = calculateFixedSteps(
+    simRemainderMs,
+    elapsedMs,
+    SIM_STEP_MS,
+    MAX_CATCH_UP_STEPS,
+  );
+  simRemainderMs = fixedStep.remainderMs;
+
+  for (let i = 0; i < fixedStep.steps; i++) {
+    const dead = sim.step();
+    for (const colony of dead) void handleColonyDeath(colony);
   }
-}, 20);
+}, 10);
 
 // Broadcast tick at 10 fps
 const tickInterval = setInterval(() => {
   if (clients.size === 0) return;
   const msg = JSON.stringify({ type: "tick", ...sim.serializeTick() });
   for (const ws of clients) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+    if (
+      ws.readyState === WebSocket.OPEN &&
+      shouldSendVolatileFrame(ws.bufferedAmount, MAX_VOLATILE_BUFFER_BYTES)
+    ) ws.send(msg);
   }
 }, 100);
 
@@ -142,7 +209,10 @@ const pheroInterval = setInterval(() => {
   if (!pheroData.some(c => c.chunks.length > 0)) return;
   const msg = JSON.stringify({ type: "phero", colonies: pheroData });
   for (const ws of clients) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+    if (
+      ws.readyState === WebSocket.OPEN &&
+      shouldSendVolatileFrame(ws.bufferedAmount, MAX_VOLATILE_BUFFER_BYTES)
+    ) ws.send(msg);
   }
 }, 500);
 
@@ -187,7 +257,12 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function handleMessage(msg: Record<string, unknown>) {
+function handleMessage(
+  ws: WebSocket,
+  ownedColonies: Set<number>,
+  foodEditLimiter: TokenBucket,
+  msg: Record<string, unknown>,
+) {
   const x = coordinate(msg["x"]), y = coordinate(msg["y"]);
   switch (msg["type"]) {
     case "toggleWall": {
@@ -198,20 +273,26 @@ function handleMessage(msg: Record<string, unknown>) {
       break;
     }
     case "placeFood": {
-      if (x === null || y === null || sim.foodSources.length >= MAX_FOOD_SOURCES) return;
+      if (x === null || y === null || !foodEditLimiter.tryTake()) return;
+      const existing = sim.foodSources.find(source => source.x === x && source.y === y);
+      if (!existing && sim.foodSources.length >= MAX_FOOD_SOURCES) return;
       const units = Math.round(numberInRange(msg["units"], 500, 1, 10_000));
-      sim.addFood(x, y, units);
-      broadcast({ type: "foodUpdate", foodSources: sim.foodSources });
+      const removedWall = sim.walls.has(`${x},${y}`);
+      const foodSource = sim.addFood(x, y, units);
+      if (removedWall) broadcast({ type: "wallUpdate", x, y, v: 1 });
+      broadcast(foodUpsertMessage(foodSource));
       break;
     }
     case "removeFood": {
-      if (x === null || y === null) return;
-      sim.removeFood(x, y);
-      broadcast({ type: "foodUpdate", foodSources: sim.foodSources });
+      if (x === null || y === null || !foodEditLimiter.tryTake()) return;
+      const delta = removeFoodAndCreateMessage(sim, x, y);
+      if (!delta) return;
+      broadcast(delta);
       break;
     }
     case "placeColony": {
       if (x === null || y === null || sim.colonies.length >= MAX_COLONIES) return;
+      const removedWall = sim.walls.has(`${x},${y}`);
       const p = record(msg["params"]);
       const rawName = typeof p["name"] === "string" ? p["name"].trim() : "Colony";
       const colony = sim.addColony(x, y, {
@@ -222,13 +303,18 @@ function handleMessage(msg: Record<string, unknown>) {
         cautionary: typeof p["cautionary"] === "boolean" ? p["cautionary"] : false,
         name: (rawName || "Colony").slice(0, 40),
       });
-      broadcast({ type: "colonyAdded", colony: colony.info() });
+      const colonyInfo = colony.info();
+      ownedColonies.add(colony.id);
+      if (removedWall) broadcast({ type: "wallUpdate", x, y, v: 1 });
+      broadcast({ type: "colonyAdded", colony: colonyInfo });
+      ws.send(JSON.stringify({ type: "colonyAssigned", colony: colonyInfo }));
       break;
     }
     case "removeColony": {
       const id = integer(msg["id"]);
-      if (id === null) return;
+      if (id === null || !ownedColonies.has(id)) return;
       sim.removeColony(id);
+      ownedColonies.delete(id);
       broadcast({ type: "colonyRemoved", id });
       break;
     }
@@ -237,7 +323,11 @@ function handleMessage(msg: Record<string, unknown>) {
 
 let activeWss: WebSocketServer | null = null;
 
-export async function attachInfiniteWs(server: Server, allowedOrigins: string[]) {
+export async function attachInfiniteWs(
+  server: Server,
+  allowedOrigins: string[],
+  requireOrigin = false,
+) {
   await loadWorld();
 
   const wss = new WebSocketServer({ server, path: "/api/infinite/ws", maxPayload: 16 * 1024 });
@@ -245,7 +335,7 @@ export async function attachInfiniteWs(server: Server, allowedOrigins: string[])
 
   wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     const origin = req.headers.origin;
-    if (origin && !allowedOrigins.includes(origin)) {
+    if (!isAllowedWebSocketOrigin(origin, allowedOrigins, requireOrigin)) {
       ws.close(1008, "Origin not allowed");
       return;
     }
@@ -253,7 +343,14 @@ export async function attachInfiniteWs(server: Server, allowedOrigins: string[])
     clients.add(ws);
     liveClients.add(ws);
     let messageCount = 0;
+    const ownedColonies = new Set<number>();
+    const foodEditLimiter = new TokenBucket(FOOD_EDIT_BURST, FOOD_EDITS_PER_SECOND);
     const rateWindow = setInterval(() => { messageCount = 0; }, 1_000);
+    const cleanup = makeIdempotentCleanup(() => {
+      clearInterval(rateWindow);
+      clients.delete(ws);
+      liveClients.delete(ws);
+    });
     ws.on("pong", () => liveClients.add(ws));
 
     ws.send(JSON.stringify({ type: "init", ...sim.serializeInit() }));
@@ -265,21 +362,20 @@ export async function attachInfiniteWs(server: Server, allowedOrigins: string[])
       }
       try {
         const msg = JSON.parse(raw.toString()) as Record<string, unknown>;
-        handleMessage(msg);
+        handleMessage(ws, ownedColonies, foodEditLimiter, msg);
       } catch (e) {
         console.warn("[ws] Message parse error", e);
       }
     });
 
     ws.on("close", () => {
-      clearInterval(rateWindow);
-      clients.delete(ws);
+      cleanup();
       console.log("[ws] Client disconnected");
     });
 
     ws.on("error", (e) => {
       console.error("[ws] Error", e);
-      clients.delete(ws);
+      cleanup();
     });
   });
 
@@ -299,6 +395,15 @@ export async function shutdownInfinite() {
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
 
+const leaderboardDbStatus = new ThrottledFailureReporter(
+  60_000,
+  error => console.warn(
+    "[leaderboard] Failed to load historical records — returning live colonies only",
+    error,
+  ),
+  () => console.info("[leaderboard] Historical database records available again"),
+);
+
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   let dead: (typeof colonyRecordsTable.$inferSelect)[] = [];
   if (db) {
@@ -308,8 +413,9 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
         .from(colonyRecordsTable)
         .orderBy(desc(colonyRecordsTable.lifespanTicks))
         .limit(50);
-    } catch {
-      // Table may not exist yet in this environment — skip dead records
+      leaderboardDbStatus.reportSuccess();
+    } catch (error) {
+      leaderboardDbStatus.reportFailure(error);
     }
   }
 

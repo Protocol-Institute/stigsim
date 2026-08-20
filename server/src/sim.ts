@@ -20,7 +20,9 @@ const DEPOSIT_RATE = 20;
 const V = 4;
 const ARRIVE_THRESH = V + 1;
 
-export const ENERGY_MAX = 2000;
+// At 50 simulation steps per second, an unfed ant has about 90 seconds to
+// discover food and return it to the nest.
+export const ENERGY_MAX = 4_500;
 
 type AntState = "searching" | "returning";
 
@@ -30,6 +32,23 @@ export interface DeadColony {
   id: number;
   name: string;
   lifespanTicks: number;
+}
+
+export interface PersistedColony {
+  id: number;
+  nestX: number;
+  nestY: number;
+  params: ColonyParams;
+  foodCollected: number;
+  ageTicks: number;
+}
+
+export interface PersistedWorld {
+  version: 1;
+  nextColonyId: number;
+  walls: string[];
+  colonies: PersistedColony[];
+  foodSources: FoodSourceWire[];
 }
 
 interface PheroChunk {
@@ -133,16 +152,10 @@ interface Ant {
   hasFood: boolean;
   tank: number;
   colonyId: number;
-  stepsSinceNest: number;   // steps taken since last nest visit
   energy: number;           // starvation counter; resets on food delivery
 }
 
 const DIRS4: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-// Ants that haven't visited the nest in this many steps get quietly respawned.
-// At 50 steps/sec this is ~5 minutes — enough for any reasonable maze path,
-// but catches ants that escape into open infinite space.
-const MAX_STEPS_AWAY = 15_000;
 
 function cellCenter(cx: number, cy: number) {
   return { px: cx * CELL_PX + CELL_PX / 2, py: cy * CELL_PX + CELL_PX / 2 };
@@ -209,19 +222,64 @@ export class InfiniteSimulation {
 
   addColony(nestX: number, nestY: number, params: Partial<ColonyParams> = {}): InfiniteColony {
     const id = this.nextColonyId++;
-    // Ensure nest is open
-    this.walls.delete(`${nestX},${nestY}`);
     const fullParams: ColonyParams = {
       ...DEFAULT_COLONY_PARAMS,
       ...params,
       colorIdx: id % COLONY_COLORS.length,
       name: params.name ?? `Colony ${id + 1}`,
     };
-    const colony = new InfiniteColony(id, nestX, nestY, fullParams, this.tick);
+    return this._createColony(id, nestX, nestY, fullParams, this.tick, 0);
+  }
+
+  restoreColony(data: PersistedColony): InfiniteColony {
+    if (this.colonies.some(colony => colony.id === data.id)) {
+      throw new Error(`Duplicate persisted colony id: ${data.id}`);
+    }
+    this.nextColonyId = Math.max(this.nextColonyId, data.id + 1);
+    return this._createColony(
+      data.id,
+      data.nestX,
+      data.nestY,
+      { ...DEFAULT_COLONY_PARAMS, ...data.params },
+      this.tick - Math.max(0, data.ageTicks),
+      Math.max(0, data.foodCollected),
+    );
+  }
+
+  restoreNextColonyId(nextColonyId: number) {
+    if (!Number.isSafeInteger(nextColonyId) || nextColonyId < 0) {
+      throw new Error(`Invalid persisted next colony id: ${nextColonyId}`);
+    }
+    this.nextColonyId = Math.max(this.nextColonyId, nextColonyId);
+  }
+
+  restorePersistence(data: PersistedWorld) {
+    for (const wall of data.walls) this.walls.add(wall);
+    for (const colony of data.colonies) this.restoreColony(colony);
+    this.restoreNextColonyId(data.nextColonyId);
+    for (const food of data.foodSources) {
+      if (food.remaining <= 0) continue;
+      const source = this.addFood(food.x, food.y, food.remaining);
+      source.total = Math.max(source.remaining, food.total);
+    }
+  }
+
+  private _createColony(
+    id: number,
+    nestX: number,
+    nestY: number,
+    params: ColonyParams,
+    bornAtTick: number,
+    foodCollected: number,
+  ): InfiniteColony {
+    // Restored ants intentionally start fresh at their durable nest.
+    this.walls.delete(`${nestX},${nestY}`);
+    const colony = new InfiniteColony(id, nestX, nestY, params, bornAtTick);
+    colony.foodCollected = foodCollected;
     this._seedNest(colony);
 
     const { px, py } = cellCenter(nestX, nestY);
-    for (let i = 0; i < fullParams.numAnts; i++) {
+    for (let i = 0; i < params.numAnts; i++) {
       colony.ants.push({
         wx: px, wy: py,
         cx: nestX, cy: nestY,
@@ -229,9 +287,8 @@ export class InfiniteSimulation {
         prevCx: nestX, prevCy: nestY,
         state: "searching",
         hasFood: false,
-        tank: fullParams.tankMax,
+        tank: params.tankMax,
         colonyId: id,
-        stepsSinceNest: 0,
         energy: ENERGY_MAX,
       });
     }
@@ -258,9 +315,11 @@ export class InfiniteSimulation {
     return src;
   }
 
-  removeFood(x: number, y: number) {
+  removeFood(x: number, y: number): boolean {
     const idx = this.foodSources.findIndex(s => s.x === x && s.y === y);
-    if (idx >= 0) this.foodSources.splice(idx, 1);
+    if (idx < 0) return false;
+    this.foodSources.splice(idx, 1);
+    return true;
   }
 
   step(): DeadColony[] {
@@ -307,24 +366,7 @@ export class InfiniteSimulation {
     }
   }
 
-  private _respawnAtNest(ant: Ant, colony: InfiniteColony) {
-    const { px, py } = cellCenter(colony.nestX, colony.nestY);
-    ant.wx = px; ant.wy = py;
-    ant.cx = colony.nestX; ant.cy = colony.nestY;
-    ant.tx = colony.nestX; ant.ty = colony.nestY;
-    ant.prevCx = colony.nestX; ant.prevCy = colony.nestY;
-    ant.state = "searching";
-    ant.hasFood = false;
-    ant.tank = colony.params.tankMax;
-    ant.stepsSinceNest = 0;
-    ant.energy = ENERGY_MAX;
-  }
-
   private _moveAnt(ant: Ant, colony: InfiniteColony) {
-    // Quietly respawn ants that have been away too long (lost in open space)
-    if (ant.stepsSinceNest > MAX_STEPS_AWAY) { this._respawnAtNest(ant, colony); return; }
-    ant.stepsSinceNest++;
-
     // Drain energy every step
     ant.energy--;
 
@@ -377,7 +419,6 @@ export class InfiniteSimulation {
       ant.state = "searching";
       ant.hasFood = false;
       ant.tank = params.tankMax;
-      ant.stepsSinceNest = 0;
       ant.energy = ENERGY_MAX; // fed at the nest
       colony.foodCollected++;
       const [ntx, nty] = [ant.prevCx, ant.prevCy];
@@ -406,6 +447,24 @@ export class InfiniteSimulation {
     };
   }
 
+  serializePersistence(): PersistedWorld {
+    return {
+      version: 1,
+      nextColonyId: this.nextColonyId,
+      walls: Array.from(this.walls),
+      colonies: this.colonies.map(colony => ({
+        ...colony.info(),
+        ageTicks: Math.max(0, this.tick - colony.bornAtTick),
+      })),
+      foodSources: this.foodSources.map(source => ({
+        x: source.x,
+        y: source.y,
+        remaining: source.remaining,
+        total: source.total,
+      })),
+    };
+  }
+
   serializeTick() {
     return {
       ants: this.colonies.flatMap(c =>
@@ -417,7 +476,11 @@ export class InfiniteSimulation {
         }))
       ),
       foodSources: this.foodSources.map(s => ({ x: s.x, y: s.y, r: s.remaining, t: s.total })),
-      fc: this.colonies.map(c => ({ id: c.id, n: c.foodCollected })),
+      fc: this.colonies.map(c => ({
+        id: c.id,
+        n: c.foodCollected,
+        ageTicks: Math.max(0, this.tick - c.bornAtTick),
+      })),
     };
   }
 

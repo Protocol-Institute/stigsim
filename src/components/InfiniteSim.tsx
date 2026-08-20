@@ -928,7 +928,7 @@ export default function InfiniteSim() {
   // Survive mode refs (safe inside WS callbacks)
   const modeRef = useRef<AppMode>("god");
   const surviveColonyIdRef = useRef<number | null>(null);
-  const placedAtMsRef = useRef<number | null>(null);
+  const surviveAgeTicksRef = useRef(0);
   const finalSurviveTicksRef = useRef<number>(0);
   const surviveNameRef = useRef<string>("Colony");
   const surviveNumAntsRef = useRef<number>(20);
@@ -981,9 +981,7 @@ export default function InfiniteSim() {
       const w = worldRef.current;
       const antCount = w.ants.filter(a => a.cid === id).length;
       const totalFood = w.foodSources.reduce((s, f) => s + f.r, 0);
-      const timeLivedTicks = placedAtMsRef.current
-        ? Math.round((Date.now() - placedAtMsRef.current) / 1000 * TICKS_PER_SEC)
-        : 0;
+      const timeLivedTicks = surviveAgeTicksRef.current;
       setSurviveStats({ antCount, totalFood, timeLivedTicks });
     }, 500);
     return () => clearInterval(interval);
@@ -1049,11 +1047,12 @@ export default function InfiniteSim() {
           w.ants = (msg["ants"] as AntInfo[]) ?? [];
           const fs = msg["foodSources"] as { x: number; y: number; r: number; t: number }[] | undefined;
           if (fs) w.foodSources = fs;
-          const fc = msg["fc"] as { id: number; n: number }[] | undefined;
+          const fc = msg["fc"] as { id: number; n: number; ageTicks: number }[] | undefined;
           if (fc) {
-            for (const { id, n } of fc) {
+            for (const { id, n, ageTicks } of fc) {
               const col = w.colonies.find(c => c.id === id);
               if (col) col.foodCollected = n;
+              if (surviveColonyIdRef.current === id) surviveAgeTicksRef.current = ageTicks;
             }
             syncColonies();
           }
@@ -1061,12 +1060,15 @@ export default function InfiniteSim() {
         }
         case "phero": {
           const list = msg["colonies"] as { id: number; chunks: { key: string; home: number[]; food: number[] }[]; cleared?: string[] }[];
-          for (const { id, chunks, cleared } of list) {
-            let pm = w.phero.get(id);
-            if (!pm) { pm = new Map(); w.phero.set(id, pm); }
+          const nextPhero = new Map<number, PheroMap>();
+          for (const { id, chunks } of list) {
+            const pm: PheroMap = new Map();
             for (const { key, home, food } of chunks) pm.set(key, { home, food });
-            for (const key of cleared ?? []) pm.delete(key);
+            nextPhero.set(id, pm);
           }
+          // Pheromone messages are complete snapshots, so a frame dropped for
+          // backpressure is safely replaced by the next one.
+          w.phero = nextPhero;
           break;
         }
         case "wallUpdate": {
@@ -1075,9 +1077,17 @@ export default function InfiniteSim() {
           if (v === 1) w.walls.delete(key); else w.walls.add(key);
           break;
         }
-        case "foodUpdate": {
-          const fs = msg["foodSources"] as { x: number; y: number; remaining: number; total: number }[];
-          w.foodSources = fs.map(s => ({ x: s.x, y: s.y, r: s.remaining, t: s.total }));
+        case "foodUpsert": {
+          const source = msg["foodSource"] as { x: number; y: number; remaining: number; total: number };
+          const next = { x: source.x, y: source.y, r: source.remaining, t: source.total };
+          const index = w.foodSources.findIndex(s => s.x === source.x && s.y === source.y);
+          if (index >= 0) w.foodSources[index] = next;
+          else w.foodSources.push(next);
+          break;
+        }
+        case "foodRemoved": {
+          const x = msg["x"] as number, y = msg["y"] as number;
+          w.foodSources = w.foodSources.filter(source => source.x !== x || source.y !== y);
           break;
         }
         case "colonyAdded": {
@@ -1085,10 +1095,15 @@ export default function InfiniteSim() {
           if (!w.colonies.find(c => c.id === col.id)) w.colonies.push(col);
           syncColonies();
           fetchLeaderboard();
-          // Capture survive colony on first placement in survive mode
+          break;
+        }
+        case "colonyAssigned": {
+          const col = msg["colony"] as ColonyInfo;
+          // Only the socket that requested this placement receives the
+          // assignment. Shared colonyAdded broadcasts never claim a colony.
           if (modeRef.current === "survive" && surviveColonyIdRef.current === null) {
             surviveColonyIdRef.current = col.id;
-            placedAtMsRef.current = Date.now();
+            surviveAgeTicksRef.current = 0;
             const colorEntry = COLONY_COLORS[col.params.colorIdx % COLONY_COLORS.length];
             setSurviveColonyId(col.id);
             setSurviveColonyName(col.params.name);
@@ -1119,10 +1134,8 @@ export default function InfiniteSim() {
           fetchLeaderboard();
           if (surviveColonyIdRef.current === id) {
             // Freeze final ticks at death moment; stop the live timer
-            finalSurviveTicksRef.current = placedAtMsRef.current
-              ? Math.round((Date.now() - placedAtMsRef.current) / 1000 * TICKS_PER_SEC)
-              : lifespanTicks;
-            placedAtMsRef.current = null;
+            finalSurviveTicksRef.current = lifespanTicks;
+            surviveAgeTicksRef.current = lifespanTicks;
             setSurviveColonyDied(true);
           }
           break;
@@ -1341,7 +1354,7 @@ export default function InfiniteSim() {
           onTryAgain={() => {
             // Reset all survive state
             surviveColonyIdRef.current = null;
-            placedAtMsRef.current = null;
+            surviveAgeTicksRef.current = 0;
             finalSurviveTicksRef.current = 0;
             setSurviveColonyId(null);
             setSurviveColonyName(null);

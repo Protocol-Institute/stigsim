@@ -5,6 +5,12 @@
     "buildCommand": "pnpm install --frozen-lockfile"
   },
   "deploy": {
+    "numReplicas": 1,
+    "multiRegionConfig": {
+      "us-west2": {
+        "numReplicas": 1
+      }
+    },
     "startCommand": "pnpm --dir server start",
     "healthcheckPath": "/api/healthz",
     "healthcheckTimeout": 100,

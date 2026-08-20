@@ -6,12 +6,13 @@ import { attachInfiniteWs, shutdownInfinite } from "./ws";
 import { closeDb } from "./db";
 
 const port = Number(process.env.PORT ?? 3001);
+const isProduction = process.env.NODE_ENV === "production";
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${process.env.PORT}"`);
 }
 
-if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+if (isProduction && !process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set in production");
 }
 
@@ -21,7 +22,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000,ht
   .map(origin => origin.trim())
   .filter(Boolean);
 
-if (process.env.NODE_ENV === "production" && !process.env.ALLOWED_ORIGINS) {
+if (isProduction && !process.env.ALLOWED_ORIGINS) {
   throw new Error("ALLOWED_ORIGINS must be set in production");
 }
 
@@ -35,7 +36,7 @@ app.use("/api", router);
 
 const server = createServer(app);
 
-attachInfiniteWs(server, allowedOrigins).then(() => {
+attachInfiniteWs(server, allowedOrigins, isProduction).then(() => {
   server.listen(port, () => {
     console.log(`[server] Listening on port ${port}`);
   });

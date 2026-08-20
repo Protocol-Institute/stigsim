@@ -56,6 +56,12 @@ activity. Player actions are sent to an authoritative server, broadcast to other
 players in real time, and periodically saved so the world can survive server
 restarts and continue between visits.
 
+The durable world includes terrain, food resources, colony identities and
+settings, colony ages, collected-food scores, and completed leaderboard
+records. After a server restart, ants respawn at their colony nests and begin
+laying fresh pheromone trails; individual ant positions and existing trails are
+intentionally session-lived in this initial beta.
+
 You can enter in **God Mode** to shape the environment and observe its colonies,
 or use **Survive Mode** to place a colony and see how long it lasts in the world
 other players have helped create. The leaderboard records colony lifespans.
@@ -74,6 +80,17 @@ The production simulation server runs as a single Railway replica. Running one
 replica matters because the active simulation lives in server memory between
 database snapshots; multiple independent replicas would create conflicting
 worlds.
+
+Survive Mode ownership also belongs to the current browser connection. If a
+player refreshes or disconnects, their colony remains in the shared world, but
+the personal Survive HUD is not reclaimed automatically.
+
+Infinite World is an experimental, anonymously editable public sandbox. Any
+visitor can reshape terrain and add or remove food. A colony may be removed
+only by the browser connection that created it; this session ownership is a
+limited safeguard, not user authentication. Production origin filtering keeps
+unapproved websites from using the API through a visitor's browser, but it is
+not a substitute for identity or authorization against custom clients.
 
 ## Local development
 
