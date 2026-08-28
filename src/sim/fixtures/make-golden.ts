@@ -28,6 +28,13 @@ advance(400);
 sim.enqueue({ kind: "setParam", key: "trailPower", value: 7 });
 sim.enqueue({ kind: "setCautionary", value: true });
 advance(400);
+// A paused edit: flushPending applies immediately instead of waiting for the
+// next step(), exercising the tick+1 recording path a live pause uses. Every
+// other edit here goes through enqueue, which never touched this path — the
+// exact gap that let the C1 replay-off-by-one bug through seven reviews.
+sim.enqueue({ kind: "setParam", key: "evapRate", value: 0.01 });
+sim.flushPending();
+advance(200);
 sim.enqueue({ kind: "setAntCount", n: 40 });
 advance(600);
 

@@ -35,6 +35,6 @@ test("the golden trace still contains its recorded interventions", () => {
   assert.ok(result.ok);
   assert.deepEqual(
     result.trace.commands.map(c => c.cmd.kind),
-    ["setWall", "setParam", "setCautionary", "setAntCount"],
+    ["setWall", "setParam", "setCautionary", "setParam", "setAntCount"],
   );
 });
