@@ -994,9 +994,13 @@ export default function AntSim() {
                 const csv = metricsToCsv(metricsRef.current.samples);
                 download(csv, `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`, "text/csv");
               }}
+              disabled={replayState !== null}
+              title={replayState !== null ? "Exit replay to export the live run's metrics" : undefined}
               style={{
                 background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
-                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+                borderRadius: 6, padding: "6px 10px", fontSize: "0.8rem",
+                cursor: replayState !== null ? "not-allowed" : "pointer",
+                opacity: replayState !== null ? 0.4 : 1,
               }}
             >
               Export CSV
@@ -1009,9 +1013,13 @@ export default function AntSim() {
                 const trace = buildTrace(sim, metricsRef.current);
                 download(serializeTrace(trace), traceFilename(trace), "application/json");
               }}
+              disabled={replayState !== null}
+              title={replayState !== null ? "Exit replay to save the live run's trace" : undefined}
               style={{
                 background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
-                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+                borderRadius: 6, padding: "6px 10px", fontSize: "0.8rem",
+                cursor: replayState !== null ? "not-allowed" : "pointer",
+                opacity: replayState !== null ? 0.4 : 1,
               }}
             >
               Save trace
