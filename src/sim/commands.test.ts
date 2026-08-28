@@ -59,14 +59,16 @@ test("commands enqueued in one tick apply in order", () => {
   assert.deepEqual(sim.commandLog.map(c => c.t), [1, 1]);
 });
 
-test("flushPending applies at the current tick without advancing", () => {
+test("flushPending applies immediately but records one tick ahead", () => {
   const sim = new Simulation(config());
   const [x, y] = editableCell(sim);
   sim.enqueue({ kind: "setWall", x, y, open: false });
   sim.flushPending();
-  assert.equal(sim.tick, 0);
-  assert.equal(sim.grid[y][x], 0);
-  assert.deepEqual(sim.commandLog, [{ t: 0, cmd: { kind: "setWall", x, y, open: false } }]);
+  assert.equal(sim.tick, 0, "does not advance time");
+  assert.equal(sim.grid[y][x], 0, "applied immediately");
+  // Stamped t: 1, not t: 0: replay applies a t: 1 command at the top of tick
+  // 1, before tick 1's physics runs, which is where a pre-start edit belongs.
+  assert.deepEqual(sim.commandLog, [{ t: 1, cmd: { kind: "setWall", x, y, open: false } }]);
 });
 
 test("walls refuse to close over a nest or a food source", () => {

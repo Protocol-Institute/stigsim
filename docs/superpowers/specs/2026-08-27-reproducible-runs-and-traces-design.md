@@ -161,7 +161,12 @@ run follow the same code path and cannot diverge from each other.
 Applying commands only at tick boundaries is what makes recording faithful. An
 edit made partway between two ticks in wall-clock time is applied at tick N
 unambiguously, so a replay cannot disagree about when it happened. Edits made
-while the simulation is paused all land on the current tick.
+while the simulation is paused land on tick N + 1, not the current tick N:
+replay drains a tick's commands at the top of that tick, before its physics
+runs, but a paused edit happens after tick N's physics has already run. Since
+nothing occurs between the end of tick N and the drain at the top of tick
+N + 1, stamping the command N + 1 and applying it immediately (so the paused
+canvas reflects it right away) are equivalent.
 
 This replaces the direct mutation in `applyEdit` (line 885), the params effect
 (line 801), the ant-count effect (line 805), and `moveAnt` (line 833).

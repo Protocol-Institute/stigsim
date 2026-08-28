@@ -168,6 +168,28 @@ test("a backward seek after continueAfterDivergence re-arms fingerprint checking
   );
 });
 
+test("a paused edit replays at the same point as the live run", () => {
+  const sim = new Simulation(config());
+  const rec = new MetricsRecorder();
+
+  // Pause partway through tick 100, edit, and resume — this is the
+  // flushPending path, not enqueue. The run crosses the tick-500 fingerprint
+  // boundary so a divergence is caught even before the final-checkpoint fix.
+  for (let i = 0; i < 100; i++) { sim.step(); rec.maybeSample(sim); }
+  sim.enqueue({ kind: "setParam", key: "evapRate", value: 0.02 });
+  sim.flushPending();
+  for (let i = 0; i < 900; i++) { sim.step(); rec.maybeSample(sim); }
+
+  const trace = buildTrace(sim, rec);
+  const r = new Replayer(trace);
+  while (r.step());
+
+  assert.equal(r.divergedAt, null, "replay diverged from the live run after a paused edit");
+  assert.equal(r.tick, trace.endTick);
+  assert.equal(fingerprint(r.sim), fingerprint(sim));
+  assert.equal(r.sim.totalFoodCollected, sim.totalFoodCollected);
+});
+
 test("reset alone re-arms fingerprint checking after continueAfterDivergence", () => {
   const { trace } = recordRun();
   const target = trace.fingerprints[1];

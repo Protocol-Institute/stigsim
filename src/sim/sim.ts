@@ -213,10 +213,23 @@ export class Simulation {
     this.pending.push(cmd);
   }
 
-  /** Applies queued commands at the current tick without advancing time. */
+  /**
+   * Applies queued commands immediately, without advancing time, so a paused
+   * edit shows up on screen right away. Recorded one tick ahead of the
+   * current tick: a paused edit happens after tick N's physics has already
+   * run, and replay drains a tick's commands at the top of that tick, before
+   * its physics runs. Stamping the command `t: N + 1` is what makes replay
+   * apply it at the same point in the run where it actually happened — the
+   * top of the next tick, which is exactly where nothing else occurs between
+   * the pause and the resume.
+   */
   flushPending() {
     if (this.schedule) return;
-    this._runCommandsFor(this.tick);
+    const cmds = this.pending.splice(0, this.pending.length);
+    for (const cmd of cmds) {
+      this.apply(cmd);
+      this.recorded.push({ t: this.tick + 1, cmd });
+    }
   }
 
   /** Switches the simulation from live input to a recorded command schedule. */
