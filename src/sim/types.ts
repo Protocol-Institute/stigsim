@@ -45,3 +45,21 @@ export interface Ant {
   colonyId: number;
   manual?: boolean;
 }
+
+export interface RunSeeds {
+  /** Null when the three streams were seeded independently. */
+  master: string | null;
+  maze: string;
+  food: string;
+  ants: string;
+}
+
+export interface RunConfig {
+  seeds: RunSeeds;
+  numAnts: number;
+  params: SimParams;
+  loopRate: number;
+  numColonies: number;
+  numFoodSources: number;
+  foodPerSource: number;
+}

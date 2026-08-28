@@ -3,7 +3,9 @@ import {
   COLONY_NESTS, DIRS4,
 } from "./constants";
 import type { Ant, AntState, CellType, Colony, FoodSource, SimParams } from "./types";
+import type { RunConfig } from "./types";
 import { generateMaze } from "./maze";
+import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
@@ -41,22 +43,24 @@ export function powerChoice(
   cells: [number, number][],
   phero: Float32Array,
   power: number,
+  rng: Rng,
   cautPhero?: Float32Array,
   cautPower?: number,
 ): [number, number] {
   const scores = cells.map(([cx, cy]) => {
     const idx = cy * COLS + cx;
-    const trail = Math.pow(phero[idx] + 1, power);
-    const caution = (cautPhero && cautPower) ? Math.pow(cautPhero[idx] + 1, cautPower) : 1;
+    const trail = deterministicPow(phero[idx] + 1, power);
+    const caution = (cautPhero && cautPower) ? deterministicPow(cautPhero[idx] + 1, cautPower) : 1;
     return trail / caution;
   });
   const total = scores.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
+  let r = rng() * total;
   for (let i = 0; i < cells.length; i++) { r -= scores[i]; if (r <= 0) return cells[i]; }
   return cells[cells.length - 1];
 }
 
 export class Simulation {
+  readonly config: RunConfig;
   numAnts: number;
   numColonies: number;
   numFoodSources: number;
@@ -66,24 +70,20 @@ export class Simulation {
   grid: CellType[][];
   colonies: Colony[];
   foodSources: FoodSource[];
+  private antsRng: Rng;
 
-  constructor(
-    numAnts: number,
-    params: SimParams,
-    loopRate: number = 0.1,
-    numColonies: number = 1,
-    numFoodSources: number = 1,
-    foodPerSource: number = 500,
-  ) {
-    this.numAnts = numAnts;
-    this.params = { ...params };
-    this.loopRate = loopRate;
-    this.numColonies = numColonies;
-    this.numFoodSources = numFoodSources;
-    this.foodPerSource = foodPerSource;
-    this.grid = generateMaze(loopRate);
+  constructor(config: RunConfig) {
+    this.config = config;
+    this.numAnts = config.numAnts;
+    this.params = { ...config.params };
+    this.loopRate = config.loopRate;
+    this.numColonies = config.numColonies;
+    this.numFoodSources = config.numFoodSources;
+    this.foodPerSource = config.foodPerSource;
+    this.antsRng = makeRng(config.seeds.ants);
+    this.grid = generateMaze(config.loopRate, makeRng(config.seeds.maze));
     this.colonies = this._initColonies();
-    this.foodSources = this._placeFoodSources();
+    this.foodSources = this._placeFoodSources(makeRng(config.seeds.food));
     for (const colony of this.colonies) this._seedNest(colony);
   }
 
@@ -105,7 +105,7 @@ export class Simulation {
     });
   }
 
-  private _placeFoodSources(): FoodSource[] {
+  private _placeFoodSources(rng: Rng): FoodSource[] {
     const nestSet = new Set(this.colonies.map(c => c.nestY * COLS + c.nestX));
     // Minimum Manhattan distance from any nest
     const minDist = Math.floor(Math.min(COLS, ROWS) / 4);
@@ -120,11 +120,7 @@ export class Simulation {
         if (farEnough) open.push([x, y]);
       }
     }
-    // Fisher-Yates shuffle
-    for (let i = open.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [open[i], open[j]] = [open[j], open[i]];
-    }
+    shuffleInPlace(open, rng);
     const count = Math.min(this.numFoodSources, open.length);
     return open.slice(0, count).map(([x, y]) => ({
       x, y,
@@ -281,7 +277,10 @@ export class Simulation {
     const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
     const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
     const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
-    const next = powerChoice(candidates, phero, trailPower, this.params.cautionary ? colony.cautPhero : undefined, trailPower);
+    const next = powerChoice(
+      candidates, phero, trailPower, this.antsRng,
+      this.params.cautionary ? colony.cautPhero : undefined, trailPower,
+    );
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;
     ant.tx = next[0]; ant.ty = next[1];

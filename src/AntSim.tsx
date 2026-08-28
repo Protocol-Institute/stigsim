@@ -3,9 +3,9 @@ import {
   Simulation, computeHighwayScore, cellCenter,
   COLS, ROWS, CELL, W, H, V, DEPOSIT_RATE, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
-  DEFAULT_FOOD_PER_SOURCE,
+  DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
 } from "./sim";
-import type { SimParams } from "./sim";
+import type { SimParams, RunConfig } from "./sim";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 
@@ -179,6 +179,10 @@ export default function AntSim() {
   const [numColonies, setNumColonies] = useState(DEFAULT_NUM_COLONIES);
   const [numFoodSources, setNumFoodSources] = useState(DEFAULT_NUM_FOOD_SOURCES);
   const [foodPerSource, setFoodPerSource] = useState(DEFAULT_FOOD_PER_SOURCE);
+  const [seedInput, setSeedInput] = useState(() => generateMasterSeed());
+  const [activeSeed, setActiveSeed] = useState(seedInput);
+  const seedInputRef = useRef(seedInput);
+  seedInputRef.current = seedInput;
   const [editMode, setEditMode] = useState<EditMode>("none");
   const editModeRef = useRef<EditMode>("none");
   editModeRef.current = editMode;
@@ -396,14 +400,17 @@ export default function AntSim() {
   };
 
   const initSim = useCallback(() => {
-    simRef.current = new Simulation(
-      numAntsRef.current,
-      paramsRef.current,
-      loopRateRef.current,
-      numColoniesRef.current,
-      numFoodSourcesRef.current,
-      foodPerSourceRef.current,
-    );
+    const master = seedInputRef.current.trim() || generateMasterSeed();
+    setActiveSeed(master);
+    simRef.current = new Simulation({
+      seeds: makeSeeds(master),
+      numAnts: numAntsRef.current,
+      params: paramsRef.current,
+      loopRate: loopRateRef.current,
+      numColonies: numColoniesRef.current,
+      numFoodSources: numFoodSourcesRef.current,
+      foodPerSource: foodPerSourceRef.current,
+    });
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
     foodTimestampsRef.current = [];
@@ -885,6 +892,46 @@ export default function AntSim() {
             style={{ flex: "1 1 270px" }}
           />
 
+        </div>
+      </div>
+
+      <div style={{ width: "100%", maxWidth: 600 }}>
+        <p style={{ margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
+          Run
+        </p>
+        <div style={{
+          background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 10,
+          padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              value={seedInput}
+              onChange={e => setSeedInput(e.target.value)}
+              spellCheck={false}
+              aria-label="Run seed"
+              style={{
+                flex: 1, minWidth: 0, background: "#1a1208", color: "#e5d5b5",
+                border: "1px solid #3d2e18", borderRadius: 6, padding: "6px 8px",
+                fontFamily: "monospace", fontSize: "0.8rem",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setSeedInput(generateMasterSeed())}
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+              }}
+            >
+              New seed
+            </button>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+            {seedInput.trim() === activeSeed
+              ? "Runs with this seed reproduce exactly."
+              : `Running as "${activeSeed}". Reset to use the new seed.`}
+          </p>
         </div>
       </div>
 
