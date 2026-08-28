@@ -54,7 +54,7 @@ function ParamCard({
 
 // ─── Simple control row ───────────────────────────────────────────────────────
 function ControlCard({
-  label, description, value, displayValue, min, max, step, rtl, onChange, style,
+  label, description, value, displayValue, min, max, step, rtl, onChange, style, disabled,
 }: {
   label: string;
   description: string;
@@ -64,6 +64,7 @@ function ControlCard({
   rtl?: boolean;
   onChange: (v: number) => void;
   style?: React.CSSProperties;
+  disabled?: boolean;
 }) {
   return (
     <div style={{
@@ -76,6 +77,7 @@ function ControlCard({
       gap: 8,
       flex: "1 1 270px",
       minWidth: 0,
+      opacity: disabled ? 0.4 : 1,
       ...style,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
@@ -87,7 +89,8 @@ function ControlCard({
         type="range"
         min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
-        style={{ width: "100%", accentColor: "#f59e0b", cursor: "pointer", direction: rtl ? "rtl" : "ltr", margin: "2px 0" }}
+        disabled={disabled}
+        style={{ width: "100%", accentColor: "#f59e0b", cursor: disabled ? "not-allowed" : "pointer", direction: rtl ? "rtl" : "ltr", margin: "2px 0" }}
       />
     </div>
   );
@@ -473,6 +476,7 @@ export default function AntSim() {
 
   // Reset when structure-level settings change
   useEffect(() => {
+    if (replayRef.current) return;
     setRunning(false);
     cancelAnimationFrame(rafRef.current);
     frameCountRef.current = 0;
@@ -908,6 +912,7 @@ export default function AntSim() {
             min={1} max={4} step={1}
             onChange={v => { setNumColonies(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replayState !== null}
           />
 
           <ControlCard
@@ -935,6 +940,7 @@ export default function AntSim() {
             min={1} max={8} step={1}
             onChange={v => { setNumFoodSources(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replayState !== null}
           />
 
           <ControlCard
@@ -945,6 +951,7 @@ export default function AntSim() {
             min={50} max={10000} step={50}
             onChange={v => { setFoodPerSource(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replayState !== null}
           />
 
         </div>
@@ -1209,6 +1216,7 @@ export default function AntSim() {
           display: "flex",
           flexDirection: "column",
           gap: 8,
+          opacity: replayState !== null ? 0.4 : 1,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Extra holes (loop rate)</span>
@@ -1223,7 +1231,8 @@ export default function AntSim() {
             type="range"
             min={0} max={0.5} step={0.01} value={loopRate}
             onChange={e => setLoopRate(Number(e.target.value))}
-            style={{ width: "100%", accentColor: "#f59e0b", cursor: "pointer", margin: "2px 0" }}
+            disabled={replayState !== null}
+            style={{ width: "100%", accentColor: "#f59e0b", cursor: replayState !== null ? "not-allowed" : "pointer", margin: "2px 0" }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#6b5a3e" }}>
             <span>0% — tree maze</span>

@@ -139,3 +139,49 @@ test("reset returns to tick zero", () => {
   assert.equal(r.tick, 0);
   assert.equal(r.divergedAt, null);
 });
+
+test("a backward seek after continueAfterDivergence re-arms fingerprint checking", () => {
+  const { trace } = recordRun();
+  const target = trace.fingerprints[1];
+  const tampered: Trace = {
+    ...trace,
+    fingerprints: trace.fingerprints.map(f => f.t === target.t ? { ...f, h: "deadbeef" } : f),
+  };
+
+  const r = new Replayer(tampered);
+  while (r.step());
+  assert.equal(r.divergedAt, target.t);
+
+  r.continueAfterDivergence();
+  while (r.step());
+  assert.equal(r.tick, tampered.endTick);
+
+  // Seeking backward rebuilds the replay from tick 0 — a fresh playthrough
+  // that should verify fingerprints again, not carry forward the earlier
+  // "continue anyway" decision.
+  r.seek(300);
+  while (r.step());
+  assert.equal(
+    r.divergedAt,
+    target.t,
+    "a fresh playthrough after a backward seek should detect the same tampered checkpoint again",
+  );
+});
+
+test("reset alone re-arms fingerprint checking after continueAfterDivergence", () => {
+  const { trace } = recordRun();
+  const target = trace.fingerprints[1];
+  const tampered: Trace = {
+    ...trace,
+    fingerprints: trace.fingerprints.map(f => f.t === target.t ? { ...f, h: "deadbeef" } : f),
+  };
+
+  const r = new Replayer(tampered);
+  while (r.step());
+  r.continueAfterDivergence();
+  while (r.step());
+
+  r.reset();
+  while (r.step());
+  assert.equal(r.divergedAt, target.t);
+});

@@ -34,6 +34,7 @@ export class Replayer {
   reset() {
     this.sim = this.build();
     this.divergedAt = null;
+    this.checking = true;
   }
 
   /** Advances one tick. Returns false at the end or on divergence. */
