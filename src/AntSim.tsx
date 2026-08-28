@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from "react";
+import { Rng, randomSeed } from "./sim/rng";
 
 // ─── Maze dimensions ───────────────────────────────────────────────────────
 const COLS = 31;
@@ -87,13 +88,13 @@ interface Ant {
   manual?: boolean;
 }
 
-function generateMaze(loopRate: number = 0.1): CellType[][] {
+function generateMaze(rng: Rng, loopRate: number = 0.1): CellType[][] {
   const grid: CellType[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
   const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
   function carve(cx: number, cy: number) {
     visited[cy][cx] = true;
     grid[cy][cx] = 1;
-    const dirs = [[0, -2], [0, 2], [-2, 0], [2, 0]].sort(() => Math.random() - 0.5);
+    const dirs = rng.shuffle([[0, -2], [0, 2], [-2, 0], [2, 0]]);
     for (const [dx, dy] of dirs) {
       const nx = cx + dx, ny = cy + dy;
       if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx]) {
@@ -105,7 +106,7 @@ function generateMaze(loopRate: number = 0.1): CellType[][] {
   carve(1, 1);
   for (let y = 1; y < ROWS - 1; y++)
     for (let x = 1; x < COLS - 1; x++)
-      if (grid[y][x] === 0 && Math.random() < loopRate) grid[y][x] = 1;
+      if (grid[y][x] === 0 && rng.chance(loopRate)) grid[y][x] = 1;
   // Ensure all colony nest corners are open
   for (const [nx, ny] of COLONY_NESTS) grid[ny][nx] = 1;
   return grid;
@@ -144,6 +145,7 @@ function openNeighbours(grid: CellType[][], x: number, y: number, exX?: number, 
 }
 
 function powerChoice(
+  rng: Rng,
   cells: [number, number][],
   phero: Float32Array,
   power: number,
@@ -157,7 +159,7 @@ function powerChoice(
     return trail / caution;
   });
   const total = scores.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
+  let r = rng.next() * total;
   for (let i = 0; i < cells.length; i++) { r -= scores[i]; if (r <= 0) return cells[i]; }
   return cells[cells.length - 1];
 }
@@ -174,6 +176,8 @@ class Simulation {
   grid: CellType[][];
   colonies: Colony[];
   foodSources: FoodSource[];
+  seed: string;
+  rng: Rng;
 
   constructor(
     numAnts: number,
@@ -182,6 +186,7 @@ class Simulation {
     numColonies: number = 1,
     numFoodSources: number = 1,
     foodPerSource: number = 500,
+    seed: string = randomSeed(),
   ) {
     this.numAnts = numAnts;
     this.params = { ...params };
@@ -189,7 +194,9 @@ class Simulation {
     this.numColonies = numColonies;
     this.numFoodSources = numFoodSources;
     this.foodPerSource = foodPerSource;
-    this.grid = generateMaze(loopRate);
+    this.seed = seed;
+    this.rng = new Rng(seed);
+    this.grid = generateMaze(this.rng, loopRate);
     this.colonies = this._initColonies();
     this.foodSources = this._placeFoodSources();
     for (const colony of this.colonies) this._seedNest(colony);
@@ -228,11 +235,7 @@ class Simulation {
         if (farEnough) open.push([x, y]);
       }
     }
-    // Fisher-Yates shuffle
-    for (let i = open.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [open[i], open[j]] = [open[j], open[i]];
-    }
+    this.rng.shuffle(open);
     const count = Math.min(this.numFoodSources, open.length);
     return open.slice(0, count).map(([x, y]) => ({
       x, y,
@@ -389,7 +392,7 @@ class Simulation {
     const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
     const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
     const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
-    const next = powerChoice(candidates, phero, trailPower, this.params.cautionary ? colony.cautPhero : undefined, trailPower);
+    const next = powerChoice(this.rng, candidates, phero, trailPower, this.params.cautionary ? colony.cautPhero : undefined, trailPower);
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;
     ant.tx = next[0]; ant.ty = next[1];
@@ -811,6 +814,9 @@ export default function AntSim() {
     if (!sim) return;
     if (manualControl) {
       const all = sim.allAnts;
+      // View-level draw, deliberately outside the seeded stream: taking a value
+      // from sim.rng here would shift every later model draw, so which ant you
+      // chose to drive would change how the rest of the colony behaved.
       const idx = Math.floor(Math.random() * all.length);
       setWatchedAntIdx(idx);
       watchedAntIdxRef.current = idx;
@@ -983,6 +989,7 @@ export default function AntSim() {
     prevTotalRef.current = 0;
     if (viewModeRef.current === "one") {
       const total = simRef.current.allAnts.length;
+      // View-level draw — see the note on manual control above.
       const idx = Math.floor(Math.random() * total);
       setWatchedAntIdx(idx);
       watchedAntIdxRef.current = idx;
