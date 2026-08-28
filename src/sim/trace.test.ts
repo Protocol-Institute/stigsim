@@ -56,6 +56,19 @@ test("commands are captured in the trace at their recorded ticks", () => {
   assert.deepEqual(trace.commands, [{ t: 31, cmd: { kind: "setParam", key: "trailPower", value: 9 } }]);
 });
 
+test("a built trace's metrics samples do not change when the simulation advances afterwards", () => {
+  const sim = new Simulation(config());
+  const rec = new MetricsRecorder();
+  for (let i = 0; i < 30; i++) { sim.step(); rec.maybeSample(sim); }
+
+  const trace = buildTrace(sim, rec);
+  const samplesBefore = trace.metrics.samples.length;
+
+  for (let i = 0; i < 30; i++) { sim.step(); rec.maybeSample(sim); }
+
+  assert.equal(trace.metrics.samples.length, samplesBefore);
+});
+
 test("a trace round-trips through serialize and parse", () => {
   const { sim, rec } = runSim();
   const trace = buildTrace(sim, rec, "2026-08-27T00:00:00.000Z");
@@ -115,6 +128,15 @@ test("parseTrace rejects a trace with a broken command", () => {
   const result = parseTrace(JSON.stringify(broken));
   assert.ok(!result.ok);
   assert.match(result.error, /command/i);
+});
+
+test("parseTrace rejects a trace with a malformed metrics sample", () => {
+  const { sim, rec } = runSim(100);
+  const trace = buildTrace(sim, rec);
+  const broken = { ...trace, metrics: { ...trace.metrics, samples: [1, "x", {}] } };
+  const result = parseTrace(JSON.stringify(broken));
+  assert.ok(!result.ok);
+  assert.match(result.error, /metrics sample/i);
 });
 
 test("parseTrace rejects missing or malformed seeds and config", () => {

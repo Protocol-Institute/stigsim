@@ -61,7 +61,7 @@ export function buildTrace(
     metrics: {
       interval: recorder.interval,
       truncated: recorder.truncated,
-      samples: recorder.samples,
+      samples: recorder.samples.slice(),
     },
     endTick: sim.tick,
   };
@@ -94,6 +94,16 @@ function validParams(v: unknown): v is SimParams {
   if (typeof v !== "object" || v === null) return false;
   const p = v as Record<string, unknown>;
   return isNum(p.evapRate) && isNum(p.trailPower) && isNum(p.tankMax) && typeof p.cautionary === "boolean";
+}
+
+function validMetricsSample(v: unknown): v is MetricsSample {
+  if (typeof v !== "object" || v === null) return false;
+  const s = v as Record<string, unknown>;
+  return (
+    isInt(s.t) && s.t >= 0 &&
+    Array.isArray(s.colonies) &&
+    Array.isArray(s.foodRemaining) && s.foodRemaining.every(isNum)
+  );
 }
 
 function validConfig(v: unknown): v is TraceRunConfig {
@@ -165,6 +175,9 @@ export function parseTrace(text: string): ParseResult {
       !isInt(metrics.interval) || typeof metrics.truncated !== "boolean" ||
       !Array.isArray(metrics.samples)) {
     return { ok: false, error: "That trace has a malformed metrics block." };
+  }
+  if (!metrics.samples.every(validMetricsSample)) {
+    return { ok: false, error: "That trace has a malformed metrics sample." };
   }
   if (!isInt(t.endTick) || t.endTick < 0) {
     return { ok: false, error: "That trace has no readable end tick." };
