@@ -1,6 +1,6 @@
 import {
   COLS, ROWS, CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
-  COLONY_NESTS, DIRS4,
+  COLONY_NESTS, DIRS4, TRIP_WINDOW,
 } from "./constants";
 import type { Ant, AntState, CellType, Colony, FoodSource, SimParams } from "./types";
 import type { RunConfig } from "./types";
@@ -75,6 +75,8 @@ export class Simulation {
   private antsRng: Rng;
   tick = 0;
   manualAntIndex: number | null = null;
+  /** Incremented whenever a wall opens or closes, so caches can invalidate. */
+  gridVersion = 0;
   readonly fingerprints: { t: number; h: string }[] = [];
   private pending: Command[] = [];
   private recorded: TimedCommand[] = [];
@@ -109,6 +111,7 @@ export class Simulation {
         ants: this._spawnAnts(id, nestX, nestY),
         foodCollected: 0,
         discoveredSources: new Set<number>(),
+        recentTrips: [],
       };
     });
   }
@@ -160,6 +163,9 @@ export class Simulation {
       hasFood: false,
       tank: this.params.tankMax,
       colonyId,
+      stepsSinceNest: 0,
+      lastSourceX: null,
+      lastSourceY: null,
     }));
   }
 
@@ -183,6 +189,9 @@ export class Simulation {
             hasFood: false,
             tank: this.params.tankMax,
             colonyId: colony.id,
+            stepsSinceNest: 0,
+            lastSourceX: null,
+            lastSourceY: null,
           });
         }
       } else if (n < colony.ants.length) {
@@ -249,6 +258,7 @@ export class Simulation {
     if (this.colonies.some(c => c.nestX === gx && c.nestY === gy)) return;
     if (this.foodSources.some(s => s.x === gx && s.y === gy)) return;
     this.grid[gy][gx] = open ? 1 : 0;
+    this.gridVersion++;
     if (!open) {
       for (const colony of this.colonies) {
         for (const ant of colony.ants) {
@@ -363,6 +373,7 @@ export class Simulation {
 
     ant.x = tpx; ant.y = tpy;
     ant.cx = ant.tx; ant.cy = ant.ty;
+    ant.stepsSinceNest++;
 
     // Check food sources
     if (ant.state === "searching") {
@@ -376,6 +387,8 @@ export class Simulation {
           ant.state = "returning";
           ant.hasFood = true;
           ant.tank = tankMax;
+          ant.lastSourceX = src.x;
+          ant.lastSourceY = src.y;
           const [ntx, nty] = [ant.prevCx, ant.prevCy];
           ant.prevCx = ant.cx; ant.prevCy = ant.cy;
           ant.tx = ntx; ant.ty = nty;
@@ -391,6 +404,13 @@ export class Simulation {
       ant.hasFood = false;
       ant.tank = tankMax;
       colony.foodCollected++;
+      if (ant.lastSourceX !== null && ant.lastSourceY !== null) {
+        colony.recentTrips.push({ steps: ant.stepsSinceNest, sx: ant.lastSourceX, sy: ant.lastSourceY });
+        if (colony.recentTrips.length > TRIP_WINDOW) colony.recentTrips.shift();
+      }
+      ant.stepsSinceNest = 0;
+      ant.lastSourceX = null;
+      ant.lastSourceY = null;
       const [ntx, nty] = [ant.prevCx, ant.prevCy];
       ant.prevCx = ant.cx; ant.prevCy = ant.cy;
       ant.tx = ntx; ant.ty = nty;

@@ -32,6 +32,8 @@ export interface Colony {
   ants: Ant[];
   foodCollected: number;
   discoveredSources: Set<number>;
+  /** A trailing window of completed round trips, newest last. */
+  recentTrips: { steps: number; sx: number; sy: number }[];
 }
 
 export interface Ant {
@@ -44,6 +46,11 @@ export interface Ant {
   tank: number;
   colonyId: number;
   manual?: boolean;
+  /** Cells traversed since the ant last left the nest. Observation only. */
+  stepsSinceNest: number;
+  /** Where the ant last picked up food, for the trip-efficiency metric. */
+  lastSourceX: number | null;
+  lastSourceY: number | null;
 }
 
 export interface RunSeeds {

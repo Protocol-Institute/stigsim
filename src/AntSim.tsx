@@ -4,6 +4,7 @@ import {
   COLS, ROWS, CELL, W, H, V, DEPOSIT_RATE, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
   DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
+  MetricsRecorder, metricsToCsv, RATE_WINDOW_TICKS,
 } from "./sim";
 import type { SimParams, RunConfig, Command } from "./sim";
 import { render, COLONY_COLORS } from "./render";
@@ -161,6 +162,7 @@ export default function AntSim() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const simRef = useRef<Simulation | null>(null);
+  const metricsRef = useRef<MetricsRecorder>(new MetricsRecorder());
   const rafRef = useRef<number>(0);
   const frameCountRef = useRef(0);
 
@@ -168,8 +170,6 @@ export default function AntSim() {
   const [colonyScores, setColonyScores] = useState<number[]>([0]);
   const [foodRate, setFoodRate] = useState(0);
   const [latestFingerprint, setLatestFingerprint] = useState<{ t: number; h: string } | null>(null);
-  const foodTimestampsRef = useRef<number[]>([]);
-  const prevTotalRef = useRef(0);
   const [framesPerTick, setFramesPerTick] = useState(4);
   const [numAnts, setNumAnts] = useState(DEFAULT_NUM_ANTS);
   const [params, setParams] = useState<SimParams>(DEFAULT_PARAMS);
@@ -404,8 +404,7 @@ export default function AntSim() {
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
     setLatestFingerprint(null);
-    foodTimestampsRef.current = [];
-    prevTotalRef.current = 0;
+    metricsRef.current.reset();
     if (viewModeRef.current === "one") {
       const total = simRef.current.allAnts.length;
       const idx = Math.floor(Math.random() * total);
@@ -438,19 +437,14 @@ export default function AntSim() {
       if (frameCountRef.current >= framesPerTickRef.current) {
         frameCountRef.current = 0;
         sim.step();
+        metricsRef.current.maybeSample(sim);
         setColonyScores(sim.colonies.map(c => c.foodCollected));
         const fp = sim.fingerprints[sim.fingerprints.length - 1];
         if (fp) setLatestFingerprint(fp);
-        const total = sim.totalFoodCollected;
-        const now = Date.now();
-        const delta = total - prevTotalRef.current;
-        if (delta > 0) {
-          for (let i = 0; i < delta; i++) foodTimestampsRef.current.push(now);
-          prevTotalRef.current = total;
+        const latest = metricsRef.current.samples[metricsRef.current.samples.length - 1];
+        if (latest) {
+          setFoodRate(latest.colonies.reduce((a, c) => a + c.ratePerKTick, 0));
         }
-        const cutoff = now - 30_000;
-        foodTimestampsRef.current = foodTimestampsRef.current.filter(t => t > cutoff);
-        setFoodRate(foodTimestampsRef.current.length * 2);
       }
       render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
       rafRef.current = requestAnimationFrame(loop);
@@ -528,8 +522,11 @@ export default function AntSim() {
                 padding: "clamp(3px,0.4vw,5px) clamp(10px,1.5vw,14px)",
               }}>
                 <span style={{ fontSize: "clamp(0.58rem,1.5vw,0.68rem)", opacity: 0.45, letterSpacing: "0.05em", textTransform: "uppercase" }}>rate</span>
-                <span style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "6ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                  {foodRate > 0 ? `${foodRate}/min` : "—"}
+                <span
+                  title={`food collected per ${RATE_WINDOW_TICKS} ticks, trailing window`}
+                  style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "6ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+                >
+                  {foodRate > 0 ? `${foodRate.toFixed(1)}/1k ticks` : "—"}
                 </span>
               </div>
             </>
@@ -918,6 +915,25 @@ export default function AntSim() {
               }}
             >
               New seed
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const csv = metricsToCsv(metricsRef.current.samples);
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+              }}
+            >
+              Export CSV
             </button>
           </div>
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
