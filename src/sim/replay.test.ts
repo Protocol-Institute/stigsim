@@ -190,6 +190,40 @@ test("a paused edit replays at the same point as the live run", () => {
   assert.equal(r.sim.totalFoodCollected, sim.totalFoodCollected);
 });
 
+test("a trace saved during a pause, without resuming, does not falsely report divergence", () => {
+  // R1 regression: flushPending() records the paused edit at `tick + 1` (it
+  // belongs to the next tick's top-of-tick command drain) but applies it to
+  // `sim` immediately, so `sim`'s live state is already past what tick
+  // `sim.tick` looked like before the edit. If buildTrace appends a tail
+  // fingerprint at `sim.tick` here, that hash describes post-edit state,
+  // while replay — which stops at `endTick` without ever draining the
+  // `tick + 1` command — is still pre-edit at that same tick. The two
+  // disagree and a faithful recording is reported as diverged.
+  const sim = new Simulation(config());
+  const rec = new MetricsRecorder();
+
+  // 137 is deliberately not a multiple of FINGERPRINT_INTERVAL (500), so no
+  // interval checkpoint has just fired and buildTrace's tail-append logic is
+  // exercised.
+  for (let i = 0; i < 137; i++) { sim.step(); rec.maybeSample(sim); }
+  sim.enqueue({ kind: "setParam", key: "evapRate", value: 0.02 });
+  sim.flushPending();
+
+  // Save the trace right here, without stepping any further.
+  const trace = buildTrace(sim, rec);
+
+  const r = new Replayer(trace);
+  while (r.step());
+
+  // r.sim is not expected to fingerprint-match the live sim here: the trace's
+  // endTick is 137, and replay correctly stops there without ever draining
+  // the `t: 138` command, so r.sim is pre-edit while the live sim already has
+  // the paused edit applied. What matters is that this faithful recording is
+  // not flagged as diverged.
+  assert.equal(r.divergedAt, null, "a trace saved during a pause should not report divergence");
+  assert.equal(r.tick, trace.endTick);
+});
+
 test("a trace shorter than the fingerprint interval still detects a tampered checkpoint", () => {
   const sim = new Simulation(config());
   const rec = new MetricsRecorder();

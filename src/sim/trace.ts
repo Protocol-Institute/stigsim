@@ -47,8 +47,21 @@ export function buildTrace(
   // interval — with nothing for a replay to verify against. Add one at the
   // tick the trace was actually saved at, unless a checkpoint already lands
   // there.
+  //
+  // Except when a paused edit is outstanding: flushPending() applies the
+  // edit to `sim` right away (so the paused canvas updates) but records the
+  // command at `tick + 1`, since that's where replay will actually drain it
+  // — at the top of the next tick, before that tick's physics runs. If we
+  // saved a tail fingerprint here, it would hash `sim`'s already-edited
+  // state under the *current* tick, while a replay stopped at that same
+  // tick (endTick) hasn't drained the `tick + 1` command yet and is still
+  // pre-edit. The two would disagree and a faithful recording would be
+  // reported as diverged. `recorded` is monotonically non-decreasing in
+  // `t`, so checking only its last entry is enough to detect this.
+  const lastCommand = sim.commandLog[sim.commandLog.length - 1];
+  const pausedEditOutstanding = lastCommand !== undefined && lastCommand.t > sim.tick;
   const last = fingerprints[fingerprints.length - 1];
-  if (sim.tick > 0 && last?.t !== sim.tick) {
+  if (sim.tick > 0 && last?.t !== sim.tick && !pausedEditOutstanding) {
     fingerprints.push({ t: sim.tick, h: fingerprint(sim) });
   }
   return {
