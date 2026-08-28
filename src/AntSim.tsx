@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import {
-  Simulation, computeHighwayScore, cellCenter,
+  Simulation,
   COLS, ROWS, CELL, W, H, V, DEPOSIT_RATE, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
   DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
@@ -8,7 +8,7 @@ import {
   buildTrace, serializeTrace, traceFilename,
   Replayer, parseTrace,
 } from "./sim";
-import type { SimParams, RunConfig, Command } from "./sim";
+import type { SimParams, Command } from "./sim";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 
@@ -663,7 +663,6 @@ export default function AntSim() {
               key={mode}
               title={tip}
               onClick={() => {
-                const nextTool = editMode === mode ? "none" : mode;
                 setEditMode(prev => prev === mode ? "none" : mode);
                 hoverCellRef.current = null;
               }}
