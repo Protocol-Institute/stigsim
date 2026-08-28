@@ -3,6 +3,7 @@ import type { TimedCommand } from "./commands";
 import { isTimedCommand } from "./commands";
 import type { MetricsSample, MetricsRecorder } from "./metrics";
 import type { Simulation } from "./sim";
+import { fingerprint } from "./fingerprint";
 
 export const TRACE_FORMAT = "stigsim-trace";
 /** The file format. Bump when the shape of a trace changes. */
@@ -40,6 +41,16 @@ export function buildTrace(
   recorder: MetricsRecorder,
   createdAt: string = new Date().toISOString(),
 ): Trace {
+  const fingerprints = sim.fingerprints.map(f => ({ ...f }));
+  // Checkpoints only land every FINGERPRINT_INTERVAL ticks, which leaves the
+  // tail of every run — and the entirety of any run shorter than the
+  // interval — with nothing for a replay to verify against. Add one at the
+  // tick the trace was actually saved at, unless a checkpoint already lands
+  // there.
+  const last = fingerprints[fingerprints.length - 1];
+  if (sim.tick > 0 && last?.t !== sim.tick) {
+    fingerprints.push({ t: sim.tick, h: fingerprint(sim) });
+  }
   return {
     format: TRACE_FORMAT,
     version: TRACE_VERSION,
@@ -57,7 +68,7 @@ export function buildTrace(
       },
     },
     commands: sim.commandLog.map(c => ({ t: c.t, cmd: { ...c.cmd } })),
-    fingerprints: sim.fingerprints.map(f => ({ ...f })),
+    fingerprints,
     metrics: {
       interval: recorder.interval,
       truncated: recorder.truncated,

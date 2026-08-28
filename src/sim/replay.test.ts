@@ -190,6 +190,24 @@ test("a paused edit replays at the same point as the live run", () => {
   assert.equal(r.sim.totalFoodCollected, sim.totalFoodCollected);
 });
 
+test("a trace shorter than the fingerprint interval still detects a tampered checkpoint", () => {
+  const sim = new Simulation(config());
+  const rec = new MetricsRecorder();
+  for (let i = 0; i < 200; i++) { sim.step(); rec.maybeSample(sim); }
+  const trace = buildTrace(sim, rec);
+
+  assert.equal(trace.fingerprints.length, 1, "a short trace should still carry an end-of-trace fingerprint");
+  assert.equal(trace.fingerprints[0].t, 200);
+
+  const tampered: Trace = {
+    ...trace,
+    fingerprints: trace.fingerprints.map(f => ({ ...f, h: "deadbeef" })),
+  };
+  const r = new Replayer(tampered);
+  while (r.step());
+  assert.equal(r.divergedAt, 200, "a tampered checkpoint in a short trace should be reported");
+});
+
 test("reset alone re-arms fingerprint checking after continueAfterDivergence", () => {
   const { trace } = recordRun();
   const target = trace.fingerprints[1];

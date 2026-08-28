@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   Simulation, DEFAULT_PARAMS, makeSeeds, MetricsRecorder,
   buildTrace, serializeTrace, parseTrace, traceToRunConfig, traceFilename,
-  TRACE_FORMAT, TRACE_VERSION, SIM_VERSION,
+  TRACE_FORMAT, TRACE_VERSION, SIM_VERSION, FINGERPRINT_INTERVAL, fingerprint,
 } from "./index";
 import type { RunConfig, Trace } from "./index";
 
@@ -43,6 +43,26 @@ test("a built trace carries the header, seeds, and config", () => {
   assert.ok(trace.metrics.samples.length > 0);
   assert.equal(trace.metrics.interval, rec.interval);
   assert.equal(trace.metrics.truncated, false);
+});
+
+test("a trace shorter than the fingerprint interval still gets an end-of-trace checkpoint", () => {
+  const sim = new Simulation(config());
+  const rec = new MetricsRecorder();
+  for (let i = 0; i < 200; i++) { sim.step(); rec.maybeSample(sim); }
+
+  assert.equal(sim.fingerprints.length, 0, "sanity: no interval checkpoint has fired yet");
+  const trace = buildTrace(sim, rec);
+  assert.deepEqual(trace.fingerprints, [{ t: 200, h: fingerprint(sim) }]);
+});
+
+test("buildTrace does not duplicate a checkpoint that already lands on the final tick", () => {
+  const sim = new Simulation(config());
+  const rec = new MetricsRecorder();
+  for (let i = 0; i < FINGERPRINT_INTERVAL; i++) { sim.step(); rec.maybeSample(sim); }
+
+  assert.equal(sim.fingerprints.length, 1, "sanity: the run ends exactly on a checkpoint tick");
+  const trace = buildTrace(sim, rec);
+  assert.deepEqual(trace.fingerprints, sim.fingerprints);
 });
 
 test("commands are captured in the trace at their recorded ticks", () => {
