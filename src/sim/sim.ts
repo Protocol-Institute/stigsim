@@ -7,6 +7,7 @@ import type { RunConfig } from "./types";
 import { generateMaze } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
 import type { Command, TimedCommand } from "./commands";
+import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
@@ -74,6 +75,7 @@ export class Simulation {
   private antsRng: Rng;
   tick = 0;
   manualAntIndex: number | null = null;
+  readonly fingerprints: { t: number; h: string }[] = [];
   private pending: Command[] = [];
   private recorded: TimedCommand[] = [];
   private schedule: Map<number, Command[]> | null = null;
@@ -327,6 +329,10 @@ export class Simulation {
         }
       }
       for (const ant of colony.ants) this._moveAnt(ant, colony);
+    }
+
+    if (this.tick % FINGERPRINT_INTERVAL === 0) {
+      this.fingerprints.push({ t: this.tick, h: fingerprint(this) });
     }
   }
 

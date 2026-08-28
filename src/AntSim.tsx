@@ -167,6 +167,7 @@ export default function AntSim() {
   const [running, setRunning] = useState(false);
   const [colonyScores, setColonyScores] = useState<number[]>([0]);
   const [foodRate, setFoodRate] = useState(0);
+  const [latestFingerprint, setLatestFingerprint] = useState<{ t: number; h: string } | null>(null);
   const foodTimestampsRef = useRef<number[]>([]);
   const prevTotalRef = useRef(0);
   const [framesPerTick, setFramesPerTick] = useState(4);
@@ -402,6 +403,7 @@ export default function AntSim() {
     });
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
+    setLatestFingerprint(null);
     foodTimestampsRef.current = [];
     prevTotalRef.current = 0;
     if (viewModeRef.current === "one") {
@@ -437,6 +439,8 @@ export default function AntSim() {
         frameCountRef.current = 0;
         sim.step();
         setColonyScores(sim.colonies.map(c => c.foodCollected));
+        const fp = sim.fingerprints[sim.fingerprints.length - 1];
+        if (fp) setLatestFingerprint(fp);
         const total = sim.totalFoodCollected;
         const now = Date.now();
         const delta = total - prevTotalRef.current;
@@ -920,6 +924,11 @@ export default function AntSim() {
             {seedInput.trim() === activeSeed
               ? "Runs with this seed reproduce exactly."
               : `Running as "${activeSeed}". Reset to use the new seed.`}
+          </p>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#6b5a3e", fontFamily: "monospace" }}>
+            {latestFingerprint
+              ? `tick ${latestFingerprint.t} · ${latestFingerprint.h}`
+              : "tick 0 · no checkpoint yet"}
           </p>
         </div>
       </div>

@@ -33,6 +33,23 @@ Stigsim has a standalone React/Vite simulator and an optional server-authoritati
 
 Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
 
+## Determinism
+
+Maze Simulator runs are reproducible from a seed. `pnpm test:client` covers
+this within one engine. The cross-engine question cannot run in CI, because
+Safari cannot be driven there, so check it by hand before a release that
+touches `src/sim/`:
+
+1. Open the app in Chrome, Firefox, and Safari.
+2. Enter the same run seed in each and press reset.
+3. Run each to at least tick 5000 without editing anything.
+4. Compare the fingerprint shown in the Run panel at the same tick.
+
+They must match. If they do not, something in `src/sim/` is relying on
+behaviour the ECMAScript specification leaves implementation-defined;
+`Math.pow`, `Math.log`, `Math.exp`, and the trigonometric functions are the
+usual causes, and none of them may be used to compute simulation state.
+
 ## Project guidance
 
 `README.md`, this file, and `status.md` are the tool-neutral sources of truth. Client-specific files such as `CLAUDE.md` and `AGENTS.md` should point here rather than duplicate project instructions.
