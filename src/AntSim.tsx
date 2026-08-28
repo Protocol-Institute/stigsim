@@ -5,6 +5,7 @@ import {
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
   DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
   MetricsRecorder, metricsToCsv, RATE_WINDOW_TICKS,
+  buildTrace, serializeTrace, traceFilename,
 } from "./sim";
 import type { SimParams, RunConfig, Command } from "./sim";
 import { render, COLONY_COLORS } from "./render";
@@ -236,6 +237,16 @@ export default function AntSim() {
     const sim = simRef.current;
     const ctx = canvasRef.current?.getContext("2d");
     if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+  }, []);
+
+  const download = useCallback((contents: string, filename: string, mime: string) => {
+    const blob = new Blob([contents], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }, []);
 
   const send = useCallback((cmd: Command) => {
@@ -920,13 +931,7 @@ export default function AntSim() {
               type="button"
               onClick={() => {
                 const csv = metricsToCsv(metricsRef.current.samples);
-                const blob = new Blob([csv], { type: "text/csv" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
+                download(csv, `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`, "text/csv");
               }}
               style={{
                 background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
@@ -934,6 +939,21 @@ export default function AntSim() {
               }}
             >
               Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const sim = simRef.current;
+                if (!sim) return;
+                const trace = buildTrace(sim, metricsRef.current);
+                download(serializeTrace(trace), traceFilename(trace), "application/json");
+              }}
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+              }}
+            >
+              Save trace
             </button>
           </div>
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
