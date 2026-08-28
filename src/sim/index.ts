@@ -3,3 +3,4 @@ export * from "./types";
 export * from "./maze";
 export * from "./sim";
 export * from "./rng";
+export * from "./commands";

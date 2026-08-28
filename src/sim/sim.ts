@@ -6,6 +6,7 @@ import type { Ant, AntState, CellType, Colony, FoodSource, SimParams } from "./t
 import type { RunConfig } from "./types";
 import { generateMaze } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
+import type { Command, TimedCommand } from "./commands";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
@@ -71,6 +72,11 @@ export class Simulation {
   colonies: Colony[];
   foodSources: FoodSource[];
   private antsRng: Rng;
+  tick = 0;
+  manualAntIndex: number | null = null;
+  private pending: Command[] = [];
+  private recorded: TimedCommand[] = [];
+  private schedule: Map<number, Command[]> | null = null;
 
   constructor(config: RunConfig) {
     this.config = config;
@@ -188,7 +194,123 @@ export class Simulation {
     return this.colonies.reduce((s, c) => s + c.foodCollected, 0);
   }
 
+  get commandLog(): readonly TimedCommand[] {
+    return this.recorded;
+  }
+
+  enqueue(cmd: Command) {
+    this.pending.push(cmd);
+  }
+
+  /** Applies queued commands at the current tick without advancing time. */
+  flushPending() {
+    if (this.schedule) return;
+    this._runCommandsFor(this.tick);
+  }
+
+  /** Switches the simulation from live input to a recorded command schedule. */
+  loadSchedule(cmds: TimedCommand[]) {
+    this.schedule = new Map();
+    for (const { t, cmd } of cmds) {
+      const at = this.schedule.get(t);
+      if (at) at.push(cmd);
+      else this.schedule.set(t, [cmd]);
+    }
+    this.pending = [];
+    this._runCommandsFor(this.tick);
+  }
+
+  private _runCommandsFor(tick: number) {
+    const cmds = this.schedule
+      ? this.schedule.get(tick) ?? []
+      : this.pending.splice(0, this.pending.length);
+    for (const cmd of cmds) {
+      this.apply(cmd);
+      this.recorded.push({ t: tick, cmd });
+    }
+  }
+
+  apply(cmd: Command) {
+    switch (cmd.kind) {
+      case "setWall":       this._applySetWall(cmd.x, cmd.y, cmd.open); break;
+      case "setFood":       this._applySetFood(cmd.x, cmd.y, cmd.amount); break;
+      case "setParam":      this.params = { ...this.params, [cmd.key]: cmd.value }; break;
+      case "setCautionary": this.params = { ...this.params, cautionary: cmd.value }; break;
+      case "setAntCount":   this.setAntCount(cmd.n); break;
+      case "setManualAnt":  this._applySetManualAnt(cmd.index); break;
+      case "moveManualAnt": this._applyMoveManualAnt(cmd.dx, cmd.dy); break;
+    }
+  }
+
+  private _applySetWall(gx: number, gy: number, open: boolean) {
+    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return;
+    if (this.colonies.some(c => c.nestX === gx && c.nestY === gy)) return;
+    if (this.foodSources.some(s => s.x === gx && s.y === gy)) return;
+    this.grid[gy][gx] = open ? 1 : 0;
+    if (!open) {
+      for (const colony of this.colonies) {
+        for (const ant of colony.ants) {
+          if (ant.tx === gx && ant.ty === gy) { ant.tx = ant.cx; ant.ty = ant.cy; }
+        }
+      }
+    }
+  }
+
+  private _applySetFood(gx: number, gy: number, amount: number) {
+    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return;
+    if (this.grid[gy][gx] === 0) return;
+    if (this.colonies.some(c => c.nestX === gx && c.nestY === gy)) return;
+
+    const srcIdx = this.foodSources.findIndex(s => s.x === gx && s.y === gy);
+    if (amount <= 0) {
+      if (srcIdx < 0) return;
+      this.foodSources.splice(srcIdx, 1);
+      for (const colony of this.colonies) {
+        const updated = new Set<number>();
+        for (const idx of colony.discoveredSources) {
+          if (idx === srcIdx) continue;
+          updated.add(idx > srcIdx ? idx - 1 : idx);
+        }
+        colony.discoveredSources = updated;
+      }
+      return;
+    }
+    if (srcIdx >= 0) {
+      this.foodSources[srcIdx].remaining = amount;
+      this.foodSources[srcIdx].total = amount;
+      return;
+    }
+    this.foodSources.push({ x: gx, y: gy, remaining: amount, total: amount });
+  }
+
+  private _applySetManualAnt(index: number | null) {
+    const all = this.allAnts;
+    for (const ant of all) ant.manual = false;
+    this.manualAntIndex = null;
+    if (index === null) return;
+    const ant = all[index];
+    if (!ant) return;
+    ant.manual = true;
+    this.manualAntIndex = index;
+  }
+
+  private _applyMoveManualAnt(dx: number, dy: number) {
+    if (this.manualAntIndex === null) return;
+    const ant = this.allAnts[this.manualAntIndex];
+    if (!ant) return;
+    const nx = ant.cx + dx, ny = ant.cy + dy;
+    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+    if (this.grid[ny][nx] !== 1) return;
+    ant.prevCx = ant.cx;
+    ant.prevCy = ant.cy;
+    ant.tx = nx;
+    ant.ty = ny;
+  }
+
   step() {
+    this.tick++;
+    this._runCommandsFor(this.tick);
+
     const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
       for (let i = 0; i < colony.homePhero.length; i++) {

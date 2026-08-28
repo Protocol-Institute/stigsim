@@ -5,7 +5,7 @@ import {
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
   DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
 } from "./sim";
-import type { SimParams, RunConfig } from "./sim";
+import type { SimParams, RunConfig, Command } from "./sim";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 
@@ -214,6 +214,8 @@ export default function AntSim() {
   numFoodSourcesRef.current = numFoodSources;
   const foodPerSourceRef = useRef(foodPerSource);
   foodPerSourceRef.current = foodPerSource;
+  const runningRef = useRef(running);
+  runningRef.current = running;
 
   // Responsive canvas scaling
   useEffect(() => {
@@ -229,52 +231,64 @@ export default function AntSim() {
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (simRef.current) simRef.current.params = { ...params };
-  }, [params]);
+  const forceRender = useCallback(() => {
+    const sim = simRef.current;
+    const ctx = canvasRef.current?.getContext("2d");
+    if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+  }, []);
 
-  useEffect(() => {
-    if (simRef.current) simRef.current.setAntCount(numAnts);
-  }, [numAnts]);
-
-  useEffect(() => {
+  const send = useCallback((cmd: Command) => {
     const sim = simRef.current;
     if (!sim) return;
-    if (manualControl) {
-      const all = sim.allAnts;
-      const idx = Math.floor(Math.random() * all.length);
-      setWatchedAntIdx(idx);
-      watchedAntIdxRef.current = idx;
-      all[idx].manual = true;
-    } else {
-      const all = sim.allAnts;
-      const ant = all[watchedAntIdxRef.current];
-      if (ant) ant.manual = false;
+    sim.enqueue(cmd);
+    if (!runningRef.current) {
+      sim.flushPending();
+      forceRender();
     }
-  }, [manualControl]);
+  }, [forceRender]);
+
+  useEffect(() => {
+    send({ kind: "setParam", key: "evapRate", value: params.evapRate });
+  }, [params.evapRate, send]);
+
+  useEffect(() => {
+    send({ kind: "setParam", key: "trailPower", value: params.trailPower });
+  }, [params.trailPower, send]);
+
+  useEffect(() => {
+    send({ kind: "setParam", key: "tankMax", value: params.tankMax });
+  }, [params.tankMax, send]);
+
+  useEffect(() => {
+    send({ kind: "setCautionary", value: params.cautionary });
+  }, [params.cautionary, send]);
+
+  useEffect(() => {
+    send({ kind: "setAntCount", n: numAnts });
+  }, [numAnts, send]);
 
   useEffect(() => {
     const sim = simRef.current;
     if (!sim) return;
-    const all = sim.allAnts;
-    const ant = all[watchedAntIdx];
-    if (ant) ant.manual = manualControlRef.current;
-  }, [watchedAntIdx]);
+    if (!manualControl) {
+      send({ kind: "setManualAnt", index: null });
+      return;
+    }
+    const idx = Math.floor(Math.random() * sim.allAnts.length);
+    setWatchedAntIdx(idx);
+    watchedAntIdxRef.current = idx;
+    send({ kind: "setManualAnt", index: idx });
+  }, [manualControl, send]);
+
+  useEffect(() => {
+    if (!manualControlRef.current) return;
+    send({ kind: "setManualAnt", index: watchedAntIdx });
+  }, [watchedAntIdx, send]);
 
   const moveAnt = useCallback((ddx: number, ddy: number) => {
     if (!manualControlRef.current) return;
-    const sim = simRef.current;
-    if (!sim) return;
-    const ant = sim.allAnts[watchedAntIdxRef.current];
-    if (!ant) return;
-    const nx = ant.cx + ddx, ny = ant.cy + ddy;
-    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
-    if (sim.grid[ny][nx] !== 1) return;
-    ant.prevCx = ant.cx;
-    ant.prevCy = ant.cy;
-    ant.tx = nx;
-    ant.ty = ny;
-  }, []);
+    send({ kind: "moveManualAnt", dx: ddx, dy: ddy });
+  }, [send]);
 
   useEffect(() => {
     const DIR_MAP: Record<string, [number, number]> = {
@@ -293,12 +307,6 @@ export default function AntSim() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [moveAnt]);
-
-  const forceRender = useCallback(() => {
-    const sim = simRef.current;
-    const ctx = canvasRef.current?.getContext("2d");
-    if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
-  }, []);
 
   const cellFromPointer = useCallback((e: React.PointerEvent): { x: number; y: number } | null => {
     const wrap = canvasWrapRef.current;
@@ -328,38 +336,19 @@ export default function AntSim() {
       if (dragActionRef.current === null) {
         dragActionRef.current = wasWall ? "open" : "close";
       }
-
       if (dragActionRef.current === "open" && wasWall) {
-        sim.grid[gy][gx] = 1;
+        send({ kind: "setWall", x: gx, y: gy, open: true });
       } else if (dragActionRef.current === "close" && !wasWall) {
-        sim.grid[gy][gx] = 0;
-        for (const colony of sim.colonies) {
-          for (const ant of colony.ants) {
-            if (ant.tx === gx && ant.ty === gy) {
-              ant.tx = ant.cx; ant.ty = ant.cy;
-            }
-          }
-        }
+        send({ kind: "setWall", x: gx, y: gy, open: false });
       }
     } else if (mode === "food") {
       const isWall = sim.grid[gy][gx] === 0;
       const isNest = sim.colonies.some(c => c.nestX === gx && c.nestY === gy);
       if (isWall || isNest) return;
-      const srcIdx = sim.foodSources.findIndex(s => s.x === gx && s.y === gy);
-      if (srcIdx >= 0) {
-        sim.foodSources.splice(srcIdx, 1);
-        for (const colony of sim.colonies) {
-          colony.discoveredSources.delete(srcIdx);
-          const updated = new Set<number>();
-          for (const idx of colony.discoveredSources) updated.add(idx > srcIdx ? idx - 1 : idx);
-          colony.discoveredSources = updated;
-        }
-      } else {
-        const amount = foodPerSourceRef2.current;
-        sim.foodSources.push({ x: gx, y: gy, remaining: amount, total: amount });
-      }
+      const exists = sim.foodSources.some(s => s.x === gx && s.y === gy);
+      send({ kind: "setFood", x: gx, y: gy, amount: exists ? 0 : foodPerSourceRef2.current });
     }
-  }, []);
+  }, [send]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if (editModeRef.current === "none" || viewModeRef.current !== "all") return;
