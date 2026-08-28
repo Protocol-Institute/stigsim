@@ -48,6 +48,16 @@ You can:
 - Edit walls and food sources while the simulation is running
 - Observe whole colonies or control an individual ant
 
+Every run is reproducible from a seed. The Run panel shows the current run's
+seed, lets you generate a new one, and saves a trace file that captures the
+seed, the configuration, every edit you made and when you made it, periodic
+state fingerprints, and the metrics log. Loading a trace replays it exactly:
+the simulation runs the same commands at the same ticks and checks its
+fingerprints against the ones recorded in the file, so a replay that fails to
+reproduce the original run says so rather than silently producing a different
+one. The replay bar lets you play, pause, and seek to any tick. Metrics can
+also be exported directly as CSV for analysis outside the browser.
+
 ### Infinite World
 
 The Infinite World turns the same stigmergic ideas into a shared environment.
@@ -145,6 +155,7 @@ Before submitting a change, run:
 ```bash
 pnpm typecheck
 pnpm build
+pnpm test
 ```
 
 The static site is written to `dist/`. Infinite World additionally requires its
