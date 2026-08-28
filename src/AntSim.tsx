@@ -1,11 +1,11 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 
 // ─── Maze dimensions ───────────────────────────────────────────────────────
-const COLS = 31;
-const ROWS = 31;
-const CELL = 16;
-const W = COLS * CELL;
-const H = ROWS * CELL;
+export const COLS = 31;
+export const ROWS = 31;
+export const CELL = 16;
+export const W = COLS * CELL;
+export const H = ROWS * CELL;
 
 // ─── Movement (fixed) ──────────────────────────────────────────────────────
 const V = 4;
@@ -13,6 +13,21 @@ const ARRIVE_THRESH = V + 1;
 const NEST_SEED = 1000;
 const DEFAULT_NUM_ANTS = 20;
 const DEPOSIT_RATE = 20;
+
+// ─── Survival economy ───────────────────────────────────────────────────────
+const MAX_ENERGY = 1600;
+const RETREAT_ENERGY = MAX_ENERGY * 0.35;
+const MIN_DEPART_ENERGY = MAX_ENERGY * 0.7;
+const MOVE_ENERGY_COST = 1;
+const WAIT_ENERGY_COST = 0.25;
+const ENERGY_PER_FOOD = 100;
+const FOOD_DELIVERY_VALUE = 20;
+const STARTING_RESERVE_PER_ANT = 6;
+const REPRODUCTION_COST = 60;
+const REPRODUCTION_CHECK_STEPS = 30;
+const HATCH_STEPS = 300;
+const SAFETY_RESERVE_PER_ANT = 4;
+const EMERGENCY_POPULATION_LIMIT = 10_000;
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
 const VIEW_HALF = CELL * 1;
@@ -26,7 +41,7 @@ const COLONY_NESTS: [number, number][] = [
 ];
 
 // ─── Colony visual identity ──────────────────────────────────────────────────
-const COLONY_COLORS = [
+export const COLONY_COLORS = [
   { primary: "#4b9eff", homeRGB: "80,158,255", foodRGB: "80,220,200" },
   { primary: "#ff6b6b", homeRGB: "255,107,107", foodRGB: "255,200,80"  },
   { primary: "#4bde80", homeRGB: "75,222,128",  foodRGB: "200,255,80"  },
@@ -39,24 +54,23 @@ export interface SimParams {
   tankMax: number;
   cautionary: boolean;
 }
-
-const DEFAULT_PARAMS: SimParams = {
+export const DEFAULT_PARAMS: SimParams = {
   evapRate: 0.005,
   trailPower: 5,
   tankMax: 6400,
   cautionary: false,
 };
 
-const DEFAULT_NUM_COLONIES = 1;
+const DEFAULT_NUM_COLONIES = 2;
 const DEFAULT_NUM_FOOD_SOURCES = 1;
 const DEFAULT_FOOD_PER_SOURCE = 500;
 
 type CellType = 0 | 1;
-type AntState = "searching" | "returning";
+type AntState = "searching" | "returning" | "retreating" | "waiting";
 type ViewMode = "all" | "one";
 type EditMode = "none" | "wall" | "food";
 
-interface FoodSource {
+export interface FoodSource {
   x: number;
   y: number;
   remaining: number;
@@ -73,9 +87,17 @@ interface Colony {
   ants: Ant[];
   foodCollected: number;
   discoveredSources: Set<number>;
+  pendingDoctrine: SimParams;
+  doctrineVersion: number;
+  foodReserve: number;
+  developingAnts: number[];
+  reproductionClock: number;
+  totalBirths: number;
+  totalDeaths: number;
 }
 
 interface Ant {
+  id: number;
   x: number; y: number;
   cx: number; cy: number;
   tx: number; ty: number;
@@ -84,8 +106,40 @@ interface Ant {
   hasFood: boolean;
   tank: number;
   colonyId: number;
+  doctrine: SimParams;
+  doctrineVersion: number;
+  energy: number;
+  dead?: boolean;
   manual?: boolean;
 }
+
+export interface ColonyMetrics {
+  population: number;
+  foodCollected: number;
+  reserve: number;
+  hatching: number;
+  searching: number;
+  carrying: number;
+  retreating: number;
+  waiting: number;
+  lowEnergy: number;
+  births: number;
+  deaths: number;
+}
+
+const emptyColonyMetrics = (): ColonyMetrics => ({
+  population: 0,
+  foodCollected: 0,
+  reserve: 0,
+  hatching: 0,
+  searching: 0,
+  carrying: 0,
+  retreating: 0,
+  waiting: 0,
+  lowEnergy: 0,
+  births: 0,
+  deaths: 0,
+});
 
 function generateMaze(loopRate: number = 0.1): CellType[][] {
   const grid: CellType[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
@@ -164,7 +218,8 @@ function powerChoice(
 
 const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
-class Simulation {
+export class Simulation {
+  private nextAntId = 1;
   numAnts: number;
   numColonies: number;
   numFoodSources: number;
@@ -209,6 +264,13 @@ class Simulation {
         ants: this._spawnAnts(id, nestX, nestY),
         foodCollected: 0,
         discoveredSources: new Set<number>(),
+        pendingDoctrine: { ...this.params },
+        doctrineVersion: 0,
+        foodReserve: this.numAnts * STARTING_RESERVE_PER_ANT,
+        developingAnts: [],
+        reproductionClock: 0,
+        totalBirths: 0,
+        totalDeaths: 0,
       };
     });
   }
@@ -254,17 +316,33 @@ class Simulation {
   }
 
   private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
+    return Array.from({ length: this.numAnts }, () => this._createAnt(
+      colonyId, nestX, nestY, this.params, 0,
+    ));
+  }
+
+  private _createAnt(
+    colonyId: number,
+    nestX: number,
+    nestY: number,
+    doctrine: SimParams,
+    doctrineVersion: number,
+  ): Ant {
     const { px, py } = cellCenter(nestX, nestY);
-    return Array.from({ length: this.numAnts }, () => ({
+    return {
+      id: this.nextAntId++,
       x: px, y: py,
       cx: nestX, cy: nestY,
       tx: nestX, ty: nestY,
       prevCx: nestX, prevCy: nestY,
-      state: "searching" as AntState,
+      state: "searching",
       hasFood: false,
-      tank: this.params.tankMax,
+      tank: doctrine.tankMax,
       colonyId,
-    }));
+      doctrine: { ...doctrine },
+      doctrineVersion,
+      energy: MAX_ENERGY,
+    };
   }
 
   get allAnts(): Ant[] {
@@ -274,20 +352,12 @@ class Simulation {
   setAntCount(n: number) {
     for (const colony of this.colonies) {
       const { nestX, nestY } = colony;
-      const { px, py } = cellCenter(nestX, nestY);
       if (n > colony.ants.length) {
         const toAdd = n - colony.ants.length;
         for (let i = 0; i < toAdd; i++) {
-          colony.ants.push({
-            x: px, y: py,
-            cx: nestX, cy: nestY,
-            tx: nestX, ty: nestY,
-            prevCx: nestX, prevCy: nestY,
-            state: "searching",
-            hasFood: false,
-            tank: this.params.tankMax,
-            colonyId: colony.id,
-          });
+          colony.ants.push(this._createAnt(
+            colony.id, nestX, nestY, colony.pendingDoctrine, colony.doctrineVersion,
+          ));
         }
       } else if (n < colony.ants.length) {
         colony.ants.splice(n);
@@ -300,9 +370,41 @@ class Simulation {
     return this.colonies.reduce((s, c) => s + c.foodCollected, 0);
   }
 
+  setColonyDoctrine(colonyId: number, doctrine: SimParams, immediate = false) {
+    const colony = this.colonies[colonyId];
+    if (!colony) return;
+    colony.pendingDoctrine = { ...doctrine };
+    colony.doctrineVersion++;
+    if (immediate) {
+      for (const ant of colony.ants) {
+        ant.doctrine = { ...doctrine };
+        ant.doctrineVersion = colony.doctrineVersion;
+      }
+    }
+  }
+
+  getColonyMetrics(colony: Colony): ColonyMetrics {
+    return {
+      population: colony.ants.length,
+      foodCollected: colony.foodCollected,
+      reserve: colony.foodReserve,
+      hatching: colony.developingAnts.length,
+      searching: colony.ants.filter(ant => ant.state === "searching").length,
+      carrying: colony.ants.filter(ant => ant.state === "returning").length,
+      retreating: colony.ants.filter(ant => ant.state === "retreating").length,
+      waiting: colony.ants.filter(ant => ant.state === "waiting").length,
+      lowEnergy: colony.ants.filter(ant => ant.energy <= RETREAT_ENERGY).length,
+      births: colony.totalBirths,
+      deaths: colony.totalDeaths,
+    };
+  }
+
   step() {
-    const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
+      const averageEvapRate = colony.ants.length > 0
+        ? colony.ants.reduce((sum, ant) => sum + ant.doctrine.evapRate, 0) / colony.ants.length
+        : colony.pendingDoctrine.evapRate;
+      const decay = 1 - averageEvapRate;
       for (let i = 0; i < colony.homePhero.length; i++) {
         colony.homePhero[i] *= decay;
         colony.foodPhero[i] *= decay;
@@ -317,26 +419,115 @@ class Simulation {
         }
       }
       for (const ant of colony.ants) this._moveAnt(ant, colony);
+      const deathsThisStep = colony.ants.reduce((count, ant) => count + (ant.dead ? 1 : 0), 0);
+      if (deathsThisStep > 0) {
+        colony.totalDeaths += deathsThisStep;
+        colony.ants = colony.ants.filter(ant => !ant.dead);
+      }
+      this._advanceColonyEconomy(colony);
+    }
+  }
+
+  private _advanceColonyEconomy(colony: Colony) {
+    const readyToHatch = colony.developingAnts.reduce((count, remaining) => count + (remaining <= 1 ? 1 : 0), 0);
+    colony.developingAnts = colony.developingAnts
+      .filter(remaining => remaining > 1)
+      .map(remaining => remaining - 1);
+
+    const hatchCapacity = Math.max(0, EMERGENCY_POPULATION_LIMIT - colony.ants.length);
+    const hatchCount = Math.min(readyToHatch, hatchCapacity);
+    for (let i = 0; i < hatchCount; i++) {
+      colony.ants.push(this._createAnt(
+        colony.id, colony.nestX, colony.nestY, colony.pendingDoctrine, colony.doctrineVersion,
+      ));
+      colony.totalBirths++;
+    }
+
+    colony.reproductionClock++;
+    if (colony.reproductionClock < REPRODUCTION_CHECK_STEPS || colony.ants.length === 0) return;
+    colony.reproductionClock = 0;
+
+    const safetyReserve = colony.ants.length * SAFETY_RESERVE_PER_ANT;
+    const affordable = Math.floor(Math.max(0, colony.foodReserve - safetyReserve) / REPRODUCTION_COST);
+    const remainingCapacity = Math.max(
+      0,
+      EMERGENCY_POPULATION_LIMIT - colony.ants.length - colony.developingAnts.length,
+    );
+    const toDevelop = Math.min(affordable, remainingCapacity);
+    if (toDevelop > 0) {
+      colony.foodReserve -= toDevelop * REPRODUCTION_COST;
+      for (let i = 0; i < toDevelop; i++) {
+        const stagger = Math.floor(Math.random() * REPRODUCTION_CHECK_STEPS);
+        colony.developingAnts.push(HATCH_STEPS + stagger);
+      }
+    }
+  }
+
+  private _updateDoctrineAtNest(ant: Ant, colony: Colony) {
+    ant.doctrine = { ...colony.pendingDoctrine };
+    ant.doctrineVersion = colony.doctrineVersion;
+    ant.tank = ant.doctrine.tankMax;
+  }
+
+  private _refuelAtNest(ant: Ant, colony: Colony) {
+    const neededEnergy = Math.max(0, MAX_ENERGY - ant.energy);
+    const availableEnergy = colony.foodReserve * ENERGY_PER_FOOD;
+    const suppliedEnergy = Math.min(neededEnergy, availableEnergy);
+    ant.energy += suppliedEnergy;
+    colony.foodReserve -= suppliedEnergy / ENERGY_PER_FOOD;
+
+    ant.hasFood = false;
+    if (ant.energy >= MIN_DEPART_ENERGY) {
+      ant.state = "searching";
+      const [ntx, nty] = [ant.prevCx, ant.prevCy];
+      ant.prevCx = ant.cx; ant.prevCy = ant.cy;
+      ant.tx = ntx; ant.ty = nty;
+    } else {
+      ant.state = "waiting";
+      ant.tx = colony.nestX;
+      ant.ty = colony.nestY;
     }
   }
 
   private _moveAnt(ant: Ant, colony: Colony) {
-    const { tankMax, trailPower } = this.params;
+    const { tankMax, trailPower, cautionary } = ant.doctrine;
+
+    if (ant.state === "waiting") {
+      ant.energy -= WAIT_ENERGY_COST;
+      if (ant.energy <= 0) {
+        ant.dead = true;
+        return;
+      }
+      this._updateDoctrineAtNest(ant, colony);
+      this._refuelAtNest(ant, colony);
+      return;
+    }
+
+    if (ant.state === "searching" && ant.energy <= RETREAT_ENERGY) {
+      ant.state = "retreating";
+      ant.hasFood = false;
+    }
+
     const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
     const dx = tpx - ant.x, dy = tpy - ant.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > ARRIVE_THRESH) {
+      ant.energy -= MOVE_ENERGY_COST;
+      if (ant.energy <= 0) {
+        ant.dead = true;
+        return;
+      }
       const idx = ant.cy * COLS + ant.cx;
       if (ant.tank > 0) {
         const deposit = Math.min(ant.tank, DEPOSIT_RATE);
         if (ant.state === "searching") {
           colony.homePhero[idx] += deposit;
-        } else {
+        } else if (ant.state === "returning") {
           colony.foodPhero[idx] += deposit;
         }
         ant.tank -= deposit;
-      } else if (this.params.cautionary) {
+      } else if (cautionary) {
         colony.cautPhero[idx] += DEPOSIT_RATE;
       }
       const scale = V / dist;
@@ -370,14 +561,14 @@ class Simulation {
     }
 
     // Check nest
-    if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
-      ant.state = "searching";
-      ant.hasFood = false;
-      ant.tank = tankMax;
-      colony.foodCollected++;
-      const [ntx, nty] = [ant.prevCx, ant.prevCy];
-      ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-      ant.tx = ntx; ant.ty = nty;
+    const isAtNest = ant.cx === colony.nestX && ant.cy === colony.nestY;
+    if ((ant.state === "returning" || ant.state === "retreating") && isAtNest) {
+      if (ant.state === "returning" && ant.hasFood) {
+        colony.foodCollected++;
+        colony.foodReserve += FOOD_DELIVERY_VALUE;
+      }
+      this._updateDoctrineAtNest(ant, colony);
+      this._refuelAtNest(ant, colony);
       return;
     }
 
@@ -389,7 +580,7 @@ class Simulation {
     const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
     const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
     const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
-    const next = powerChoice(candidates, phero, trailPower, this.params.cautionary ? colony.cautPhero : undefined, trailPower);
+    const next = powerChoice(candidates, phero, trailPower, cautionary ? colony.cautPhero : undefined, trailPower);
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;
     ant.tx = next[0]; ant.ty = next[1];
@@ -400,19 +591,19 @@ function render(
   ctx: CanvasRenderingContext2D,
   sim: Simulation,
   viewMode: ViewMode = "all",
-  watchedAntIdx: number = 0,
+  watchedAntId: number = 0,
   editMode: EditMode = "none",
   hoverCell: { x: number; y: number } | null = null,
 ) {
   const allAnts = sim.allAnts;
-  const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
+  const watchedAnt = allAnts.find(ant => ant.id === watchedAntId);
 
   // Void background
   ctx.fillStyle = "#0a0602";
   ctx.fillRect(0, 0, W, H);
 
-  if (viewMode === "one" && safeIdx >= 0) {
-    const ant = allAnts[safeIdx];
+  if (viewMode === "one" && watchedAnt) {
+    const ant = watchedAnt;
     const zoom = W / (VIEW_HALF * 2);
     ctx.save();
     ctx.beginPath();
@@ -472,7 +663,7 @@ function render(
           ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
           ctx.fillRect(px, py, CELL, CELL);
         }
-        if (sim.params.cautionary) {
+        if (colony.ants.some(ant => ant.doctrine.cautionary)) {
           const ci2 = colony.cautPhero[idx];
           if (ci2 > 0.5) {
             const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
@@ -524,17 +715,25 @@ function render(
     const colColor = COLONY_COLORS[colony.id].primary;
     for (let i = 0; i < colony.ants.length; i++) {
       const ant = colony.ants[i];
-      const flatIdx = sim.colonies.slice(0, colony.id).reduce((s, c) => s + c.ants.length, 0) + i;
-      const isWatched = viewMode === "one" && flatIdx === safeIdx;
+      const isWatched = viewMode === "one" && ant.id === watchedAntId;
 
-      const tankFrac = Math.min(1, ant.tank / sim.params.tankMax);
-      ctx.globalAlpha = 0.25 + 0.75 * tankFrac;
+      const energyFrac = Math.max(0, Math.min(1, ant.energy / MAX_ENERGY));
+      ctx.globalAlpha = 0.3 + 0.7 * energyFrac;
 
       const r = ant.hasFood ? 4.5 : 3.5;
       ctx.beginPath();
       ctx.arc(ant.x, ant.y, r, 0, Math.PI * 2);
       ctx.fillStyle = ant.hasFood ? "#facc15" : colColor;
       ctx.fill();
+
+      if (energyFrac <= 0.35) {
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(ant.x, ant.y, r + 2, 0, Math.PI * 2);
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+      }
 
       // Direction dot
       const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
@@ -663,6 +862,116 @@ function ControlCard({
   );
 }
 
+function DoctrinePanel({
+  colonyId, doctrine, adopted, total, metrics, onChange,
+}: {
+  colonyId: number;
+  doctrine: SimParams;
+  adopted: number;
+  total: number;
+  metrics: ColonyMetrics;
+  onChange: <K extends keyof SimParams>(key: K, value: SimParams[K]) => void;
+}) {
+  const color = COLONY_COLORS[colonyId].primary;
+  const tankCells = Math.round(doctrine.tankMax / (DEPOSIT_RATE * (CELL / V)));
+  const sliders: Array<{
+    key: "evapRate" | "trailPower" | "tankMax";
+    label: string;
+    value: number;
+    display: string;
+    min: number;
+    max: number;
+    step: number;
+  }> = [
+    { key: "evapRate", label: "Evaporation rate", value: doctrine.evapRate, display: `${(doctrine.evapRate * 1000).toFixed(0)}‰ / step`, min: 0.001, max: 0.02, step: 0.001 },
+    { key: "trailPower", label: "Trail bias", value: doctrine.trailPower, display: `power ${doctrine.trailPower}`, min: 1, max: 10, step: 0.5 },
+    { key: "tankMax", label: "Gland size", value: doctrine.tankMax, display: `~${tankCells} cells`, min: 1600, max: 16000, step: 800 },
+  ];
+
+  return (
+    <section style={{ flex: "1 1 340px", minWidth: 0, border: `1px solid ${color}66`, borderRadius: 12, background: "#0f0a04", padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ width: 10, height: 10, borderRadius: "50%", background: color }} />
+        <strong style={{ color, fontSize: "0.9rem" }}>Colony {colonyId + 1}</strong>
+      </div>
+
+      <div style={{
+        background: `linear-gradient(135deg, ${color}20, #171007 70%)`,
+        border: `1px solid ${color}44`, borderRadius: 10, padding: "13px 14px", marginBottom: 10,
+      }}>
+        <div style={{ color: "#7f6e54", fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}>
+          Total ants
+        </div>
+        <div style={{ color, fontSize: "2.55rem", lineHeight: 1, fontWeight: 800, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+          {metrics.population}
+        </div>
+      </div>
+
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6,
+        paddingBottom: 14, marginBottom: 14, borderBottom: "1px solid #2b2116",
+      }}>
+        {([
+          ["Reserve", Math.floor(metrics.reserve)],
+          ["Food total", metrics.foodCollected],
+          ["Hatching", metrics.hatching],
+          ["Searching", metrics.searching],
+          ["Carrying", metrics.carrying],
+          ["Retreating", metrics.retreating],
+          ["Waiting", metrics.waiting],
+          ["Low energy", metrics.lowEnergy],
+          ["Born", metrics.births],
+          ["Died", metrics.deaths],
+        ] as Array<[string, number]>).map(([label, value]) => {
+          const warning = (label === "Retreating" || label === "Waiting" || label === "Low energy" || label === "Died") && value > 0;
+          return (
+            <div key={label} style={{ background: "#171007", borderRadius: 7, padding: "7px 6px", minWidth: 0 }}>
+              <div style={{ color: "#6b5a3e", fontSize: "0.56rem", textTransform: "uppercase", letterSpacing: "0.035em", whiteSpace: "nowrap" }}>{label}</div>
+              <div style={{ color: warning ? "#ef8b55" : "#e5d5b5", fontSize: "0.9rem", fontWeight: 700 }}>{value}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {sliders.map(control => (
+        <label key={control.key} style={{ display: "block", marginBottom: 14 }}>
+          <span style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.74rem", marginBottom: 6 }}>
+            <span style={{ color: "#e5d5b5", fontWeight: 600 }}>{control.label}</span>
+            <span style={{ color, fontWeight: 700 }}>{control.display}</span>
+          </span>
+          <input
+            type="range"
+            min={control.min} max={control.max} step={control.step} value={control.value}
+            onChange={event => onChange(control.key, Number(event.target.value))}
+            style={{ width: "100%", accentColor: color, cursor: "pointer" }}
+          />
+        </label>
+      ))}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <span style={{ color: "#e5d5b5", fontSize: "0.74rem", fontWeight: 600 }}>Cautionary</span>
+        <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3, width: 140 }}>
+          {([false, true] as const).map(value => (
+            <button key={String(value)} onClick={() => onChange("cautionary", value)} style={{
+              flex: 1, padding: "6px 0", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600,
+              background: doctrine.cautionary === value ? color : "transparent",
+              color: doctrine.cautionary === value ? "#080604" : "#a08060",
+            }}>
+              {value ? "On" : "Off"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {adopted < total && (
+        <p style={{ color: "#a08060", fontSize: "0.68rem", lineHeight: 1.45, margin: "14px 0 0" }}>
+          <strong style={{ color }}>{adopted}/{total} ants using the new doctrine.</strong>{" "}
+          Changes wait at this colony's nest; each ant adopts them when it returns.
+        </p>
+      )}
+    </section>
+  );
+}
+
 // ─── D-pad button ────────────────────────────────────────────────────────────
 const DPAD_CHEVRONS: Record<string, string> = {
   up:    "M5 15 L12 8 L19 15",
@@ -738,18 +1047,23 @@ export default function AntSim() {
   const frameCountRef = useRef(0);
 
   const [running, setRunning] = useState(false);
-  const [colonyScores, setColonyScores] = useState<number[]>([0]);
-  const [foodRate, setFoodRate] = useState(0);
-  const foodTimestampsRef = useRef<number[]>([]);
-  const prevTotalRef = useRef(0);
+  const [colonyMetrics, setColonyMetrics] = useState<ColonyMetrics[]>([
+    emptyColonyMetrics(),
+    emptyColonyMetrics(),
+  ]);
+  const [winner, setWinner] = useState<number | "draw" | null>(null);
   const [framesPerTick, setFramesPerTick] = useState(4);
   const [numAnts, setNumAnts] = useState(DEFAULT_NUM_ANTS);
-  const [params, setParams] = useState<SimParams>(DEFAULT_PARAMS);
+  const [colonyParams, setColonyParams] = useState<SimParams[]>([
+    { ...DEFAULT_PARAMS },
+    { ...DEFAULT_PARAMS },
+  ]);
+  const params = colonyParams[0];
   const [canvasScale, setCanvasScale] = useState(1);
   const [watchedAntIdx, setWatchedAntIdx] = useState(0);
   const [manualControl, setManualControl] = useState(false);
   const [loopRate, setLoopRate] = useState(0.1);
-  const [numColonies, setNumColonies] = useState(DEFAULT_NUM_COLONIES);
+  const numColonies: number = DEFAULT_NUM_COLONIES;
   const [numFoodSources, setNumFoodSources] = useState(DEFAULT_NUM_FOOD_SOURCES);
   const [foodPerSource, setFoodPerSource] = useState(DEFAULT_FOOD_PER_SOURCE);
   const [editMode, setEditMode] = useState<EditMode>("none");
@@ -763,8 +1077,8 @@ export default function AntSim() {
 
   const viewMode: ViewMode = manualControl ? "one" : "all";
 
-  const paramsRef = useRef(params);
-  paramsRef.current = params;
+  const colonyParamsRef = useRef(colonyParams);
+  colonyParamsRef.current = colonyParams;
   const framesPerTickRef = useRef(framesPerTick);
   framesPerTickRef.current = framesPerTick;
   const numAntsRef = useRef(numAnts);
@@ -799,25 +1113,23 @@ export default function AntSim() {
   }, []);
 
   useEffect(() => {
-    if (simRef.current) simRef.current.params = { ...params };
-  }, [params]);
-
-  useEffect(() => {
-    if (simRef.current) simRef.current.setAntCount(numAnts);
-  }, [numAnts]);
+    const sim = simRef.current;
+    if (!sim) return;
+    colonyParams.forEach((doctrine, colonyId) => sim.setColonyDoctrine(colonyId, doctrine));
+  }, [colonyParams]);
 
   useEffect(() => {
     const sim = simRef.current;
     if (!sim) return;
     if (manualControl) {
       const all = sim.allAnts;
-      const idx = Math.floor(Math.random() * all.length);
-      setWatchedAntIdx(idx);
-      watchedAntIdxRef.current = idx;
-      all[idx].manual = true;
+      if (all.length === 0) return;
+      const ant = all[Math.floor(Math.random() * all.length)];
+      setWatchedAntIdx(ant.id);
+      watchedAntIdxRef.current = ant.id;
+      ant.manual = true;
     } else {
-      const all = sim.allAnts;
-      const ant = all[watchedAntIdxRef.current];
+      const ant = sim.allAnts.find(candidate => candidate.id === watchedAntIdxRef.current);
       if (ant) ant.manual = false;
     }
   }, [manualControl]);
@@ -825,8 +1137,7 @@ export default function AntSim() {
   useEffect(() => {
     const sim = simRef.current;
     if (!sim) return;
-    const all = sim.allAnts;
-    const ant = all[watchedAntIdx];
+    const ant = sim.allAnts.find(candidate => candidate.id === watchedAntIdx);
     if (ant) ant.manual = manualControlRef.current;
   }, [watchedAntIdx]);
 
@@ -834,7 +1145,7 @@ export default function AntSim() {
     if (!manualControlRef.current) return;
     const sim = simRef.current;
     if (!sim) return;
-    const ant = sim.allAnts[watchedAntIdxRef.current];
+    const ant = sim.allAnts.find(candidate => candidate.id === watchedAntIdxRef.current);
     if (!ant) return;
     const nx = ant.cx + ddx, ny = ant.cy + ddy;
     if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
@@ -964,28 +1275,35 @@ export default function AntSim() {
     forceRender();
   }, [forceRender]);
 
-  const updateParam = <K extends keyof SimParams>(key: K, value: SimParams[K]) => {
-    setParams(p => ({ ...p, [key]: value }));
+  const updateParam = <K extends keyof SimParams>(colonyId: number, key: K, value: SimParams[K]) => {
+    setColonyParams(current => current.map((doctrine, index) =>
+      index === colonyId ? { ...doctrine, [key]: value } : doctrine
+    ));
   };
 
   const initSim = useCallback(() => {
     simRef.current = new Simulation(
       numAntsRef.current,
-      paramsRef.current,
+      colonyParamsRef.current[0],
       loopRateRef.current,
       numColoniesRef.current,
       numFoodSourcesRef.current,
       foodPerSourceRef.current,
     );
-    setColonyScores(simRef.current.colonies.map(() => 0));
-    setFoodRate(0);
-    foodTimestampsRef.current = [];
-    prevTotalRef.current = 0;
+    simRef.current.colonies.forEach((colony, colonyId) => {
+      const doctrine = colonyParamsRef.current[colonyId];
+      colony.pendingDoctrine = { ...doctrine };
+      colony.ants.forEach(ant => { ant.doctrine = { ...doctrine }; });
+    });
+    setColonyMetrics(simRef.current.colonies.map(colony => simRef.current!.getColonyMetrics(colony)));
+    setWinner(null);
     if (viewModeRef.current === "one") {
-      const total = simRef.current.allAnts.length;
-      const idx = Math.floor(Math.random() * total);
-      setWatchedAntIdx(idx);
-      watchedAntIdxRef.current = idx;
+      const all = simRef.current.allAnts;
+      const ant = all[Math.floor(Math.random() * all.length)];
+      if (ant) {
+        setWatchedAntIdx(ant.id);
+        watchedAntIdxRef.current = ant.id;
+      }
     }
     const ctx = canvasRef.current?.getContext("2d");
     if (ctx && simRef.current) render(ctx, simRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
@@ -1000,7 +1318,7 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource]);
+  }, [numAnts, loopRate, numFoodSources, foodPerSource]);
 
   useEffect(() => {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
@@ -1013,17 +1331,19 @@ export default function AntSim() {
       if (frameCountRef.current >= framesPerTickRef.current) {
         frameCountRef.current = 0;
         sim.step();
-        setColonyScores(sim.colonies.map(c => c.foodCollected));
-        const total = sim.totalFoodCollected;
-        const now = Date.now();
-        const delta = total - prevTotalRef.current;
-        if (delta > 0) {
-          for (let i = 0; i < delta; i++) foodTimestampsRef.current.push(now);
-          prevTotalRef.current = total;
+        setColonyMetrics(sim.colonies.map(colony => sim.getColonyMetrics(colony)));
+
+        const survivors = sim.colonies.filter(colony => colony.ants.length > 0 || colony.developingAnts.length > 0);
+        if (survivors.length <= 1) {
+          setWinner(survivors.length === 1 ? survivors[0].id : "draw");
+          setRunning(false);
+          render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+          return;
         }
-        const cutoff = now - 30_000;
-        foodTimestampsRef.current = foodTimestampsRef.current.filter(t => t > cutoff);
-        setFoodRate(foodTimestampsRef.current.length * 2);
+
+        if (manualControlRef.current && !sim.allAnts.some(ant => ant.id === watchedAntIdxRef.current)) {
+          setManualControl(false);
+        }
       }
       render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
       rafRef.current = requestAnimationFrame(loop);
@@ -1048,11 +1368,17 @@ export default function AntSim() {
 
   const stepsPerSec = Math.round(60 / framesPerTick);
   const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
-  const tankCells = Math.round(params.tankMax / (DEPOSIT_RATE * (CELL / V)));
   const loopPct = Math.round(loopRate * 100);
   const loopLabel = loopRate === 0 ? "None (tree)" : loopRate < 0.05 ? "Very few" : loopRate < 0.15 ? "Some" : loopRate < 0.3 ? "Many" : "Lots";
 
-  const totalCollected = colonyScores.reduce((a, b) => a + b, 0);
+  const doctrineAdoption = colonyParams.map((_, colonyId) => {
+    const colony = simRef.current?.colonies[colonyId];
+    if (!colony) return { adopted: 0, total: numAnts };
+    return {
+      adopted: colony.ants.filter(ant => ant.doctrineVersion === colony.doctrineVersion).length,
+      total: colony.ants.length,
+    };
+  });
 
   return (
     <div style={{
@@ -1070,84 +1396,86 @@ export default function AntSim() {
       boxSizing: "border-box",
     }}>
 
-      {/* Header: title + live stats */}
+      {/* Header */}
       <div style={{
         width: "100%",
         maxWidth: W,
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
+        justifyContent: "center",
         paddingTop: 4,
         gap: 8,
         flexWrap: "wrap",
       }}>
         <h1 style={{ fontSize: "clamp(1rem, 3.5vw, 1.35rem)", fontWeight: 700, letterSpacing: "0.04em", margin: 0, color: "#f59e0b" }}>
-          Ants in Maze
+          Ants in Maze · War mode
         </h1>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {numColonies === 1 ? (
-            <>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 5,
-                background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 20,
-                padding: "clamp(3px,0.4vw,5px) clamp(10px,1.5vw,14px)",
-              }}>
-                <span style={{ fontSize: "clamp(0.58rem,1.5vw,0.68rem)", opacity: 0.45, letterSpacing: "0.05em", textTransform: "uppercase" }}>food</span>
-                <span style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "2.5ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{totalCollected}</span>
-              </div>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 5,
-                background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 20,
-                padding: "clamp(3px,0.4vw,5px) clamp(10px,1.5vw,14px)",
-              }}>
-                <span style={{ fontSize: "clamp(0.58rem,1.5vw,0.68rem)", opacity: 0.45, letterSpacing: "0.05em", textTransform: "uppercase" }}>rate</span>
-                <span style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "6ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                  {foodRate > 0 ? `${foodRate}/min` : "—"}
-                </span>
-              </div>
-            </>
-          ) : (
-            colonyScores.map((score, ci) => (
-              <div key={ci} style={{
-                display: "flex", alignItems: "center", gap: 5,
-                background: "#1a1208", border: `1px solid ${COLONY_COLORS[ci].primary}55`, borderRadius: 20,
-                padding: "clamp(3px,0.4vw,5px) clamp(10px,1.5vw,14px)",
-              }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLONY_COLORS[ci].primary, flexShrink: 0 }} />
-                <span style={{ fontSize: "clamp(0.58rem,1.5vw,0.68rem)", opacity: 0.55, textTransform: "uppercase", letterSpacing: "0.05em" }}>C{ci + 1}</span>
-                <span style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: COLONY_COLORS[ci].primary, lineHeight: 1, minWidth: "2ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{score}</span>
-              </div>
-            ))
-          )}
-        </div>
       </div>
 
-      {/* Canvas */}
-      <div
-        ref={canvasWrapRef}
-        onPointerDown={handleCanvasPointerDown}
-        onPointerMove={handleCanvasPointerMove}
-        onPointerUp={handleCanvasPointerUp}
-        onPointerLeave={handleCanvasPointerLeave}
-        style={{
-          width: "100%",
-          maxWidth: W,
-          border: `2px solid ${editMode !== "none" ? "#f59e0b" : "#3d2e18"}`,
-          borderRadius: 8,
-          overflow: "hidden",
-          boxShadow: editMode !== "none" ? "0 0 40px rgba(245,158,11,0.35)" : "0 0 40px rgba(245,158,11,0.15)",
-          boxSizing: "border-box",
-          cursor: editMode !== "none" && !manualControl ? "crosshair" : "default",
-          transition: "border-color 0.2s, box-shadow 0.2s",
-          touchAction: editMode !== "none" ? "none" : "auto",
-        }}
-      >
-        <div style={{ width: W, height: H * canvasScale, overflow: "hidden" }}>
-          <div style={{ width: W, height: H, transform: `scale(${canvasScale})`, transformOrigin: "top left" }}>
-            <canvas ref={canvasRef} width={W} height={H} style={{ display: "block" }} />
+      {/* War arena: both live doctrine panels flank the maze */}
+      <div className="war-arena">
+        <aside className="war-side war-side-left">
+          <DoctrinePanel
+            colonyId={0}
+            doctrine={colonyParams[0]}
+            adopted={doctrineAdoption[0].adopted}
+            total={doctrineAdoption[0].total}
+            metrics={colonyMetrics[0] ?? emptyColonyMetrics()}
+            onChange={(key, value) => updateParam(0, key, value)}
+          />
+        </aside>
+
+        <div
+          ref={canvasWrapRef}
+          className="war-maze"
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerUp={handleCanvasPointerUp}
+          onPointerLeave={handleCanvasPointerLeave}
+          style={{
+            border: `2px solid ${editMode !== "none" ? "#f59e0b" : "#3d2e18"}`,
+            borderRadius: 8,
+            overflow: "hidden",
+            boxShadow: editMode !== "none" ? "0 0 40px rgba(245,158,11,0.35)" : "0 0 40px rgba(245,158,11,0.15)",
+            boxSizing: "border-box",
+            cursor: editMode !== "none" && !manualControl ? "crosshair" : "default",
+            transition: "border-color 0.2s, box-shadow 0.2s",
+            touchAction: editMode !== "none" ? "none" : "auto",
+          }}
+        >
+          <div style={{ width: W, height: H * canvasScale, overflow: "hidden" }}>
+            <div style={{ width: W, height: H, transform: `scale(${canvasScale})`, transformOrigin: "top left" }}>
+              <canvas ref={canvasRef} width={W} height={H} style={{ display: "block" }} />
+            </div>
           </div>
         </div>
+
+        <aside className="war-side war-side-right">
+          <DoctrinePanel
+            colonyId={1}
+            doctrine={colonyParams[1]}
+            adopted={doctrineAdoption[1].adopted}
+            total={doctrineAdoption[1].total}
+            metrics={colonyMetrics[1] ?? emptyColonyMetrics()}
+            onChange={(key, value) => updateParam(1, key, value)}
+          />
+        </aside>
       </div>
+
+      {winner !== null && (
+        <div style={{
+          width: "100%", maxWidth: 640, border: "1px solid #f59e0b", borderRadius: 12,
+          background: "#221604", padding: "16px 20px", textAlign: "center",
+          boxShadow: "0 0 32px rgba(245,158,11,0.18)",
+        }}>
+          <div style={{ color: winner === "draw" ? "#e5d5b5" : COLONY_COLORS[winner].primary, fontSize: "1.15rem", fontWeight: 800 }}>
+            {winner === "draw" ? "Both colonies were eliminated" : `Colony ${winner + 1} survives`}
+          </div>
+          <div style={{ color: "#a08060", fontSize: "0.75rem", marginTop: 5 }}>
+            The match is paused. Reset to begin another survival war.
+          </div>
+        </div>
+      )}
 
       {/* Edit toolbar — hidden in manual control mode */}
       {!manualControl && <div style={{
@@ -1412,18 +1740,8 @@ export default function AntSim() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
 
           <ControlCard
-            label="Number of colonies"
-            description="How many competing ant colonies share the maze. Each colony has its own nest (corner), pheromone trails, and score. Changing this regenerates the maze."
-            value={numColonies}
-            displayValue={numColonies === 1 ? "1 colony" : `${numColonies} colonies`}
-            min={1} max={4} step={1}
-            onChange={v => { setNumColonies(v); }}
-            style={{ flex: "1 1 270px" }}
-          />
-
-          <ControlCard
             label="Colony size"
-            description={`Number of ants per colony${numColonies > 1 ? ` (${numAnts * numColonies} total across ${numColonies} colonies)` : ""}. More ants find paths faster but can flood weak trails.`}
+            description={`Starting ants per colony${numColonies > 1 ? ` (${numAnts * numColonies} total across ${numColonies} colonies)` : ""}. Colonies can reproduce beyond this number. Changing it resets the match.`}
             value={numAnts}
             displayValue={`${numAnts} per colony`}
             min={1} max={100} step={1}
@@ -1457,83 +1775,6 @@ export default function AntSim() {
             onChange={v => { setFoodPerSource(v); }}
             style={{ flex: "1 1 270px" }}
           />
-
-        </div>
-      </div>
-
-      {/* ── Ant settings ───────────────────────────────────────────────────────── */}
-      <div style={{ width: "100%", maxWidth: 600 }}>
-        <p style={{ margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
-          Ant settings
-        </p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
-
-          <ParamCard
-            label="Evaporation rate"
-            description="How quickly pheromone trails fade away. Higher = trails vanish faster, forcing re-exploration. Lower = old paths persist, ants stay focused on established routes."
-            value={params.evapRate}
-            displayValue={`${(params.evapRate * 1000).toFixed(0)}‰ / step`}
-            min={0.001} max={0.02} step={0.001}
-            onChange={v => updateParam("evapRate", v)}
-          />
-
-          <ParamCard
-            label="Trail bias"
-            description="How strongly ants prefer stronger trails. Power 1 = nearly random exploration. Power 10 = ants almost always follow the most-travelled path."
-            value={params.trailPower}
-            displayValue={`power ${params.trailPower}`}
-            min={1} max={10} step={0.5}
-            onChange={v => updateParam("trailPower", v)}
-          />
-
-          <ParamCard
-            label="Gland size"
-            description="How much pheromone each ant can carry. Larger glands mark longer paths before running dry. Smaller glands mean only short routes get reinforced."
-            value={params.tankMax}
-            displayValue={`~${tankCells} cells`}
-            min={1600} max={16000} step={800}
-            onChange={v => updateParam("tankMax", v)}
-          />
-
-          {/* Cautionary pheromone toggle */}
-          <div style={{
-            background: "#0f0a04",
-            border: "1px solid #3d2e18",
-            borderRadius: 10,
-            padding: "14px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            flex: "1 1 270px",
-            minWidth: 0,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Cautionary</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>
-                {params.cautionary ? "on" : "off"}
-              </span>
-            </div>
-            <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-              Ants whose gland runs dry mark those cells red. Others avoid them, pruning routes too long to sustain.
-            </p>
-            <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
-              {([false, true] as const).map(val => (
-                <button
-                  key={String(val)}
-                  onClick={() => { updateParam("cautionary", val); }}
-                  style={{
-                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
-                    fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
-                    letterSpacing: "0.02em",
-                    background: params.cautionary === val ? "#f59e0b" : "transparent",
-                    color: params.cautionary === val ? "#000" : "#a08060",
-                  }}
-                >
-                  {val ? "On" : "Off"}
-                </button>
-              ))}
-            </div>
-          </div>
 
         </div>
       </div>
@@ -1579,7 +1820,7 @@ export default function AntSim() {
         {manualControl
           ? "You are one ant. The maze is vast. You smell pheromones but cannot see the whole picture."
           : numColonies > 1
-            ? "Each colony builds its own pheromone map. Food depletes as colonies compete — the fastest forager wins."
+            ? "Each colony must feed, refuel, and grow its population. When every living and developing ant is gone, the last surviving colony wins."
             : "Shorter paths win by completing more round-trips per unit time — pure stigmergy, no individual intelligence. Ant opacity shows remaining gland level."}
       </p>
     </div>

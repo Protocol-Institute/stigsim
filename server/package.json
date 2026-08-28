@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "war:start": "tsx war-index.ts",
+    "war:dev": "tsx watch war-index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:push": "drizzle-kit push"
   },

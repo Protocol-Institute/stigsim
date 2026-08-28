@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const outputDir = resolve("dist");
 const entryPage = resolve(outputDir, "index.html");
-const staticRoutes = ["infinite"];
+const staticRoutes = ["infinite", "multiplayer"];
 
 const entryHtml = await readFile(entryPage, "utf8");
 

@@ -2,7 +2,7 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "pnpm install --frozen-lockfile"
+    "buildCommand": "pnpm install --frozen-lockfile && pnpm build"
   },
   "deploy": {
     "numReplicas": 1,
@@ -11,7 +11,7 @@
         "numReplicas": 1
       }
     },
-    "startCommand": "pnpm --dir server start",
+    "startCommand": "pnpm --dir server war:start",
     "healthcheckPath": "/api/healthz",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
