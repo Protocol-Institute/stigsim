@@ -6,6 +6,7 @@ import {
   DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
   MetricsRecorder, metricsToCsv, RATE_WINDOW_TICKS,
   buildTrace, serializeTrace, traceFilename,
+  Replayer, parseTrace,
 } from "./sim";
 import type { SimParams, RunConfig, Command } from "./sim";
 import { render, COLONY_COLORS } from "./render";
@@ -219,6 +220,18 @@ export default function AntSim() {
   const runningRef = useRef(running);
   runningRef.current = running;
 
+  const replayRef = useRef<Replayer | null>(null);
+  const [replayState, setReplayState] = useState<
+    { tick: number; endTick: number; divergedAt: number | null } | null
+  >(null);
+  const [traceMessage, setTraceMessage] = useState<string | null>(null);
+  const [seekInput, setSeekInput] = useState("0");
+
+  const syncReplay = useCallback(() => {
+    const r = replayRef.current;
+    setReplayState(r ? { tick: r.tick, endTick: r.endTick, divergedAt: r.divergedAt } : null);
+  }, []);
+
   // Responsive canvas scaling
   useEffect(() => {
     const updateScale = () => {
@@ -250,6 +263,7 @@ export default function AntSim() {
   }, []);
 
   const send = useCallback((cmd: Command) => {
+    if (replayRef.current) return;
     const sim = simRef.current;
     if (!sim) return;
     sim.enqueue(cmd);
@@ -363,6 +377,7 @@ export default function AntSim() {
   }, [send]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    if (replayRef.current) return;
     if (editModeRef.current === "none" || viewModeRef.current !== "all") return;
     e.preventDefault();
     isDraggingRef.current = true;
@@ -375,6 +390,7 @@ export default function AntSim() {
   }, [cellFromPointer, applyEdit, forceRender]);
 
   const handleCanvasPointerMove = useCallback((e: React.PointerEvent) => {
+    if (replayRef.current) return;
     if (editModeRef.current === "none" || viewModeRef.current !== "all") return;
     const cell = cellFromPointer(e);
     hoverCellRef.current = cell;
@@ -426,6 +442,33 @@ export default function AntSim() {
     if (ctx && simRef.current) render(ctx, simRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
   }, []);
 
+  const enterReplay = useCallback((text: string) => {
+    const result = parseTrace(text);
+    if (!result.ok) {
+      setTraceMessage(result.error);
+      return;
+    }
+    setRunning(false);
+    setManualControl(false);
+    setEditMode("none");
+    cancelAnimationFrame(rafRef.current);
+    const r = new Replayer(result.trace);
+    replayRef.current = r;
+    simRef.current = r.sim;
+    setTraceMessage(result.warning ?? null);
+    syncReplay();
+    forceRender();
+  }, [forceRender, syncReplay]);
+
+  const exitReplay = useCallback(() => {
+    setRunning(false);
+    cancelAnimationFrame(rafRef.current);
+    replayRef.current = null;
+    setReplayState(null);
+    setTraceMessage(null);
+    initSim();
+  }, [initSim]);
+
   useEffect(() => { initSim(); }, [initSim]);
 
   // Reset when structure-level settings change
@@ -441,28 +484,38 @@ export default function AntSim() {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
     frameCountRef.current = 0;
     const loop = () => {
-      const sim = simRef.current;
       const ctx = canvasRef.current?.getContext("2d");
-      if (!sim || !ctx) return;
+      if (!ctx) return;
       frameCountRef.current++;
+
       if (frameCountRef.current >= framesPerTickRef.current) {
         frameCountRef.current = 0;
-        sim.step();
-        metricsRef.current.maybeSample(sim);
-        setColonyScores(sim.colonies.map(c => c.foodCollected));
-        const fp = sim.fingerprints[sim.fingerprints.length - 1];
-        if (fp) setLatestFingerprint(fp);
-        const latest = metricsRef.current.samples[metricsRef.current.samples.length - 1];
-        if (latest) {
-          setFoodRate(latest.colonies.reduce((a, c) => a + c.ratePerKTick, 0));
+        const replayer = replayRef.current;
+        if (replayer) {
+          const advanced = replayer.step();
+          simRef.current = replayer.sim;
+          syncReplay();
+          if (!advanced) setRunning(false);
+        } else {
+          const sim = simRef.current;
+          if (!sim) return;
+          sim.step();
+          metricsRef.current.maybeSample(sim);
+          setColonyScores(sim.colonies.map(c => c.foodCollected));
+          const fp = sim.fingerprints[sim.fingerprints.length - 1];
+          if (fp) setLatestFingerprint(fp);
+          const latest = metricsRef.current.samples[metricsRef.current.samples.length - 1];
+          if (latest) setFoodRate(latest.colonies.reduce((a, c) => a + c.ratePerKTick, 0));
         }
       }
-      render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+
+      const sim = simRef.current;
+      if (sim) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [running]);
+  }, [running, syncReplay]);
 
   useEffect(() => {
     const sim = simRef.current;
@@ -471,6 +524,7 @@ export default function AntSim() {
   }, [viewMode, watchedAntIdx]);
 
   const handleReset = () => {
+    if (replayRef.current) { exitReplay(); return; }
     setRunning(false);
     setManualControl(false);
     cancelAnimationFrame(rafRef.current);
@@ -609,7 +663,7 @@ export default function AntSim() {
                 setEditMode(prev => prev === mode ? "none" : mode);
                 hoverCellRef.current = null;
               }}
-              disabled={manualControl}
+              disabled={manualControl || replayState !== null}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "7px 14px",
@@ -618,8 +672,8 @@ export default function AntSim() {
                 background: active ? "#2a1a00" : "#0f0a04",
                 color: active ? "#f59e0b" : "#a08060",
                 fontSize: "0.78rem", fontWeight: 600,
-                cursor: manualControl ? "not-allowed" : "pointer",
-                opacity: manualControl ? 0.4 : 1,
+                cursor: (manualControl || replayState !== null) ? "not-allowed" : "pointer",
+                opacity: (manualControl || replayState !== null) ? 0.4 : 1,
                 transition: "border-color 0.15s, background 0.15s, color 0.15s",
                 userSelect: "none",
               }}
@@ -955,6 +1009,25 @@ export default function AntSim() {
             >
               Save trace
             </button>
+            <label
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+              }}
+            >
+              Load trace
+              <input
+                type="file"
+                accept=".json,application/json"
+                style={{ display: "none" }}
+                onChange={async e => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  enterReplay(await file.text());
+                }}
+              />
+            </label>
           </div>
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
             {seedInput.trim() === activeSeed
@@ -966,6 +1039,83 @@ export default function AntSim() {
               ? `tick ${latestFingerprint.t} · ${latestFingerprint.h}`
               : "tick 0 · no checkpoint yet"}
           </p>
+
+          {traceMessage && (
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#ff6b6b", lineHeight: 1.45 }}>
+              {traceMessage}
+            </p>
+          )}
+
+          {replayState && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: "0.75rem", color: "#a08060", fontFamily: "monospace" }}>
+                replay {replayState.tick} / {replayState.endTick}
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={replayState.endTick}
+                value={seekInput}
+                onChange={e => setSeekInput(e.target.value)}
+                aria-label="Seek to tick"
+                style={{
+                  width: 90, background: "#1a1208", color: "#e5d5b5",
+                  border: "1px solid #3d2e18", borderRadius: 6, padding: "4px 6px",
+                  fontFamily: "monospace", fontSize: "0.78rem",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const r = replayRef.current;
+                  if (!r) return;
+                  setRunning(false);
+                  r.seek(Number(seekInput) || 0);
+                  simRef.current = r.sim;
+                  syncReplay();
+                  forceRender();
+                }}
+                style={{
+                  background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                  borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: "0.78rem",
+                }}
+              >
+                Jump
+              </button>
+              {replayState.divergedAt !== null && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    replayRef.current?.continueAfterDivergence();
+                    syncReplay();
+                  }}
+                  style={{
+                    background: "#1a1208", color: "#ff6b6b", border: "1px solid #5a2e2e",
+                    borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: "0.78rem",
+                  }}
+                >
+                  Continue anyway
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={exitReplay}
+                style={{
+                  background: "#1a1208", color: "#a08060", border: "1px solid #3d2e18",
+                  borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: "0.78rem",
+                }}
+              >
+                Exit replay
+              </button>
+            </div>
+          )}
+
+          {replayState && replayState.divergedAt !== null && (
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#ff6b6b", lineHeight: 1.45 }}>
+              This replay diverged from the recording at tick {replayState.divergedAt}. Results after
+              this point are not the run that was recorded.
+            </p>
+          )}
         </div>
       </div>
 

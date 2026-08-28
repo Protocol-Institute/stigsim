@@ -22,7 +22,10 @@ pnpm build
 
 Stigsim has a standalone React/Vite simulator and an optional server-authoritative shared-world mode.
 
-- `src/AntSim.tsx` contains the simulation model and interface.
+- `src/sim/` contains the simulation core. It must not import React or touch
+  the DOM, so it can run headless.
+- `src/render.ts` draws a simulation to a canvas.
+- `src/AntSim.tsx` is the standalone simulator interface.
 - `src/App.tsx` is the application entry component.
 - `src/styles.css` contains global styles; most simulation-specific presentation lives with the simulator.
 - `public/` contains static site assets.
@@ -49,6 +52,21 @@ They must match. If they do not, something in `src/sim/` is relying on
 behaviour the ECMAScript specification leaves implementation-defined;
 `Math.pow`, `Math.log`, `Math.exp`, and the trigonometric functions are the
 usual causes, and none of them may be used to compute simulation state.
+
+## Traces
+
+A trace is one JSON file holding the run seeds, the initial configuration,
+every recorded intervention, periodic state fingerprints, and the metrics
+samples. Save one from the Run panel and load it back to replay the run
+exactly.
+
+`src/sim/fixtures/golden.trace.json` is replayed by `pnpm test:client` as a
+regression guard. If that test fails, simulation behaviour changed. The usual
+cause is a new mutation path that does not go through the command bus in
+`src/sim/commands.ts`; every way of changing a running simulation must be a
+command, or traces stop reproducing. If the change was deliberate, bump
+`SIM_VERSION` in `src/sim/trace.ts` and regenerate the fixture with
+`pnpm golden`.
 
 ## Project guidance
 
