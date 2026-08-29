@@ -1359,12 +1359,12 @@ export default function AntSim() {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>World</span>
-            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b" }}>
-              {worldKind}
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#f59e0b", textAlign: "right" }}>
+              {simRef.current?.worldDescription || worldKind}
             </span>
           </div>
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-A <strong style={{ color: "#e5d5b5" }}>kitchen</strong> is mostly open floor on a grid of grout lines that hold a trail, with a worktop and table reached at a few points, a tight dark run behind the units, a spill that takes no scent and a step that goes one way. A <strong style={{ color: "#e5d5b5" }}>forest</strong> has the same properties growing instead of tiled: roots branching from tree bases, a fallen log as a trunk route, a sunlit patch that bakes trails off, and a stream that carries bodies but no scent except where stones bridge it. A <strong style={{ color: "#e5d5b5" }}>maze</strong> is the old world — corridors one cell wide, where an ant's antennae span the whole passage and there is nothing to steer towards. <strong style={{ color: "#e5d5b5" }}>Changing this rebuilds the world.</strong>
+A <strong style={{ color: "#e5d5b5" }}>kitchen</strong> is mostly open floor with a run of units against one or more walls — a single run, a galley, an L, a U, or an island — and a worktop and table reached at a few points. The floor is tiled, boarded or bare lino, which decides whether trails have a grid of grout to follow, parallel lines with no cross-links, or nothing at all. Every seed is a different kitchen. A <strong style={{ color: "#e5d5b5" }}>forest</strong> has the same properties growing instead of tiled: roots branching from tree bases, a fallen log as a trunk route, a sunlit patch that bakes trails off, and a stream that carries bodies but no scent except where stones bridge it. A <strong style={{ color: "#e5d5b5" }}>maze</strong> is the old world — corridors one cell wide, where an ant's antennae span the whole passage and there is nothing to steer towards. <strong style={{ color: "#e5d5b5" }}>Changing this rebuilds the world.</strong>
           </p>
           <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
             {(["kitchen", "forest", "maze"] as WorldKind[]).map(kind => (

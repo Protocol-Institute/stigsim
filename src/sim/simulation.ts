@@ -189,6 +189,8 @@ export class Simulation {
   worldKind: WorldKind;
   /** Cells where food prefers to appear, from the generator. */
   crumbZones: [number, number][];
+  /** What the generator chose for this world, e.g. "ell kitchen, boards floor". */
+  worldDescription = "";
   grid: CellType[][];
   colonies: Colony[];
   foodSources: FoodSource[];
@@ -222,6 +224,7 @@ export class Simulation {
     this.grid = world.grid;
     this.terrain = world.terrain;
     this.crumbZones = world.crumbZones;
+    this.worldDescription = world.description;
     this._nestSites = world.nests;
     this.colonies = this._initColonies();
     this.foodSources = this._placeFoodSources();

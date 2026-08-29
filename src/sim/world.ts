@@ -39,6 +39,8 @@ export interface GeneratedWorld {
   nests: [number, number][];
   /** Where crumbs collect. Food prefers these. */
   crumbZones: [number, number][];
+  /** Human-readable summary of what the generator chose, for the UI and logs. */
+  description: string;
 }
 
 interface Rect { x: number; y: number; w: number; h: number }
@@ -286,161 +288,295 @@ function generateMazeGrid(cols: number, rows: number, rng: Rng, loopRate: number
   return grid;
 }
 
-// ─── The kitchen ─────────────────────────────────────────────────────────────
-
 /** A count that holds its density as the world resizes. */
 function perArea(cols: number, rows: number, cellsEach: number, least = 1): number {
   return Math.max(least, Math.round((cols * rows) / cellsEach));
 }
 
-function generateKitchen(cols: number, rows: number, rng: Rng): GeneratedWorld {
-  const grid = blankGrid(cols, rows);
-  const terrain = new TerrainLayer(cols, rows);
-  const crumbZones: [number, number][] = [];
-  const nests: [number, number][] = [];
+// ─── The kitchen ─────────────────────────────────────────────────────────────
 
-  // The room: everything inside the skirting is floor to begin with.
-  const room: Rect = { x: 1, y: 1, w: cols - 2, h: rows - 2 };
-  carveRect(grid, room);
+/** The same six surfaces, dressed for a kitchen. */
+const KITCHEN_SKIN: TerrainSkin = {
+  [Terrain.Plain]: { name: "Tile", blurb: "The face of a floor tile. Nothing special underfoot." },
+  [Terrain.Hardpan]: {
+    name: "Grout", blurb: "Grout, worktop, the top of the table. Hard, swept, and it holds a scent for a long time.",
+  },
+  [Terrain.Sand]: {
+    name: "Flour", blurb: "Spilled flour. Quick to cross and it takes the scent with it when it drifts.",
+  },
+  [Terrain.Mire]: {
+    name: "Spill", blurb: "Something sticky. You can walk it, but nothing you lay there stays.",
+  },
+  [Terrain.Undergrowth]: {
+    name: "Mat", blurb: "A dropped tea towel or a door mat. Slow going, but it shelters a trail.",
+  },
+  [Terrain.Loam]: {
+    name: "Crumbs", blurb: "Where crumbs collect — under the table, by the bin. Food appears here.",
+  },
+  [Terrain.Scarp]: {
+    name: "Step", blurb: "A step down. You can go down it and not back up.",
+  },
+};
 
-  // ── Grout. The floor is tiled, and the lines between tiles are harder and
-  // hold a trail far longer than the tile faces do. Ants find them and use
-  // them, which gives the open floor a structure without walling it off.
-  const tile = 7 + rng.int(3);
-  for (let x = room.x; x < room.x + room.w; x++) {
+/**
+ * How the units are arranged. Every real kitchen is one of these, and which
+ * one it is decides the shape of the floor more than anything else does.
+ */
+type KitchenPlan = "single" | "galley" | "ell" | "u" | "island";
+
+/**
+ * What the floor is finished in.
+ *
+ * This is the one that matters most for trails. Tile gives a grid of grout to
+ * follow; boards give parallel lines and no cross-links, so trails run with the
+ * grain and have to break across it; lino gives nothing at all and the colony
+ * is on its own in the open.
+ */
+type FloorFinish = "tile" | "bigTile" | "boards" | "lino";
+
+type Side = "top" | "bottom" | "left" | "right";
+
+/** Lay the floor. Hard lines hold a trail; a bare floor holds nothing. */
+function finishFloor(
+  terrain: TerrainLayer,
+  grid: CellType[][],
+  room: Rect,
+  finish: FloorFinish,
+  rng: Rng,
+) {
+  if (finish === "lino") return;
+
+  if (finish === "boards") {
+    const gap = 3 + rng.int(3);
+    const along = rng.chance(0.5);
     for (let y = room.y; y < room.y + room.h; y++) {
-      if ((x - room.x) % tile === 0 || (y - room.y) % tile === 0) {
+      for (let x = room.x; x < room.x + room.w; x++) {
+        const n = along ? y - room.y : x - room.x;
+        if (n % gap === 0 && grid[y][x] === 1) terrain.set(x, y, Terrain.Hardpan);
+      }
+    }
+    return;
+  }
+
+  const gap = finish === "bigTile" ? 11 + rng.int(6) : 5 + rng.int(4);
+  const ox = rng.int(gap), oy = rng.int(gap);
+  for (let y = room.y; y < room.y + room.h; y++) {
+    for (let x = room.x; x < room.x + room.w; x++) {
+      if (grid[y][x] !== 1) continue;
+      if ((x - room.x + ox) % gap === 0 || (y - room.y + oy) % gap === 0) {
         terrain.set(x, y, Terrain.Hardpan);
       }
     }
   }
+}
 
-  // ── The run of units along the top. Behind and beneath them is the tight,
-  // dark space where the maze belongs — at the edge, not across the whole room.
-  const unitDepth = Math.max(5, Math.floor(rows * 0.16));
-  const units: Rect = { x: 1, y: 1, w: cols - 2, h: unitDepth };
-  const backing = generateMazeGrid(units.w + 2, units.h + 2, rng, 0.16);
-  for (let y = 0; y < units.h; y++) {
-    for (let x = 0; x < units.w; x++) {
-      grid[units.y + y][units.x + x] = backing[y + 1]?.[x + 1] ?? 0;
+/**
+ * A run of units against a wall: dead space behind the kickboards, a wiped
+ * worktop along the outer edge, and a few gaps where appliances do not meet.
+ * Returns the gaps, which are where a nest can reach the floor.
+ */
+function unitRun(
+  grid: CellType[][],
+  terrain: TerrainLayer,
+  room: Rect,
+  side: Side,
+  depth: number,
+  rng: Rng,
+): [number, number][] {
+  const vertical = side === "left" || side === "right";
+  const rect: Rect = vertical
+    ? { x: side === "left" ? room.x : room.x + room.w - depth, y: room.y, w: depth, h: room.h }
+    : { x: room.x, y: side === "top" ? room.y : room.y + room.h - depth, w: room.w, h: depth };
+
+  // Dead space behind the units is the one place a maze belongs.
+  const backing = generateMazeGrid(rect.w + 2, rect.h + 2, rng, 0.16);
+  for (let y = 0; y < rect.h; y++) {
+    for (let x = 0; x < rect.w; x++) {
+      grid[rect.y + y][rect.x + x] = backing[y + 1]?.[x + 1] ?? 0;
     }
   }
-  paintRect(terrain, units, Terrain.Plain, grid);
 
-  // The worktop above the units: swept, hard, and reached only at the ends.
-  const top: Rect = { x: 1, y: 1, w: cols - 2, h: 2 };
-  carveRect(grid, top);
-  paintRect(terrain, top, Terrain.Hardpan, grid);
+  // The worktop: swept hard surface along the wall.
+  const topDepth = 2;
+  const worktop: Rect = vertical
+    ? { x: side === "left" ? rect.x : rect.x + rect.w - topDepth, y: rect.y, w: topDepth, h: rect.h }
+    : { x: rect.x, y: side === "top" ? rect.y : rect.y + rect.h - topDepth, w: rect.w, h: topDepth };
+  carveRect(grid, worktop);
+  paintRect(terrain, worktop, Terrain.Hardpan, grid);
 
-  // ── Gaps between appliances: a few narrow ways down from the units into the
-  // room. These are the chokepoints the whole floor has to funnel through.
-  const gapCount = perArea(cols, rows, 1_500, 3) + rng.int(3);
-  const gaps: number[] = [];
-  for (let i = 0; i < gapCount; i++) {
-    const gx = 3 + rng.int(cols - 6);
-    gaps.push(gx);
-    fillRect(grid, { x: gx, y: 1, w: 1 + rng.int(2), h: unitDepth + 1 }, 1);
+  // Gaps between appliances, down to the floor.
+  const span = vertical ? rect.h : rect.w;
+  const count = Math.max(2, Math.round(span / 18)) + rng.int(3);
+  const gaps: [number, number][] = [];
+  for (let i = 0; i < count; i++) {
+    const at = 2 + rng.int(Math.max(1, span - 4));
+    const wide = 1 + rng.int(2);
+    if (vertical) {
+      fillRect(grid, { x: rect.x, y: rect.y + at, w: rect.w, h: wide }, 1);
+      gaps.push([side === "left" ? rect.x + rect.w - 1 : rect.x, rect.y + at]);
+    } else {
+      fillRect(grid, { x: rect.x + at, y: rect.y, w: wide, h: rect.h }, 1);
+      gaps.push([rect.x + at, side === "top" ? rect.y + rect.h - 1 : rect.y]);
+    }
+  }
+  return gaps;
+}
+
+/** A plateau reached only at a few points: a table on legs, or an island. */
+function plateau(
+  grid: CellType[][],
+  terrain: TerrainLayer,
+  rect: Rect,
+  legs: number,
+  rng: Rng,
+) {
+  paintRect(terrain, rect, Terrain.Hardpan, grid);
+  fillRect(grid, { x: rect.x - 1, y: rect.y - 1, w: rect.w + 2, h: 1 }, 0);
+  fillRect(grid, { x: rect.x - 1, y: rect.y + rect.h, w: rect.w + 2, h: 1 }, 0);
+  fillRect(grid, { x: rect.x - 1, y: rect.y - 1, w: 1, h: rect.h + 2 }, 0);
+  fillRect(grid, { x: rect.x + rect.w, y: rect.y - 1, w: 1, h: rect.h + 2 }, 0);
+
+  const edge: [number, number][] = [];
+  for (let x = rect.x; x < rect.x + rect.w; x++) {
+    edge.push([x, rect.y - 1], [x, rect.y + rect.h]);
+  }
+  for (let y = rect.y; y < rect.y + rect.h; y++) {
+    edge.push([rect.x - 1, y], [rect.x + rect.w, y]);
+  }
+  rng.shuffle(edge);
+  for (const [lx, ly] of edge.slice(0, legs)) {
+    if (grid[ly]?.[lx] !== undefined) grid[ly][lx] = 1;
+  }
+}
+
+function generateKitchen(cols: number, rows: number, rng: Rng): GeneratedWorld {
+  const grid = blankGrid(cols, rows);
+  const terrain = new TerrainLayer(cols, rows, KITCHEN_SKIN);
+  const crumbZones: [number, number][] = [];
+  const nests: [number, number][] = [];
+
+  const room: Rect = { x: 1, y: 1, w: cols - 2, h: rows - 2 };
+  carveRect(grid, room);
+
+  // ── What kind of kitchen is this one. Plan decides the silhouette of the
+  // floor; finish decides whether trails have anything to follow across it.
+  const plan = rng.pick<KitchenPlan>(["single", "galley", "ell", "u", "island"]);
+  const finish = rng.pick<FloorFinish>(["tile", "tile", "tile", "bigTile", "boards", "lino"]);
+
+  finishFloor(terrain, grid, room, finish, rng);
+
+  const runDepth = Math.max(4, Math.round(rows * (0.11 + rng.next() * 0.09)));
+  const sideDepth = Math.max(4, Math.round(cols * (0.09 + rng.next() * 0.07)));
+
+  const sides: [Side, number][] = [["top", runDepth]];
+  if (plan === "galley") sides.push(["bottom", runDepth]);
+  if (plan === "ell") sides.push([rng.chance(0.5) ? "left" : "right", sideDepth]);
+  if (plan === "u") sides.push(["left", sideDepth], ["right", sideDepth]);
+
+  let gaps: [number, number][] = [];
+  for (const [side, depth] of sides) {
+    gaps = gaps.concat(unitRun(grid, terrain, room, side, depth, rng));
   }
 
-  // ── The counter along the left wall: a plateau, walled off from the floor
-  // except at a couple of places.
-  const counter: Rect = {
-    x: 1, y: unitDepth + 3,
-    w: Math.max(6, Math.floor(cols * 0.13)),
-    h: Math.floor(rows * 0.42),
+  // ── An island: units marooned in the middle, walked around rather than under.
+  if (plan === "island") {
+    const iw = Math.max(8, Math.round(cols * (0.2 + rng.next() * 0.14)));
+    const ih = Math.max(5, Math.round(rows * (0.14 + rng.next() * 0.12)));
+    const ix = Math.round(room.x + (room.w - iw) * (0.25 + rng.next() * 0.5));
+    const iy = Math.round(room.y + runDepth + (room.h - runDepth - ih - 2) * (0.2 + rng.next() * 0.6));
+    fillRect(grid, { x: ix, y: iy, w: iw, h: ih }, 0);
+    carveRect(grid, { x: ix, y: iy, w: iw, h: 2 });
+    paintRect(terrain, { x: ix, y: iy, w: iw, h: 2 }, Terrain.Hardpan, grid);
+  }
+
+  // ── A table, most of the time, somewhere it fits.
+  if (plan !== "island" || rng.chance(0.4)) {
+    const tw = Math.max(7, Math.round(cols * (0.16 + rng.next() * 0.14)));
+    const th = Math.max(5, Math.round(rows * (0.16 + rng.next() * 0.14)));
+    const tx = Math.round(room.x + 3 + rng.next() * Math.max(1, room.w - tw - 6));
+    const ty = Math.round(room.y + runDepth + 3 + rng.next() * Math.max(1, room.h - runDepth - th - 7));
+    plateau(grid, terrain, { x: tx, y: ty, w: tw, h: th }, 3 + rng.int(3), rng);
+
+    // Crumbs get swept off a table and end up under it.
+    for (let i = 0; i < 1 + rng.int(2); i++) {
+      const bx = tx + rng.int(tw), by = ty + th + 2 + rng.int(4);
+      if (grid[by]?.[bx] === 1) {
+        paintBlob(terrain, grid, bx, by, 2 + rng.int(2), Terrain.Loam, rng);
+        crumbZones.push([bx, by]);
+      }
+    }
+  }
+
+  // ── Anywhere on the open floor, rather than a reserved corner for each.
+  const floorCell = (): [number, number] | null => {
+    for (let tries = 0; tries < 80; tries++) {
+      const x = room.x + rng.int(room.w), y = room.y + runDepth + rng.int(Math.max(1, room.h - runDepth));
+      if (grid[y]?.[x] === 1) return [x, y];
+    }
+    return null;
   };
-  paintRect(terrain, counter, Terrain.Hardpan, grid);
-  const cwallX = counter.x + counter.w;
-  fillRect(grid, { x: cwallX, y: counter.y, w: 1, h: counter.h }, 0);
-  for (let i = 0; i < 2; i++) {
-    const gy = counter.y + 1 + rng.int(counter.h - 2);
-    fillRect(grid, { x: cwallX, y: gy, w: 1, h: 2 }, 1);
-  }
 
-  // ── The table: a plateau in the middle of the floor, standing on legs. The
-  // legs are the only way up, so traffic to it concentrates hard.
-  const table: Rect = {
-    x: Math.floor(cols * 0.45), y: Math.floor(rows * 0.34),
-    w: Math.max(10, Math.floor(cols * 0.24)), h: Math.max(8, Math.floor(rows * 0.28)),
-  };
-  paintRect(terrain, table, Terrain.Hardpan, grid);
-  fillRect(grid, { x: table.x - 1, y: table.y - 1, w: table.w + 2, h: 1 }, 0);
-  fillRect(grid, { x: table.x - 1, y: table.y + table.h, w: table.w + 2, h: 1 }, 0);
-  fillRect(grid, { x: table.x - 1, y: table.y - 1, w: 1, h: table.h + 2 }, 0);
-  fillRect(grid, { x: table.x + table.w, y: table.y - 1, w: 1, h: table.h + 2 }, 0);
-  for (const [lx, ly] of [
-    [table.x - 1, table.y + 1],
-    [table.x + table.w, table.y + table.h - 2],
-    [table.x + 2, table.y - 1],
-    [table.x + table.w - 3, table.y + table.h],
-  ] as [number, number][]) {
-    grid[ly][lx] = 1;
-  }
+  const spill = floorCell();
+  if (spill) paintBlob(terrain, grid, spill[0], spill[1], 3 + rng.int(5), Terrain.Mire, rng);
 
-  // Crumbs collect under the table and get swept into the corners.
-  for (let i = 0; i < 3; i++) {
-    const bx = table.x + rng.int(table.w);
-    const by = table.y + table.h + 2 + rng.int(4);
-    if (grid[by]?.[bx] === 1) {
-      paintBlob(terrain, grid, bx, by, 2 + rng.int(2), Terrain.Loam, rng);
-      crumbZones.push([bx, by]);
+  const mat = floorCell();
+  if (mat) paintBlob(terrain, grid, mat[0], mat[1], 3 + rng.int(4), Terrain.Undergrowth, rng);
+
+  if (rng.chance(0.75)) {
+    const step = floorCell();
+    if (step) {
+      const facing = rng.pick([Facing.North, Facing.South, Facing.East, Facing.West]);
+      const run = 6 + rng.int(Math.round(cols * 0.25));
+      const horizontal = facing === Facing.North || facing === Facing.South;
+      for (let i = 0; i < run; i++) {
+        const sx = step[0] + (horizontal ? i : 0);
+        const sy = step[1] + (horizontal ? 0 : i);
+        if (grid[sy]?.[sx] === 1) terrain.set(sx, sy, Terrain.Scarp, facing);
+      }
     }
   }
 
-  // Crumbs by the toaster, on the floor just below the units. A colony nesting
-  // in the skirting needs something within reach to get started on: the far
-  // side of a room-sized floor is a very long first foraging trip, and without
-  // a near source nothing ever gets off the ground.
-  for (let i = 0; i < 2; i++) {
-    const tx = 4 + rng.int(cols - 8);
-    const ty = unitDepth + 2 + rng.int(3);
-    if (grid[ty]?.[tx] === 1) {
-      paintBlob(terrain, grid, tx, ty, 2 + rng.int(2), Terrain.Loam, rng);
-      crumbZones.push([tx, ty]);
-    }
-  }
-
-  // ── A spill. Passable, and it will not hold a scent, so the floor has a hole
-  // in it as far as coordination is concerned.
-  const spillX = Math.floor(cols * 0.2) + rng.int(Math.floor(cols * 0.2));
-  const spillY = Math.floor(rows * 0.66) + rng.int(Math.floor(rows * 0.2));
-  paintBlob(terrain, grid, spillX, spillY, 4 + rng.int(4), Terrain.Mire, rng);
-
-  // ── The mat by the door: slow going, but it shelters what is laid on it.
-  const matX = cols - Math.floor(cols * 0.18);
-  const matY = Math.floor(rows * 0.72);
-  paintBlob(terrain, grid, matX, matY, 4 + rng.int(3), Terrain.Undergrowth, rng);
-
-  // ── The step down to the pantry, in the far corner. One way.
-  const stepY = rows - 4;
-  const stepX0 = Math.floor(cols * 0.62);
-  for (let x = stepX0; x < stepX0 + Math.floor(cols * 0.2); x++) {
-    if (grid[stepY]?.[x] === 1) terrain.set(x, stepY, Terrain.Scarp, Facing.South);
-  }
-
-  // A bin corner, where crumbs also gather.
-  const binX = cols - 5, binY = rows - 5;
-  if (grid[binY]?.[binX] === 1) {
-    paintBlob(terrain, grid, binX, binY, 3, Terrain.Loam, rng);
-    crumbZones.push([binX, binY]);
+  const bin = floorCell();
+  if (bin) {
+    paintBlob(terrain, grid, bin[0], bin[1], 2 + rng.int(3), Terrain.Loam, rng);
+    crumbZones.push(bin);
   }
 
   // ── Nests: cracks in the skirting, back among the units where it is dark.
-  for (const gx of rng.shuffle([...gaps])) {
+  for (const [gx, gy] of rng.shuffle([...gaps])) {
     const nx = Math.max(2, Math.min(cols - 3, gx));
-    for (let ny = 2; ny < unitDepth; ny++) {
-      if (grid[ny][nx] === 1) { nests.push([nx, ny]); break; }
-    }
+    const ny = Math.max(2, Math.min(rows - 3, gy));
+    if (grid[ny]?.[nx] === 1) nests.push([nx, ny]);
   }
   nests.push([2, 2], [cols - 3, 2], [2, rows - 3], [cols - 3, rows - 3]);
+
+  // ── Starter crumbs, placed against the nest rather than against the top run.
+  //
+  // A colony needs something within reach of wherever it actually nests. When
+  // these were pinned below the top units and the nest could be on any wall —
+  // which it can, now that a kitchen might be a galley, an L or a U — the two
+  // came uncoupled and half the layouts starved: foraging fell as low as three
+  // units where a matched pair returns well over a thousand.
+  const [nestX, nestY] = nests[0];
+  for (let i = 0; i < 2; i++) {
+    for (let tries = 0; tries < 60; tries++) {
+      const angle = rng.next() * Math.PI * 2;
+      const reach = 6 + rng.next() * 12;
+      const tx = Math.round(nestX + Math.cos(angle) * reach);
+      const ty = Math.round(nestY + Math.sin(angle) * reach);
+      if (grid[ty]?.[tx] !== 1) continue;
+      paintBlob(terrain, grid, tx, ty, 2 + rng.int(2), Terrain.Loam, rng);
+      crumbZones.push([tx, ty]);
+      break;
+    }
+  }
 
   const [startX, startY] = nests[0];
   grid[startY][startX] = 1;
   ensureConnected(grid, startX, startY);
 
-  return { grid, terrain, nests, crumbZones };
+  return { grid, terrain, nests, crumbZones, description: `${plan} kitchen, ${finish} floor` };
 }
-
 
 // ─── The forest floor ────────────────────────────────────────────────────────
 
@@ -586,7 +722,7 @@ function generateForest(cols: number, rows: number, rng: Rng): GeneratedWorld {
   grid[homeY][homeX] = 1;
   ensureConnected(grid, homeX, homeY);
 
-  return { grid, terrain, nests, crumbZones };
+  return { grid, terrain, nests, crumbZones, description: "forest floor" };
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
@@ -608,5 +744,5 @@ export function generateWorld(
   for (const [nx, ny] of nests) grid[ny][nx] = 1;
   ensureConnected(grid, 1, 1);
 
-  return { grid, terrain: new TerrainLayer(cols, rows), nests, crumbZones: [] };
+  return { grid, terrain: new TerrainLayer(cols, rows), nests, crumbZones: [], description: "maze" };
 }
