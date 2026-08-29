@@ -23,6 +23,7 @@ import {
   type SimParams,
 } from "./sim/simulation";
 import { randomSeed } from "./sim/rng";
+import { Terrain, TERRAIN, TERRAIN_BRUSHES } from "./sim/terrain";
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
 const VIEW_HALF = CELL * 1;
@@ -36,7 +37,7 @@ const COLONY_COLORS = [
 ];
 
 type ViewMode = "all" | "one";
-type EditMode = "none" | "wall" | "food";
+type EditMode = "none" | "wall" | "food" | "ground";
 
 function render(
   ctx: CanvasRenderingContext2D,
@@ -92,8 +93,10 @@ function render(
         ctx.fillRect(px, py, CELL, CELL);
         continue;
       }
-      ctx.fillStyle = "#2a1e0e";
+      const ground = sim.terrain.props(x, y);
+      ctx.fillStyle = ground.fill;
       ctx.fillRect(px, py, CELL, CELL);
+      if (ground.speckle) drawSpeckle(ctx, px, py, x, y, ground.speckle);
 
       const idx = y * COLS + x;
 
@@ -368,6 +371,31 @@ function IconReset({ size = 22 }: { size?: number }) {
   );
 }
 
+/**
+ * Texture a terrain cell with a few fixed specks.
+ *
+ * Surfaces are told apart by texture rather than by hue: pheromone is drawn
+ * over the ground at up to 0.6 alpha in saturated colony colours, and saturated
+ * ground would compete with the trails, which are the actual subject. Positions
+ * come from the cell's own coordinates so the pattern holds still between
+ * frames instead of boiling.
+ */
+function drawSpeckle(
+  ctx: CanvasRenderingContext2D,
+  px: number, py: number,
+  gx: number, gy: number,
+  color: string,
+) {
+  ctx.fillStyle = color;
+  let h = (gx * 73_856_093) ^ (gy * 19_349_663);
+  for (let i = 0; i < 3; i++) {
+    h = (h * 1_103_515_245 + 12_345) & 0x7fffffff;
+    const ox = (h >> 8) % CELL;
+    const oy = (h >> 16) % CELL;
+    ctx.fillRect(px + ox, py + oy, 2, 2);
+  }
+}
+
 // ─── Seed <-> URL ────────────────────────────────────────────────────────────
 const MAX_SEED_LENGTH = 32;
 
@@ -416,6 +444,9 @@ export default function AntSim() {
   const [numFoodSources, setNumFoodSources] = useState(DEFAULT_NUM_FOOD_SOURCES);
   const [foodPerSource, setFoodPerSource] = useState(DEFAULT_FOOD_PER_SOURCE);
   const [editMode, setEditMode] = useState<EditMode>("none");
+  const [brush, setBrush] = useState<Terrain>(Terrain.Hardpan);
+  const brushRef = useRef<Terrain>(brush);
+  brushRef.current = brush;
   const editModeRef = useRef<EditMode>("none");
   editModeRef.current = editMode;
   const hoverCellRef = useRef<{ x: number; y: number } | null>(null);
@@ -573,6 +604,10 @@ export default function AntSim() {
           }
         }
       }
+    } else if (mode === "ground") {
+      // Ground is painted on open floor only; rock has no surface to speak of.
+      if (sim.grid[gy][gx] === 0) return;
+      sim.paintTerrain(gx, gy, brushRef.current);
     } else if (mode === "food") {
       const isWall = sim.grid[gy][gx] === 0;
       const isNest = sim.colonies.some(c => c.nestX === gx && c.nestY === gy);
@@ -863,6 +898,7 @@ export default function AntSim() {
         {([
           { mode: "wall" as EditMode, icon: "🧱", label: "Walls", tip: "Click walls to open them · click paths to wall them · drag to paint" },
           { mode: "food" as EditMode, icon: "🍎", label: "Food", tip: "Click open cells to place food · click existing food to remove it" },
+          { mode: "ground" as EditMode, icon: "🪨", label: "Ground", tip: "Paint the surface ants walk on · drag to paint" },
         ]).map(({ mode, icon, label, tip }) => {
           const active = editMode === mode;
           return (
@@ -895,11 +931,47 @@ export default function AntSim() {
             </button>
           );
         })}
+        {editMode === "ground" && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+            {TERRAIN_BRUSHES.map(t => {
+              const props = TERRAIN[t];
+              const active = brush === t;
+              return (
+                <button
+                  key={t}
+                  title={props.blurb}
+                  onClick={() => setBrush(t)}
+                  aria-pressed={active}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "5px 10px",
+                    borderRadius: 7,
+                    border: `1px solid ${active ? "#f59e0b" : "#3d2e18"}`,
+                    background: active ? "#2a1a00" : "#0f0a04",
+                    color: active ? "#f59e0b" : "#a08060",
+                    fontSize: "0.72rem", fontWeight: 600,
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  <span style={{
+                    width: 12, height: 12, borderRadius: 3, flexShrink: 0,
+                    background: props.fill,
+                    border: `1px solid ${props.speckle ?? "#3d2e18"}`,
+                  }} />
+                  {props.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {editMode !== "none" && (
           <span style={{ fontSize: "0.68rem", color: "#6b5a3e", marginLeft: 4 }}>
             {editMode === "wall"
               ? "Green = open wall · Red = close path · drag to paint"
-              : "Green = place food · Red = remove food"}
+              : editMode === "ground"
+                ? `Painting ${TERRAIN[brush].name.toLowerCase()} · drag to paint`
+                : "Green = place food · Red = remove food"}
           </span>
         )}
       </div>}

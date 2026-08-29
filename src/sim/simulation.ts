@@ -27,6 +27,7 @@ import {
   WANDER,
 } from "./constants";
 import { normalizeAngle, sampleField, splatDeposit } from "./field";
+import { Terrain, TerrainLayer } from "./terrain";
 
 export interface SimParams {
   evapRate: number;
@@ -200,6 +201,7 @@ export class Simulation {
   foodSources: FoodSource[];
   seed: string;
   rng: Rng;
+  terrain: TerrainLayer;
   tick = 0;
   foodMemory = new SiteMemory();
 
@@ -220,6 +222,7 @@ export class Simulation {
     this.foodPerSource = foodPerSource;
     this.seed = seed;
     this.rng = new Rng(seed);
+    this.terrain = new TerrainLayer(COLS, ROWS);
     this.grid = generateMaze(this.rng, loopRate);
     this.colonies = this._initColonies();
     this.foodSources = this._placeFoodSources();
@@ -321,6 +324,14 @@ export class Simulation {
     return this.colonies.reduce((s, c) => s + c.foodCollected, 0);
   }
 
+  /** Whether any loam has been painted, which confines food growth to it. */
+  get hasLoam(): boolean {
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) if (this.terrain.at(x, y) === Terrain.Loam) return true;
+    }
+    return false;
+  }
+
   /** Total food units still standing in the maze. */
   get standingFoodUnits(): number {
     return this.foodSources.reduce((sum, source) => sum + source.remaining, 0);
@@ -339,7 +350,10 @@ export class Simulation {
         memory: this.foodMemory.entries,
         canPlaceAt: (x, y) =>
           this.grid[y][x] === 1 &&
-          !this.colonies.some(c => c.nestX === x && c.nestY === y),
+          !this.colonies.some(c => c.nestX === x && c.nestY === y) &&
+          // Once any loam exists, food grows only there — the grove becomes a
+          // place on the map rather than a habit of the spawner.
+          (!this.hasLoam || this.terrain.at(x, y) === Terrain.Loam),
       },
       mazeFoodSpawnConfig(this.numFoodSources, this.foodPerSource),
       () => this.rng.next(),
@@ -360,12 +374,24 @@ export class Simulation {
   step() {
     this.tick++;
     if (this.params.replenish && isSpawnTick(this.tick, MAZE_FOOD_SPAWN)) this._growFood();
-    const decay = 1 - this.params.evapRate;
+    // Ground decides how well it remembers. Where nothing has been painted the
+    // whole field shares one decay factor, which is both faster and exactly the
+    // old behaviour.
+    const decay = this._decayFactors();
     for (const colony of this.colonies) {
-      for (let i = 0; i < colony.homePhero.length; i++) {
-        colony.homePhero[i] *= decay;
-        colony.foodPhero[i] *= decay;
-        colony.cautPhero[i] *= decay;
+      if (typeof decay === "number") {
+        for (let i = 0; i < colony.homePhero.length; i++) {
+          colony.homePhero[i] *= decay;
+          colony.foodPhero[i] *= decay;
+          colony.cautPhero[i] *= decay;
+        }
+      } else {
+        for (let i = 0; i < colony.homePhero.length; i++) {
+          const d = decay[i];
+          colony.homePhero[i] *= d;
+          colony.foodPhero[i] *= d;
+          colony.cautPhero[i] *= d;
+        }
       }
       this._seedNest(colony);
       // Re-seed discovered food sources that still have food
@@ -377,6 +403,44 @@ export class Simulation {
       }
       for (const ant of colony.ants) this._moveAnt(ant, colony);
     }
+  }
+
+  /**
+   * Per-cell decay multipliers, or a single number when the world is plain.
+   *
+   * Rebuilt only when the painted terrain changes: this is a per-cell array
+   * over the whole grid and recomputing it every step would cost more than the
+   * decay it feeds.
+   */
+  private _decayCache: { evapRate: number; version: number; factors: Float32Array } | null = null;
+
+  private _decayFactors(): number | Float32Array {
+    const { evapRate } = this.params;
+    if (this.terrain.isEmpty) return 1 - evapRate;
+
+    const version = this.terrainVersion;
+    if (this._decayCache?.evapRate !== evapRate || this._decayCache.version !== version) {
+      const factors = new Float32Array(COLS * ROWS);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          // Ground that forgets faster multiplies the rate, not the survivor,
+          // and the result is clamped so no surface can drive it negative.
+          const rate = Math.min(1, evapRate * this.terrain.props(x, y).evap);
+          factors[y * COLS + x] = 1 - rate;
+        }
+      }
+      this._decayCache = { evapRate, version, factors };
+    }
+    return this._decayCache.factors;
+  }
+
+  /** Bumped whenever terrain is painted, to invalidate the decay cache. */
+  terrainVersion = 0;
+
+  paintTerrain(cx: number, cy: number, terrain: Terrain) {
+    if (this.terrain.at(cx, cy) === terrain) return;
+    this.terrain.set(cx, cy, terrain);
+    this.terrainVersion++;
   }
 
   /** Whether a cell is inside the maze and walkable. */
@@ -438,8 +502,9 @@ export class Simulation {
    * Returns the distance actually travelled.
    */
   private _advance(ant: Ant): number {
-    const stepX = Math.cos(ant.heading) * V;
-    const stepY = Math.sin(ant.heading) * V;
+    const speed = V * this.terrain.props(ant.cx, ant.cy).speed;
+    const stepX = Math.cos(ant.heading) * speed;
+    const stepY = Math.sin(ant.heading) * speed;
     const fromX = ant.x, fromY = ant.y;
 
     const tryMove = (nx: number, ny: number): boolean => {
@@ -469,7 +534,11 @@ export class Simulation {
     if (distance <= 0) return;
 
     const field = ant.state === "searching" ? colony.homePhero : colony.foodPhero;
-    const wanted = distance * DEPOSIT_PER_PX;
+    // Deposit is per unit distance, so slow ground does not earn a stronger
+    // trail. What ground does change is how much of the mark it keeps: mire
+    // takes almost nothing, so no trail can be built across it.
+    const wanted = distance * DEPOSIT_PER_PX * this.terrain.props(ant.cx, ant.cy).adhesion;
+    if (wanted <= 0) return;
 
     if (ant.tank > 0) {
       const amount = Math.min(ant.tank, wanted);
