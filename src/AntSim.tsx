@@ -732,6 +732,26 @@ function IconReset({ size = 22 }: { size?: number }) {
   );
 }
 
+// ─── Seed <-> URL ────────────────────────────────────────────────────────────
+const MAX_SEED_LENGTH = 32;
+
+/** The seed named by `?seed=`, or a fresh one when the URL does not name a run. */
+function initialSeed(): string {
+  const fromUrl = new URLSearchParams(window.location.search).get("seed")?.trim();
+  return fromUrl ? fromUrl.slice(0, MAX_SEED_LENGTH) : randomSeed();
+}
+
+/**
+ * Keep the address bar pointing at the run on screen, so it can be copied and
+ * handed to someone else. replaceState rather than pushState: re-rolling the
+ * seed a dozen times should not bury the previous page under a dozen entries.
+ */
+function writeSeedToUrl(seed: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("seed", seed);
+  window.history.replaceState(null, "", url);
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────
 export default function AntSim() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -752,6 +772,8 @@ export default function AntSim() {
   const [watchedAntIdx, setWatchedAntIdx] = useState(0);
   const [manualControl, setManualControl] = useState(false);
   const [loopRate, setLoopRate] = useState(0.1);
+  const [seed, setSeed] = useState(initialSeed);
+  const [seedDraft, setSeedDraft] = useState(seed);
   const [numColonies, setNumColonies] = useState(DEFAULT_NUM_COLONIES);
   const [numFoodSources, setNumFoodSources] = useState(DEFAULT_NUM_FOOD_SOURCES);
   const [foodPerSource, setFoodPerSource] = useState(DEFAULT_FOOD_PER_SOURCE);
@@ -780,6 +802,8 @@ export default function AntSim() {
   manualControlRef.current = manualControl;
   const loopRateRef = useRef(loopRate);
   loopRateRef.current = loopRate;
+  const seedRef = useRef(seed);
+  seedRef.current = seed;
   const numColoniesRef = useRef(numColonies);
   numColoniesRef.current = numColonies;
   const numFoodSourcesRef = useRef(numFoodSources);
@@ -970,6 +994,14 @@ export default function AntSim() {
     forceRender();
   }, [forceRender]);
 
+  // Commit the seed box on blur or Enter rather than on every keystroke, so
+  // typing a seed does not regenerate the maze once per character.
+  const applySeedDraft = () => {
+    const next = seedDraft.trim().slice(0, MAX_SEED_LENGTH);
+    if (!next) { setSeedDraft(seed); return; }
+    if (next !== seed) setSeed(next);
+  };
+
   const updateParam = <K extends keyof SimParams>(key: K, value: SimParams[K]) => {
     setParams(p => ({ ...p, [key]: value }));
   };
@@ -982,6 +1014,7 @@ export default function AntSim() {
       numColoniesRef.current,
       numFoodSourcesRef.current,
       foodPerSourceRef.current,
+      seedRef.current,
     );
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
@@ -1007,7 +1040,12 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource]);
+  }, [loopRate, numColonies, numFoodSources, foodPerSource, seed]);
+
+  useEffect(() => {
+    setSeedDraft(seed);
+    writeSeedToUrl(seed);
+  }, [seed]);
 
   useEffect(() => {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
@@ -1577,6 +1615,73 @@ export default function AntSim() {
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#6b5a3e" }}>
             <span>0% — tree maze</span>
             <span>50% — many loops</span>
+          </div>
+        </div>
+
+        {/* Seed */}
+        <div style={{
+          background: "#0f0a04",
+          border: "1px solid #3d2e18",
+          borderRadius: 10,
+          padding: "14px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          marginTop: 10,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Seed</span>
+            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>
+              {seed}
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+            Every random choice in the run — the maze, where food lands, which way each ant turns — comes from this seed. The same seed and the same settings replay the same run exactly, so a difference between two runs is the setting you changed and not luck. The address bar tracks the seed, so copying the link hands someone your exact run. <strong style={{ color: "#e5d5b5" }}>Changing this regenerates the maze.</strong>
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+            <input
+              type="text"
+              value={seedDraft}
+              maxLength={MAX_SEED_LENGTH}
+              spellCheck={false}
+              autoComplete="off"
+              aria-label="Simulation seed"
+              onChange={e => setSeedDraft(e.target.value)}
+              onBlur={() => applySeedDraft()}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); applySeedDraft(); (e.target as HTMLInputElement).blur(); } }}
+              style={{
+                flex: "1 1 auto",
+                minWidth: 0,
+                background: "#1a1208",
+                border: "1px solid #3d2e18",
+                borderRadius: 8,
+                padding: "8px 10px",
+                color: "#e5d5b5",
+                fontSize: "0.85rem",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                letterSpacing: "0.04em",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setSeed(randomSeed())}
+              title="Start a new run with a fresh seed"
+              style={{
+                flexShrink: 0,
+                background: "#1a1208",
+                border: "1px solid #3d2e18",
+                borderRadius: 8,
+                padding: "8px 14px",
+                color: "#f59e0b",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              New seed
+            </button>
           </div>
         </div>
       </div>
