@@ -160,3 +160,59 @@ test("the layer covers the maze", () => {
   assert.equal(sim.terrain.cols, COLS);
   assert.equal(sim.terrain.rows, ROWS);
 });
+
+/**
+ * A symmetric world: two corridors of equal length joining the nest at (1,1)
+ * to a food source at (25,8). Anything that makes a colony prefer one over the
+ * other has to come from the ground, because the geometry is a mirror.
+ */
+function twoCorridorWorld(seed: string): Simulation {
+  const sim = new Simulation(30, { ...DEFAULT_PARAMS }, 0, 1, 1, 5_000, seed);
+
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) sim.grid[y][x] = 0;
+  const open = (x: number, y: number) => { sim.grid[y][x] = 1; };
+
+  for (let y = 1; y <= 13; y++) { open(1, y); open(25, y); }   // end spines
+  for (let x = 1; x <= 25; x++) { open(x, 3); open(x, 13); }   // the two routes
+  open(1, 1);                                                   // nest
+  for (let y = 1; y <= 3; y++) open(1, y);
+
+  sim.foodSources = [{ x: 25, y: 8, remaining: 5_000, total: 5_000 }];
+  return sim;
+}
+
+/** Total pheromone laid along one corridor row. */
+function rowTotal(sim: Simulation, y: number): number {
+  const colony = sim.colonies[0];
+  let total = 0;
+  for (let x = 2; x <= 24; x++) {
+    total += colony.homePhero[y * COLS + x] + colony.foodPhero[y * COLS + x];
+  }
+  return total;
+}
+
+test("with two equal routes, neither is preferred without a reason", () => {
+  let topWins = 0;
+  for (const seed of ["a", "b", "c", "d", "e", "f"]) {
+    const sim = twoCorridorWorld(seed);
+    for (let i = 0; i < 3_000; i++) sim.step();
+    if (rowTotal(sim, 3) > rowTotal(sim, 13)) topWins++;
+  }
+  assert.ok(topWins > 0 && topWins < 6, `symmetric world favoured one route ${topWins}/6 times`);
+});
+
+test("colonies route around mire even when the way through is no longer", () => {
+  let avoided = 0;
+  const seeds = ["a", "b", "c", "d", "e", "f"];
+
+  for (const seed of seeds) {
+    const sim = twoCorridorWorld(seed);
+    for (let x = 2; x <= 24; x++) sim.paintTerrain(x, 3, Terrain.Mire);
+    for (let i = 0; i < 3_000; i++) sim.step();
+
+    // The clear corridor should carry the trail; the mire cannot hold one.
+    if (rowTotal(sim, 13) > rowTotal(sim, 3)) avoided++;
+  }
+
+  assert.equal(avoided, seeds.length, `clear route won ${avoided}/${seeds.length} times`);
+});
