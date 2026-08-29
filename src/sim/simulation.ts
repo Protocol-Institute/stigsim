@@ -27,7 +27,7 @@ import {
   WANDER,
 } from "./constants";
 import { normalizeAngle, sampleField, splatDeposit } from "./field";
-import { Terrain, TerrainLayer } from "./terrain";
+import { Facing, Terrain, TerrainLayer } from "./terrain";
 
 export interface SimParams {
   evapRate: number;
@@ -437,15 +437,25 @@ export class Simulation {
   /** Bumped whenever terrain is painted, to invalidate the decay cache. */
   terrainVersion = 0;
 
-  paintTerrain(cx: number, cy: number, terrain: Terrain) {
-    if (this.terrain.at(cx, cy) === terrain) return;
-    this.terrain.set(cx, cy, terrain);
+  paintTerrain(cx: number, cy: number, terrain: Terrain, facing: Facing = Facing.East) {
+    if (this.terrain.at(cx, cy) === terrain && this.terrain.facingAt(cx, cy) === facing) return;
+    this.terrain.set(cx, cy, terrain, facing);
     this.terrainVersion++;
   }
 
   /** Whether a cell is inside the maze and walkable. */
   isOpen(cx: number, cy: number): boolean {
     return cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && this.grid[cy][cx] === 1;
+  }
+
+  /**
+   * Whether a cell may be entered while travelling in direction (dx, dy).
+   *
+   * Identical to isOpen everywhere except a scarp, which admits movement only
+   * in the direction it falls.
+   */
+  canEnter(cx: number, cy: number, dx: number, dy: number): boolean {
+    return this.isOpen(cx, cy) && this.terrain.canCross(cx, cy, dx, dy);
   }
 
   /** Field value at a point, blended across the cells around it. */
@@ -473,7 +483,7 @@ export class Simulation {
       const px = ant.x + Math.cos(angle) * sensorDist;
       const py = ant.y + Math.sin(angle) * sensorDist;
       const cx = Math.floor(px / CELL), cy = Math.floor(py / CELL);
-      if (!this.isOpen(cx, cy)) return 0;
+      if (!this.canEnter(cx, cy, Math.cos(angle), Math.sin(angle))) return 0;
 
       const trail = Math.pow(this._sense(field, px, py) + 1, trailPower);
       const caution = cautionary
@@ -507,17 +517,17 @@ export class Simulation {
     const stepY = Math.sin(ant.heading) * speed;
     const fromX = ant.x, fromY = ant.y;
 
-    const tryMove = (nx: number, ny: number): boolean => {
-      if (!this.isOpen(Math.floor(nx / CELL), Math.floor(ny / CELL))) return false;
+    const tryMove = (nx: number, ny: number, dx: number, dy: number): boolean => {
+      if (!this.canEnter(Math.floor(nx / CELL), Math.floor(ny / CELL), dx, dy)) return false;
       ant.x = nx; ant.y = ny;
       return true;
     };
 
-    if (!tryMove(ant.x + stepX, ant.y + stepY)) {
+    if (!tryMove(ant.x + stepX, ant.y + stepY, stepX, stepY)) {
       // Blocked head-on: keep whichever component still fits.
-      if (tryMove(ant.x + stepX, ant.y)) {
+      if (tryMove(ant.x + stepX, ant.y, stepX, 0)) {
         ant.heading = stepX > 0 ? 0 : Math.PI;
-      } else if (tryMove(ant.x, ant.y + stepY)) {
+      } else if (tryMove(ant.x, ant.y + stepY, 0, stepY)) {
         ant.heading = stepY > 0 ? Math.PI / 2 : -Math.PI / 2;
       } else {
         // Cornered. Turn around and spend the step doing it.

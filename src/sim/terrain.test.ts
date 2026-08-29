@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Terrain, TerrainLayer, TERRAIN, TERRAIN_BRUSHES } from "./terrain";
+import { Facing, Terrain, TerrainLayer, TERRAIN, TERRAIN_BRUSHES } from "./terrain";
 import { DEFAULT_PARAMS, Simulation } from "./simulation";
 import { COLS, ROWS } from "./constants";
 
@@ -215,4 +215,49 @@ test("colonies route around mire even when the way through is no longer", () => 
   }
 
   assert.equal(avoided, seeds.length, `clear route won ${avoided}/${seeds.length} times`);
+});
+
+test("a scarp admits movement only in the direction it falls", () => {
+  const layer = new TerrainLayer(8, 8);
+  layer.set(4, 4, Terrain.Scarp, Facing.East);
+
+  assert.equal(layer.canCross(4, 4, 1, 0), true, "downhill");
+  assert.equal(layer.canCross(4, 4, -1, 0), false, "uphill");
+  assert.equal(layer.canCross(4, 4, 1, 0.5), true, "mostly downhill still crosses");
+  assert.equal(layer.canCross(4, 4, 0, 1), false, "across the face does not");
+
+  layer.set(4, 4, Terrain.Scarp, Facing.North);
+  assert.equal(layer.canCross(4, 4, 0, -1), true);
+  assert.equal(layer.canCross(4, 4, 0, 1), false);
+});
+
+test("ground that is not a scarp is crossable from anywhere", () => {
+  const layer = new TerrainLayer(8, 8);
+  layer.set(2, 2, Terrain.Mire);
+
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    assert.equal(layer.canCross(2, 2, dx, dy), true);
+    assert.equal(layer.canCross(5, 5, dx, dy), true, "and so is plain ground");
+  }
+});
+
+test("ants cannot walk up a scarp", () => {
+  const sim = new Simulation(20, { ...DEFAULT_PARAMS }, 0, 1, 1, 500, "scarp");
+
+  // A single east-west corridor with a one-way step partway along it.
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) sim.grid[y][x] = 0;
+  for (let x = 1; x <= 20; x++) sim.grid[1][x] = 1;
+  sim.foodSources = [];
+  for (let x = 10; x <= 11; x++) sim.paintTerrain(x, 1, Terrain.Scarp, Facing.East);
+
+  for (let i = 0; i < 4_000; i++) sim.step();
+
+  // The nest is at x=1, west of the scarp. Ants may pass east over it and can
+  // never come back, so all of them end up beyond it.
+  const west = sim.colonies[0].ants.filter(a => a.cx < 10).length;
+  const east = sim.colonies[0].ants.filter(a => a.cx > 11).length;
+
+  assert.ok(east > 0, "some ants crossed the scarp");
+  assert.equal(west + east, sim.colonies[0].ants.length, "none are stuck inside it");
+  assert.equal(west, 0, `${west} ants climbed back up a one-way scarp`);
 });

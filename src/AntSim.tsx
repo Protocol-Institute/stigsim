@@ -23,7 +23,7 @@ import {
   type SimParams,
 } from "./sim/simulation";
 import { randomSeed } from "./sim/rng";
-import { Terrain, TERRAIN, TERRAIN_BRUSHES } from "./sim/terrain";
+import { Facing, FACING_NAMES, FACINGS, FACING_VECTORS, Terrain, TERRAIN, TERRAIN_BRUSHES } from "./sim/terrain";
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
 const VIEW_HALF = CELL * 1;
@@ -97,6 +97,9 @@ function render(
       ctx.fillStyle = ground.fill;
       ctx.fillRect(px, py, CELL, CELL);
       if (ground.speckle) drawSpeckle(ctx, px, py, x, y, ground.speckle);
+      if (sim.terrain.at(x, y) === Terrain.Scarp) {
+        drawScarp(ctx, px, py, sim.terrain.facingAt(x, y));
+      }
 
       const idx = y * COLS + x;
 
@@ -396,6 +399,27 @@ function drawSpeckle(
   }
 }
 
+/** Mark which way a scarp falls: chevrons pointing downhill. */
+function drawScarp(ctx: CanvasRenderingContext2D, px: number, py: number, facing: Facing) {
+  const [fx, fy] = FACING_VECTORS[facing];
+  const cx = px + CELL / 2, cy = py + CELL / 2;
+  // Perpendicular to the fall, so the chevron opens across the face.
+  const wx = -fy, wy = fx;
+
+  ctx.strokeStyle = "rgba(226,214,226,0.55)";
+  ctx.lineWidth = 1.25;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const lead of [-3, 2]) {
+    const tipX = cx + fx * (lead + 3), tipY = cy + fy * (lead + 3);
+    ctx.beginPath();
+    ctx.moveTo(tipX - fx * 3 + wx * 3.5, tipY - fy * 3 + wy * 3.5);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(tipX - fx * 3 - wx * 3.5, tipY - fy * 3 - wy * 3.5);
+    ctx.stroke();
+  }
+}
+
 // ─── Seed <-> URL ────────────────────────────────────────────────────────────
 const MAX_SEED_LENGTH = 32;
 
@@ -447,6 +471,9 @@ export default function AntSim() {
   const [brush, setBrush] = useState<Terrain>(Terrain.Hardpan);
   const brushRef = useRef<Terrain>(brush);
   brushRef.current = brush;
+  const [facing, setFacing] = useState<Facing>(Facing.East);
+  const facingRef = useRef<Facing>(facing);
+  facingRef.current = facing;
   const editModeRef = useRef<EditMode>("none");
   editModeRef.current = editMode;
   const hoverCellRef = useRef<{ x: number; y: number } | null>(null);
@@ -607,7 +634,7 @@ export default function AntSim() {
     } else if (mode === "ground") {
       // Ground is painted on open floor only; rock has no surface to speak of.
       if (sim.grid[gy][gx] === 0) return;
-      sim.paintTerrain(gx, gy, brushRef.current);
+      sim.paintTerrain(gx, gy, brushRef.current, facingRef.current);
     } else if (mode === "food") {
       const isWall = sim.grid[gy][gx] === 0;
       const isNest = sim.colonies.some(c => c.nestX === gx && c.nestY === gy);
@@ -963,6 +990,29 @@ export default function AntSim() {
                 </button>
               );
             })}
+          </div>
+        )}
+        {editMode === "ground" && brush === Terrain.Scarp && (
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <span style={{ fontSize: "0.68rem", color: "#6b5a3e" }}>falls</span>
+            {FACINGS.map(f => (
+              <button
+                key={f}
+                onClick={() => setFacing(f)}
+                aria-pressed={facing === f}
+                title={`Scarp falls ${FACING_NAMES[f].toLowerCase()} — ants may cross only that way`}
+                style={{
+                  width: 28, height: 28, borderRadius: 7,
+                  border: `1px solid ${facing === f ? "#f59e0b" : "#3d2e18"}`,
+                  background: facing === f ? "#2a1a00" : "#0f0a04",
+                  color: facing === f ? "#f59e0b" : "#a08060",
+                  cursor: "pointer", fontSize: "0.85rem", lineHeight: 1,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                {["→", "↓", "←", "↑"][f]}
+              </button>
+            ))}
           </div>
         )}
         {editMode !== "none" && (

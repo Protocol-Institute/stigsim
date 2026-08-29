@@ -21,7 +21,27 @@ export enum Terrain {
   Mire = 3,
   Undergrowth = 4,
   Loam = 5,
+  Scarp = 6,
 }
+
+/** Which way a scarp falls. An ant may cross it only in this direction. */
+export enum Facing { East = 0, South = 1, West = 2, North = 3 }
+
+export const FACING_VECTORS: Record<Facing, [number, number]> = {
+  [Facing.East]: [1, 0],
+  [Facing.South]: [0, 1],
+  [Facing.West]: [-1, 0],
+  [Facing.North]: [0, -1],
+};
+
+export const FACING_NAMES: Record<Facing, string> = {
+  [Facing.East]: "East",
+  [Facing.South]: "South",
+  [Facing.West]: "West",
+  [Facing.North]: "North",
+};
+
+export const FACINGS: Facing[] = [Facing.East, Facing.South, Facing.West, Facing.North];
 
 export interface TerrainProps {
   readonly name: string;
@@ -76,6 +96,12 @@ export const TERRAIN: Record<Terrain, TerrainProps> = {
     fill: "#25391a", speckle: "#3d5c28",
     blurb: "Slow and costly to cross, but sheltered. Hard-won routes last.",
   },
+  [Terrain.Scarp]: {
+    name: "Scarp",
+    speed: 1.5, evap: 1, adhesion: 1, cost: 0.5, fertile: false,
+    fill: "#3a3038", speckle: "#584a54",
+    blurb: "Falls one way. Free going down, impassable going up — so the way out stops being the way back.",
+  },
   [Terrain.Loam]: {
     name: "Loam",
     speed: 0.9, evap: 1, adhesion: 1, cost: 1, fertile: true,
@@ -92,6 +118,7 @@ export const TERRAIN_BRUSHES: Terrain[] = [
   Terrain.Mire,
   Terrain.Undergrowth,
   Terrain.Loam,
+  Terrain.Scarp,
 ];
 
 /**
@@ -103,9 +130,28 @@ export const TERRAIN_BRUSHES: Terrain[] = [
  */
 export class TerrainLayer {
   private readonly cells: Uint8Array;
+  private readonly facings: Uint8Array;
 
   constructor(readonly cols: number, readonly rows: number) {
     this.cells = new Uint8Array(cols * rows);
+    this.facings = new Uint8Array(cols * rows);
+  }
+
+  facingAt(cx: number, cy: number): Facing {
+    if (cx < 0 || cx >= this.cols || cy < 0 || cy >= this.rows) return Facing.East;
+    return this.facings[cy * this.cols + cx] as Facing;
+  }
+
+  /**
+   * Whether a move heading (dx, dy) may cross this cell.
+   *
+   * Only scarps refuse: a move must carry some component of the way the scarp
+   * falls. Everything else is crossable from any direction.
+   */
+  canCross(cx: number, cy: number, dx: number, dy: number): boolean {
+    if (this.at(cx, cy) !== Terrain.Scarp) return true;
+    const [fx, fy] = FACING_VECTORS[this.facingAt(cx, cy)];
+    return dx * fx + dy * fy > 0;
   }
 
   at(cx: number, cy: number): Terrain {
@@ -117,9 +163,10 @@ export class TerrainLayer {
     return TERRAIN[this.at(cx, cy)];
   }
 
-  set(cx: number, cy: number, terrain: Terrain) {
+  set(cx: number, cy: number, terrain: Terrain, facing: Facing = Facing.East) {
     if (cx < 0 || cx >= this.cols || cy < 0 || cy >= this.rows) return;
     this.cells[cy * this.cols + cx] = terrain;
+    this.facings[cy * this.cols + cx] = facing;
   }
 
   /** True when nothing has been painted — the model can then skip terrain work. */
@@ -129,5 +176,6 @@ export class TerrainLayer {
 
   clear() {
     this.cells.fill(Terrain.Plain);
+    this.facings.fill(Facing.East);
   }
 }
