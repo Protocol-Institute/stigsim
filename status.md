@@ -7,8 +7,10 @@
 
 ## Upcoming
 
-- Continuous-space movement and terrain that holds pheromone differently
-  (phases 1-4 of the continuous-ground plan).
+- Terrain that costs different amounts to cross and holds pheromone
+  differently (phase 3 of the continuous-ground plan).
+- Port continuous movement and terrain to Infinite Mode, which needs the
+  shared-core extraction and a wire-contract change (phase 4).
 - Add automated tests for core simulation behavior.
 - Improve accessibility and mobile interaction.
 - Add automated load and abuse testing for Infinite Mode.
@@ -27,3 +29,9 @@
   sources cluster near where food has been so trails stay worth maintaining.
   On by default in the shared world (tunable by env, `FOOD_CAPACITY_UNITS=0`
   disables), opt-in in the maze so the lab stays controlled.
+- **2026-08-29** — Ants move continuously. The simulation moved out of the React
+  component into `src/sim/`, ants gained a position and heading and now steer by
+  smelling three points ahead, deposit is measured per distance travelled rather
+  than per step, and collisions slide along walls. Sensor geometry was tuned by
+  sweeping 32 seeds headlessly and both antennae are now controls. First
+  frontend tests added.
