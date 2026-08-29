@@ -653,7 +653,8 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource, seed, worldKind]);
+  }, [loopRate, numColonies, numFoodSources, foodPerSource, seed, worldKind,
+      params.replenish, params.foodCapacity]);
 
   useEffect(() => {
     setSeedDraft(seed);
@@ -877,7 +878,7 @@ export default function AntSim() {
         {editMode === "ground" && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
             {TERRAIN_BRUSHES.map(t => {
-              const props = TERRAIN[t];
+              const props = simRef.current?.terrain.describe(t) ?? TERRAIN[t];
               const active = brush === t;
               return (
                 <button
@@ -936,7 +937,7 @@ export default function AntSim() {
             {editMode === "wall"
               ? "Green = open wall · Red = close path · drag to paint"
               : editMode === "ground"
-                ? `Painting ${TERRAIN[brush].name.toLowerCase()} · drag to paint`
+                ? `Painting ${(simRef.current?.terrain.describe(brush) ?? TERRAIN[brush]).name.toLowerCase()} · drag to paint`
                 : "Green = place food · Red = remove food"}
           </span>
         )}
@@ -1175,25 +1176,38 @@ export default function AntSim() {
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
 
-          <ControlCard
-            label="Food sources"
-            description="How many food piles are scattered across the maze. All colonies compete for the same piles. Changing this regenerates the maze."
-            value={numFoodSources}
-            displayValue={`${numFoodSources} source${numFoodSources > 1 ? "s" : ""}`}
-            min={1} max={8} step={1}
-            onChange={v => { setNumFoodSources(v); }}
-            style={{ flex: "1 1 270px" }}
-          />
+          {params.replenish ? (
+            <ParamCard
+              label="Total food"
+              description="How much food the world holds at once. Eat into it and more grows back until the world is full again, so this is really how long the run lasts. How that total is broken up — how many piles, and how big each one — is the world's business and comes out different on every seed."
+              value={params.foodCapacity}
+              displayValue={`${params.foodCapacity} units`}
+              min={500} max={20000} step={250}
+              onChange={v => updateParam("foodCapacity", v)}
+            />
+          ) : (
+            <>
+              <ControlCard
+                label="Food sources"
+                description="How many food piles are laid out. All colonies compete for the same piles. Changing this rebuilds the world."
+                value={numFoodSources}
+                displayValue={`${numFoodSources} source${numFoodSources > 1 ? "s" : ""}`}
+                min={1} max={20} step={1}
+                onChange={v => { setNumFoodSources(v); }}
+                style={{ flex: "1 1 270px" }}
+              />
 
-          <ControlCard
-            label="Food per source"
-            description="How many food units each pile contains. Once depleted, the pile goes dark and trails to it gradually fade. Changing this regenerates the maze."
-            value={foodPerSource}
-            displayValue={`${foodPerSource} units`}
-            min={50} max={10000} step={50}
-            onChange={v => { setFoodPerSource(v); }}
-            style={{ flex: "1 1 270px" }}
-          />
+              <ControlCard
+                label="Food per source"
+                description="How many food units each pile contains. Once depleted the pile goes dark and trails to it fade. Changing this rebuilds the world."
+                value={foodPerSource}
+                displayValue={`${foodPerSource} units`}
+                min={50} max={10000} step={50}
+                onChange={v => { setFoodPerSource(v); }}
+                style={{ flex: "1 1 270px" }}
+              />
+            </>
+          )}
 
           {/* Replenishing food toggle */}
           <div style={{
@@ -1214,7 +1228,7 @@ export default function AntSim() {
               </span>
             </div>
             <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-              Off, the maze holds a fixed larder and the run ends when it is eaten — two runs stay comparable. On, food grows back towards that same total, mostly near where food has been before, so a route is only worth keeping if it still leads somewhere.
+              On, food grows back towards the total this run was set up with, and only where the ground is fertile — the windfall and crumb patches — so a route is worth keeping only while it still leads somewhere. Off, the world holds a fixed larder and the run ends when it has been eaten, which is the cleaner comparison between two settings but is over quickly in a world this size.
             </p>
             <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
               {([false, true] as const).map(val => (
@@ -1346,14 +1360,14 @@ export default function AntSim() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>World</span>
             <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b" }}>
-              {worldKind === "kitchen" ? "kitchen" : "maze"}
+              {worldKind}
             </span>
           </div>
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-            A kitchen is mostly open floor, with grout lines that hold a trail, a worktop and table reached only at a few points, a tight dark run behind the units, a spill that takes no scent and a step that only goes one way. Terrain comes with the room. A maze is the old world: corridors one cell wide, where an ant's antennae span the whole passage and there is nothing to steer towards. <strong style={{ color: "#e5d5b5" }}>Changing this rebuilds the world.</strong>
+A <strong style={{ color: "#e5d5b5" }}>kitchen</strong> is mostly open floor on a grid of grout lines that hold a trail, with a worktop and table reached at a few points, a tight dark run behind the units, a spill that takes no scent and a step that goes one way. A <strong style={{ color: "#e5d5b5" }}>forest</strong> has the same properties growing instead of tiled: roots branching from tree bases, a fallen log as a trunk route, a sunlit patch that bakes trails off, and a stream that carries bodies but no scent except where stones bridge it. A <strong style={{ color: "#e5d5b5" }}>maze</strong> is the old world — corridors one cell wide, where an ant's antennae span the whole passage and there is nothing to steer towards. <strong style={{ color: "#e5d5b5" }}>Changing this rebuilds the world.</strong>
           </p>
           <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
-            {(["kitchen", "maze"] as WorldKind[]).map(kind => (
+            {(["kitchen", "forest", "maze"] as WorldKind[]).map(kind => (
               <button
                 key={kind}
                 onClick={() => setWorldKind(kind)}
@@ -1364,7 +1378,7 @@ export default function AntSim() {
                   color: worldKind === kind ? "#000" : "#a08060",
                 }}
               >
-                {kind === "kitchen" ? "Kitchen" : "Maze"}
+                {kind === "kitchen" ? "Kitchen" : kind === "forest" ? "Forest" : "Maze"}
               </button>
             ))}
           </div>

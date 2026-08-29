@@ -42,10 +42,20 @@ export interface SimParams {
   /** Angle of the outer antennae either side of the heading, radians. */
   sensorAngle: number;
   /**
-   * Whether eaten food grows back. Off by default: the maze is a controlled
-   * laboratory, and a fixed larder is what makes two runs comparable. Turning
-   * it on converts the maze into a small ecology where routes have to be worth
-   * maintaining over time.
+   * Total food units the world sustains, when food replenishes.
+   *
+   * This is the only food quantity worth setting for a living world: how many
+   * separate piles that total is broken into, and how big each one is, is the
+   * world's business and comes out random.
+   */
+  foodCapacity: number;
+  /**
+   * Whether eaten food grows back.
+   *
+   * On, the world holds itself at `foodCapacity` and the run lasts as long as
+   * you let it. Off, that same total is laid out once as `numFoodSources` piles
+   * of `foodPerSource`, and the run ends when they are gone — which is the
+   * cleaner comparison between two settings.
    */
   replenish: boolean;
 }
@@ -59,7 +69,11 @@ export const DEFAULT_PARAMS: SimParams = {
   cautionary: false,
   sensorDist: SENSOR_DIST,
   sensorAngle: SENSOR_ANGLE,
-  replenish: false,
+  foodCapacity: 3_000,
+  // On by default now the worlds are places rather than test rigs: a fixed
+  // larder in a room this size is eaten long before a trail network forms.
+  // Growth draws from the seeded stream, so runs stay reproducible either way.
+  replenish: true,
 };
 
 // Growth in the maze is brisker than in the shared world: a run is watched for
@@ -72,26 +86,32 @@ export const MAZE_FOOD_SPAWN: FoodSpawnConfig = {
 };
 
 /**
- * Size new piles against the larder this run was configured with, rather than
- * the shared world's fixed 120-600 units. The maze's whole capacity can be as
- * low as 50 units, and a fixed minimum larger than the capacity means headroom
- * never reaches it and nothing ever grows.
+ * Size piles against the total the world sustains.
+ *
+ * Pile size is a band rather than a number, so a total breaks into a random
+ * number of random-sized piles instead of a tidy grid of identical ones. The
+ * band is a fraction of the total so it scales: a small total gives a few small
+ * piles, a large one gives many. A fixed minimum larger than the total would
+ * mean headroom never reaches it and nothing would ever grow.
  */
-export function mazeFoodSpawnConfig(numFoodSources: number, foodPerSource: number): FoodSpawnConfig {
-  const minUnits = Math.max(1, Math.round(foodPerSource * 0.25));
-  return {
-    ...MAZE_FOOD_SPAWN,
-    capacityUnits: numFoodSources * foodPerSource,
-    minUnits,
-    maxUnits: Math.max(minUnits, foodPerSource),
-  };
+export function foodSpawnConfig(capacityUnits: number): FoodSpawnConfig {
+  // Bounded at both ends rather than a flat fraction. A pure fraction keeps the
+  // pile count fixed and only fattens each pile, so a rich world looked exactly
+  // like a poor one with the numbers scaled up. Capping the size means extra
+  // food arrives as more patches instead, which is what a richer world is.
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const minUnits = clamp(Math.round(capacityUnits * 0.04), 25, 150);
+  const maxUnits = Math.max(minUnits + 1, clamp(Math.round(capacityUnits * 0.15), 80, 600));
+  return { ...MAZE_FOOD_SPAWN, capacityUnits, minUnits, maxUnits };
 }
 
 // Simulation steps between highway-score samples.
 export const HIGHWAY_SAMPLE_EVERY = 15;
 
 export const DEFAULT_NUM_COLONIES = 1;
-export const DEFAULT_NUM_FOOD_SOURCES = 1;
+// Only used when food does not replenish: a room-sized world with one larder
+// is over almost as soon as it is found.
+export const DEFAULT_NUM_FOOD_SOURCES = 4;
 export const DEFAULT_FOOD_PER_SOURCE = 500;
 
 export type AntState = "searching" | "returning";
@@ -242,10 +262,15 @@ export class Simulation {
       }
     }
     // Crumbs collect where the generator says they collect — under the table,
-    // by the bin. Falling back to open floor keeps the maze working, which has
-    // no such places.
+    // by the bin, in the windfall. Falling back to open floor keeps the maze
+    // working, which has no such places.
     const loam = open.filter(([x, y]) => this.terrain.at(x, y) === Terrain.Loam);
     const preferred = loam.length > 0 ? loam : open;
+
+    // A living world is only told how much food it holds in total. How that
+    // total is broken up — how many piles and how big each one — is the
+    // world's business, and comes out different every seed.
+    if (this.params.replenish) return this._scatterFood(preferred);
 
     this.rng.shuffle(preferred);
     const count = Math.min(this.numFoodSources, preferred.length);
@@ -326,6 +351,52 @@ export class Simulation {
     return this.loamSites() !== null;
   }
 
+  /**
+   * Break the world's total into a random number of random-sized piles.
+   *
+   * Uses the same policy that grows food later, so the world a run starts with
+   * looks like a world that has been growing food for a while rather than like
+   * a layout someone specified.
+   */
+  private _scatterFood(sites: [number, number][]): FoodSource[] {
+    const config = foodSpawnConfig(this.foodCapacity);
+    const spawnSites = sites.map(([x, y]) => ({ x, y }));
+    const sources: FoodSource[] = [];
+
+    // Keep planting until the world is full or nowhere is left to plant.
+    for (let guard = 0; guard < 200; guard++) {
+      const standing = sources.reduce((sum, s) => sum + s.remaining, 0);
+      if (standing >= config.capacityUnits - config.minUnits) break;
+
+      const planned = planFoodSpawn(
+        {
+          standingUnits: standing,
+          region: { minX: 1, minY: 1, maxX: COLS - 2, maxY: ROWS - 2 },
+          memory: this.foodMemory.entries,
+          sites: spawnSites,
+          canPlaceAt: (x, y) => !sources.some(s => s.x === x && s.y === y),
+        },
+        config,
+        () => this.rng.next(),
+      );
+      if (planned.length === 0) break;
+
+      for (const { x, y, units } of planned) {
+        sources.push({ x, y, remaining: units, total: units });
+        this.foodMemory.remember(x, y);
+      }
+    }
+
+    return sources;
+  }
+
+  /** The total this world sustains, when food replenishes. */
+  get foodCapacity(): number {
+    return this.params.replenish
+      ? this.params.foodCapacity
+      : this.numFoodSources * this.foodPerSource;
+  }
+
   /** Total food units still standing in the maze. */
   get standingFoodUnits(): number {
     return this.foodSources.reduce((sum, source) => sum + source.remaining, 0);
@@ -350,7 +421,7 @@ export class Simulation {
           this.grid[y][x] === 1 &&
           !this.colonies.some(c => c.nestX === x && c.nestY === y),
       },
-      mazeFoodSpawnConfig(this.numFoodSources, this.foodPerSource),
+      foodSpawnConfig(this.foodCapacity),
       () => this.rng.next(),
     );
 
