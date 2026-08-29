@@ -55,7 +55,13 @@ state fingerprints, and the metrics log. Loading a trace replays it exactly:
 the simulation runs the same commands at the same ticks and checks its
 fingerprints against the ones recorded in the file, so a replay that fails to
 reproduce the original run says so rather than silently producing a different
-one. The replay bar lets you play, pause, and seek to any tick. Metrics can
+one. The replay bar lets you play, pause, and seek to any tick.
+
+Loading a trace puts the simulator into replay mode. The controls that would
+change the simulation are disabled for as long as the trace is loaded, and the
+settings adopt the values the trace was recorded with, so what is on screen
+describes the run being replayed rather than the run you had before. Leaving
+replay starts a fresh live run from those same settings and seed. Metrics can
 also be exported directly as CSV for analysis outside the browser.
 
 ### Infinite World

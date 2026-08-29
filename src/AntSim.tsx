@@ -8,13 +8,13 @@ import {
   buildTrace, serializeTrace, traceFilename,
   Replayer, parseTrace,
 } from "./sim";
-import type { SimParams, Command } from "./sim";
+import type { SimParams, Command, MetricsSample } from "./sim";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 
 // ─── Param card ──────────────────────────────────────────────────────────────
 function ParamCard({
-  label, description, value, displayValue, min, max, step, onChange, onPointerUp,
+  label, description, value, displayValue, min, max, step, onChange, onPointerUp, disabled,
 }: {
   label: string;
   description: string;
@@ -23,6 +23,7 @@ function ParamCard({
   min: number; max: number; step: number;
   onChange: (v: number) => void;
   onPointerUp?: (v: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <div style={{
@@ -35,6 +36,7 @@ function ParamCard({
       gap: 8,
       flex: "1 1 270px",
       minWidth: 0,
+      opacity: disabled ? 0.4 : 1,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>{label}</span>
@@ -46,7 +48,8 @@ function ParamCard({
         min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
         onPointerUp={onPointerUp ? e => onPointerUp(Number((e.target as HTMLInputElement).value)) : undefined}
-        style={{ width: "100%", accentColor: "#f59e0b", cursor: "pointer", margin: "2px 0" }}
+        disabled={disabled}
+        style={{ width: "100%", accentColor: "#f59e0b", cursor: disabled ? "not-allowed" : "pointer", margin: "2px 0" }}
       />
     </div>
   );
@@ -225,14 +228,36 @@ export default function AntSim() {
 
   const replayRef = useRef<Replayer | null>(null);
   const [replayState, setReplayState] = useState<
-    { tick: number; endTick: number; divergedAt: number | null } | null
+    { tick: number; endTick: number; divergedAt: number | null; seed: string | null } | null
   >(null);
   const [traceMessage, setTraceMessage] = useState<string | null>(null);
   const [seekInput, setSeekInput] = useState("0");
 
+  /**
+   * Mirrors the replayer into the readouts. The scoreboard, rate, and
+   * fingerprint are React state driven by the live loop, so without this they
+   * keep showing whatever the previous live run left behind for the whole
+   * replay — numbers that look like the replay's own and are not.
+   */
   const syncReplay = useCallback(() => {
     const r = replayRef.current;
-    setReplayState(r ? { tick: r.tick, endTick: r.endTick, divergedAt: r.divergedAt } : null);
+    setReplayState(r
+      ? { tick: r.tick, endTick: r.endTick, divergedAt: r.divergedAt, seed: r.trace.run.seeds.master }
+      : null);
+    if (!r) return;
+
+    setColonyScores(r.sim.colonies.map(c => c.foodCollected));
+    setLatestFingerprint(r.sim.fingerprints[r.sim.fingerprints.length - 1] ?? null);
+
+    // The metrics recorder only runs for the live simulation, so the rate
+    // comes from the samples the trace carries: the newest one at or before
+    // the tick being shown.
+    let latest: MetricsSample | undefined;
+    for (const sample of r.trace.metrics.samples) {
+      if (sample.t > r.sim.tick) break;
+      latest = sample;
+    }
+    setFoodRate(latest ? latest.colonies.reduce((a, c) => a + c.ratePerKTick, 0) : 0);
   }, []);
 
   // Responsive canvas scaling
@@ -458,6 +483,30 @@ export default function AntSim() {
     const r = new Replayer(result.trace);
     replayRef.current = r;
     simRef.current = r.sim;
+
+    // Adopt the trace's configuration. The header, the legend, and the
+    // parameter cards all read React state rather than the simulation, so a
+    // three-colony trace loaded while the interface sits at one colony would
+    // otherwise draw the single-colony layout over a replay that has three —
+    // and every control that could correct it is disabled during replay.
+    // Setting these here is safe: the reset-on-structure-change effect and
+    // send() both bail out while a replayer is present, and it is assigned
+    // above.
+    const cfg = result.trace.run.config;
+    setNumAnts(cfg.numAnts);
+    setParams(cfg.params);
+    setLoopRate(cfg.loopRate);
+    setNumColonies(cfg.numColonies);
+    setNumFoodSources(cfg.numFoodSources);
+    setFoodPerSource(cfg.foodPerSource);
+    // Leaving replay rebuilds a live run from these values, so carry the seed
+    // across too. A trace whose streams were seeded separately has no master
+    // seed to carry, and keeps whatever is in the box.
+    if (result.trace.run.seeds.master !== null) {
+      setSeedInput(result.trace.run.seeds.master);
+      seedInputRef.current = result.trace.run.seeds.master;
+    }
+
     setTraceMessage(result.warning ?? null);
     syncReplay();
     forceRender();
@@ -535,6 +584,12 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   };
+
+  // Every control that would change the simulation is disabled while a replay
+  // is loaded. send() already refuses commands then, so this is about the
+  // interface telling the truth rather than about replay integrity: a slider
+  // that moves without changing anything is worse than one that will not move.
+  const replaying = replayState !== null;
 
   const stepsPerSec = Math.round(60 / framesPerTick);
   const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
@@ -666,7 +721,7 @@ export default function AntSim() {
                 setEditMode(prev => prev === mode ? "none" : mode);
                 hoverCellRef.current = null;
               }}
-              disabled={manualControl || replayState !== null}
+              disabled={manualControl || replaying}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "7px 14px",
@@ -675,8 +730,8 @@ export default function AntSim() {
                 background: active ? "#2a1a00" : "#0f0a04",
                 color: active ? "#f59e0b" : "#a08060",
                 fontSize: "0.78rem", fontWeight: 600,
-                cursor: (manualControl || replayState !== null) ? "not-allowed" : "pointer",
-                opacity: (manualControl || replayState !== null) ? 0.4 : 1,
+                cursor: (manualControl || replaying) ? "not-allowed" : "pointer",
+                opacity: (manualControl || replaying) ? 0.4 : 1,
                 transition: "border-color 0.15s, background 0.15s, color 0.15s",
                 userSelect: "none",
               }}
@@ -853,6 +908,7 @@ export default function AntSim() {
           flex: "1 1 270px",
           minWidth: 0,
           transition: "border-color 0.2s",
+          opacity: replaying ? 0.4 : 1,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Mode</span>
@@ -870,8 +926,10 @@ export default function AntSim() {
               <button
                 key={String(isManual)}
                 onClick={() => { setManualControl(isManual); if (isManual) { setEditMode("none"); hoverCellRef.current = null; } }}
+                disabled={replaying}
                 style={{
-                  flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                  flex: 1, padding: "7px 0", border: "none", borderRadius: 7,
+                  cursor: replaying ? "not-allowed" : "pointer",
                   fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
                   letterSpacing: "0.02em",
                   background: manualControl === isManual ? "#f59e0b" : "transparent",
@@ -911,7 +969,7 @@ export default function AntSim() {
             min={1} max={4} step={1}
             onChange={v => { setNumColonies(v); }}
             style={{ flex: "1 1 270px" }}
-            disabled={replayState !== null}
+            disabled={replaying}
           />
 
           <ControlCard
@@ -922,6 +980,7 @@ export default function AntSim() {
             min={1} max={100} step={1}
             onChange={v => { setNumAnts(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replaying}
           />
 
         </div>
@@ -939,7 +998,7 @@ export default function AntSim() {
             min={1} max={8} step={1}
             onChange={v => { setNumFoodSources(v); }}
             style={{ flex: "1 1 270px" }}
-            disabled={replayState !== null}
+            disabled={replaying}
           />
 
           <ControlCard
@@ -950,7 +1009,7 @@ export default function AntSim() {
             min={50} max={10000} step={50}
             onChange={v => { setFoodPerSource(v); }}
             style={{ flex: "1 1 270px" }}
-            disabled={replayState !== null}
+            disabled={replaying}
           />
 
         </div>
@@ -993,13 +1052,13 @@ export default function AntSim() {
                 const csv = metricsToCsv(metricsRef.current.samples);
                 download(csv, `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`, "text/csv");
               }}
-              disabled={replayState !== null}
-              title={replayState !== null ? "Exit replay to export the live run's metrics" : undefined}
+              disabled={replaying}
+              title={replaying ? "Exit replay to export the live run's metrics" : undefined}
               style={{
                 background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
                 borderRadius: 6, padding: "6px 10px", fontSize: "0.8rem",
-                cursor: replayState !== null ? "not-allowed" : "pointer",
-                opacity: replayState !== null ? 0.4 : 1,
+                cursor: replaying ? "not-allowed" : "pointer",
+                opacity: replaying ? 0.4 : 1,
               }}
             >
               Export CSV
@@ -1012,13 +1071,13 @@ export default function AntSim() {
                 const trace = buildTrace(sim, metricsRef.current);
                 download(serializeTrace(trace), traceFilename(trace), "application/json");
               }}
-              disabled={replayState !== null}
-              title={replayState !== null ? "Exit replay to save the live run's trace" : undefined}
+              disabled={replaying}
+              title={replaying ? "Exit replay to save the live run's trace" : undefined}
               style={{
                 background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
                 borderRadius: 6, padding: "6px 10px", fontSize: "0.8rem",
-                cursor: replayState !== null ? "not-allowed" : "pointer",
-                opacity: replayState !== null ? 0.4 : 1,
+                cursor: replaying ? "not-allowed" : "pointer",
+                opacity: replaying ? 0.4 : 1,
               }}
             >
               Save trace
@@ -1044,9 +1103,13 @@ export default function AntSim() {
             </label>
           </div>
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-            {seedInput.trim() === activeSeed
-              ? "Runs with this seed reproduce exactly."
-              : `Running as "${activeSeed}". Reset to use the new seed.`}
+            {replayState
+              ? replayState.seed !== null
+                ? `Replaying a recorded run seeded "${replayState.seed}". Exit replay to run it live.`
+                : "Replaying a recorded run whose streams were seeded separately."
+              : seedInput.trim() === activeSeed
+                ? "Runs with this seed reproduce exactly."
+                : `Running as "${activeSeed}". Reset to use the new seed.`}
           </p>
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#6b5a3e", fontFamily: "monospace" }}>
             {latestFingerprint
@@ -1147,6 +1210,7 @@ export default function AntSim() {
             displayValue={`${(params.evapRate * 1000).toFixed(0)}‰ / step`}
             min={0.001} max={0.02} step={0.001}
             onChange={v => updateParam("evapRate", v)}
+            disabled={replaying}
           />
 
           <ParamCard
@@ -1156,6 +1220,7 @@ export default function AntSim() {
             displayValue={`power ${params.trailPower}`}
             min={1} max={10} step={0.5}
             onChange={v => updateParam("trailPower", v)}
+            disabled={replaying}
           />
 
           <ParamCard
@@ -1165,6 +1230,7 @@ export default function AntSim() {
             displayValue={`~${tankCells} cells`}
             min={1600} max={16000} step={800}
             onChange={v => updateParam("tankMax", v)}
+            disabled={replaying}
           />
 
           {/* Cautionary pheromone toggle */}
@@ -1178,6 +1244,7 @@ export default function AntSim() {
             gap: 8,
             flex: "1 1 270px",
             minWidth: 0,
+            opacity: replaying ? 0.4 : 1,
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Cautionary</span>
@@ -1193,8 +1260,10 @@ export default function AntSim() {
                 <button
                   key={String(val)}
                   onClick={() => { updateParam("cautionary", val); }}
+                  disabled={replaying}
                   style={{
-                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7,
+                    cursor: replaying ? "not-allowed" : "pointer",
                     fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
                     letterSpacing: "0.02em",
                     background: params.cautionary === val ? "#f59e0b" : "transparent",
@@ -1223,7 +1292,7 @@ export default function AntSim() {
           display: "flex",
           flexDirection: "column",
           gap: 8,
-          opacity: replayState !== null ? 0.4 : 1,
+          opacity: replaying ? 0.4 : 1,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Extra holes (loop rate)</span>
@@ -1238,8 +1307,8 @@ export default function AntSim() {
             type="range"
             min={0} max={0.5} step={0.01} value={loopRate}
             onChange={e => setLoopRate(Number(e.target.value))}
-            disabled={replayState !== null}
-            style={{ width: "100%", accentColor: "#f59e0b", cursor: replayState !== null ? "not-allowed" : "pointer", margin: "2px 0" }}
+            disabled={replaying}
+            style={{ width: "100%", accentColor: "#f59e0b", cursor: replaying ? "not-allowed" : "pointer", margin: "2px 0" }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#6b5a3e" }}>
             <span>0% — tree maze</span>
