@@ -1,15 +1,13 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import {
-  ARRIVE_THRESH,
   CELL,
   COLONY_NESTS,
   COLS,
   DEFAULT_NUM_ANTS,
-  DEPOSIT_RATE,
+  DEPOSIT_PER_PX,
   H,
   NEST_SEED,
   ROWS,
-  V,
   W,
 } from "./sim/constants";
 import {
@@ -181,11 +179,8 @@ function render(
       ctx.fill();
 
       // Direction dot
-      const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
-      const ddx = tpx - ant.x, ddy = tpy - ant.y;
-      const dl = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
       ctx.beginPath();
-      ctx.arc(ant.x + (ddx / dl) * 5, ant.y + (ddy / dl) * 5, 1.5, 0, Math.PI * 2);
+      ctx.arc(ant.x + Math.cos(ant.heading) * 5, ant.y + Math.sin(ant.heading) * 5, 1.5, 0, Math.PI * 2);
       ctx.fillStyle = "#fff";
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -509,13 +504,8 @@ export default function AntSim() {
     if (!sim) return;
     const ant = sim.allAnts[watchedAntIdxRef.current];
     if (!ant) return;
-    const nx = ant.cx + ddx, ny = ant.cy + ddy;
-    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
-    if (sim.grid[ny][nx] !== 1) return;
-    ant.prevCx = ant.cx;
-    ant.prevCy = ant.cy;
-    ant.tx = nx;
-    ant.ty = ny;
+    // Steering, not teleporting: the d-pad points the ant and it walks.
+    ant.heading = Math.atan2(ddy, ddx);
   }, []);
 
   useEffect(() => {
@@ -575,11 +565,11 @@ export default function AntSim() {
         sim.grid[gy][gx] = 1;
       } else if (dragActionRef.current === "close" && !wasWall) {
         sim.grid[gy][gx] = 0;
+        // An ant caught inside the new wall is turned around; it walks itself
+        // out on the next step rather than being stranded in rock.
         for (const colony of sim.colonies) {
           for (const ant of colony.ants) {
-            if (ant.tx === gx && ant.ty === gy) {
-              ant.tx = ant.cx; ant.ty = ant.cy;
-            }
+            if (ant.cx === gx && ant.cy === gy) ant.heading += Math.PI;
           }
         }
       }
@@ -744,7 +734,7 @@ export default function AntSim() {
 
   const stepsPerSec = Math.round(60 / framesPerTick);
   const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
-  const tankCells = Math.round(params.tankMax / (DEPOSIT_RATE * (CELL / V)));
+  const tankCells = Math.round(params.tankMax / (DEPOSIT_PER_PX * CELL));
   const loopPct = Math.round(loopRate * 100);
   const loopLabel = loopRate === 0 ? "None (tree)" : loopRate < 0.05 ? "Very few" : loopRate < 0.15 ? "Some" : loopRate < 0.3 ? "Many" : "Lots";
 

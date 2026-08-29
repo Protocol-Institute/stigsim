@@ -14,15 +14,19 @@ import {
   type FoodSpawnConfig,
 } from "../../shared/food-spawn";
 import {
-  ARRIVE_THRESH,
   COLONY_NESTS,
   COLS,
   CELL,
-  DEPOSIT_RATE,
+  DEPOSIT_PER_PX,
   NEST_SEED,
   ROWS,
+  SENSOR_ANGLE,
+  SENSOR_DIST,
+  TURN_RATE,
   V,
+  WANDER,
 } from "./constants";
+import { normalizeAngle, sampleField, splatDeposit } from "./field";
 
 export interface SimParams {
   evapRate: number;
@@ -101,10 +105,12 @@ export interface Colony {
 }
 
 export interface Ant {
+  /** Position in pixels. Continuous — an ant is rarely on a cell centre. */
   x: number; y: number;
+  /** Direction of travel in radians. */
+  heading: number;
+  /** The cell the ant is standing in, derived from its position each step. */
   cx: number; cy: number;
-  tx: number; ty: number;
-  prevCx: number; prevCy: number;
   state: AntState;
   hasFood: boolean;
   tank: number;
@@ -173,35 +179,6 @@ export function computeHighwayScore(sim: Simulation): number {
 }
 
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-export function openNeighbours(grid: CellType[][], x: number, y: number, exX?: number, exY?: number): [number, number][] {
-  return DIRS4
-    .map(([dx, dy]) => [x + dx, y + dy] as [number, number])
-    .filter(([nx, ny]) =>
-      nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
-      grid[ny][nx] === 1 && !(nx === exX && ny === exY)
-    );
-}
-
-export function powerChoice(
-  rng: Rng,
-  cells: [number, number][],
-  phero: Float32Array,
-  power: number,
-  cautPhero?: Float32Array,
-  cautPower?: number,
-): [number, number] {
-  const scores = cells.map(([cx, cy]) => {
-    const idx = cy * COLS + cx;
-    const trail = Math.pow(phero[idx] + 1, power);
-    const caution = (cautPhero && cautPower) ? Math.pow(cautPhero[idx] + 1, cautPower) : 1;
-    return trail / caution;
-  });
-  const total = scores.reduce((a, b) => a + b, 0);
-  let r = rng.next() * total;
-  for (let i = 0; i < cells.length; i++) { r -= scores[i]; if (r <= 0) return cells[i]; }
-  return cells[cells.length - 1];
-}
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
@@ -296,18 +273,23 @@ export class Simulation {
     }
   }
 
-  private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
+  private _newAnt(colonyId: number, nestX: number, nestY: number): Ant {
     const { px, py } = cellCenter(nestX, nestY);
-    return Array.from({ length: this.numAnts }, () => ({
+    return {
       x: px, y: py,
+      // Leave the nest facing anywhere, so a colony fans out instead of
+      // marching off as one column.
+      heading: this.rng.next() * Math.PI * 2,
       cx: nestX, cy: nestY,
-      tx: nestX, ty: nestY,
-      prevCx: nestX, prevCy: nestY,
       state: "searching" as AntState,
       hasFood: false,
       tank: this.params.tankMax,
       colonyId,
-    }));
+    };
+  }
+
+  private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
+    return Array.from({ length: this.numAnts }, () => this._newAnt(colonyId, nestX, nestY));
   }
 
   get allAnts(): Ant[] {
@@ -317,20 +299,10 @@ export class Simulation {
   setAntCount(n: number) {
     for (const colony of this.colonies) {
       const { nestX, nestY } = colony;
-      const { px, py } = cellCenter(nestX, nestY);
       if (n > colony.ants.length) {
         const toAdd = n - colony.ants.length;
         for (let i = 0; i < toAdd; i++) {
-          colony.ants.push({
-            x: px, y: py,
-            cx: nestX, cy: nestY,
-            tx: nestX, ty: nestY,
-            prevCx: nestX, prevCy: nestY,
-            state: "searching",
-            hasFood: false,
-            tank: this.params.tankMax,
-            colonyId: colony.id,
-          });
+          colony.ants.push(this._newAnt(colony.id, nestX, nestY));
         }
       } else if (n < colony.ants.length) {
         colony.ants.splice(n);
@@ -401,35 +373,115 @@ export class Simulation {
     }
   }
 
-  private _moveAnt(ant: Ant, colony: Colony) {
-    const { tankMax, trailPower } = this.params;
-    const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
-    const dx = tpx - ant.x, dy = tpy - ant.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+  /** Whether a cell is inside the maze and walkable. */
+  isOpen(cx: number, cy: number): boolean {
+    return cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS && this.grid[cy][cx] === 1;
+  }
 
-    if (dist > ARRIVE_THRESH) {
-      const idx = ant.cy * COLS + ant.cx;
-      if (ant.tank > 0) {
-        const deposit = Math.min(ant.tank, DEPOSIT_RATE);
-        if (ant.state === "searching") {
-          colony.homePhero[idx] += deposit;
-        } else {
-          colony.foodPhero[idx] += deposit;
-        }
-        ant.tank -= deposit;
-      } else if (this.params.cautionary) {
-        colony.cautPhero[idx] += DEPOSIT_RATE;
+  /** Field value at a point, blended across the cells around it. */
+  private _sense(field: Float32Array, px: number, py: number): number {
+    return sampleField(px, py, CELL, (cx, cy) =>
+      this.isOpen(cx, cy) ? field[cy * COLS + cx] : 0,
+    );
+  }
+
+  /**
+   * Pick a turn by sampling the field ahead-left, ahead, and ahead-right.
+   *
+   * Weighting is the same power law the cell-hopping model used, so "trail
+   * bias" keeps its meaning: at power 1 an ant barely prefers the strongest
+   * reading, at power 10 it almost always takes it. A sensor sitting in rock
+   * scores zero and is never chosen.
+   */
+  private _chooseTurn(ant: Ant, colony: Colony): number {
+    const { trailPower, cautionary } = this.params;
+    const field = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
+    const offsets = [-SENSOR_ANGLE, 0, SENSOR_ANGLE];
+
+    const weights = offsets.map(offset => {
+      const angle = ant.heading + offset;
+      const px = ant.x + Math.cos(angle) * SENSOR_DIST;
+      const py = ant.y + Math.sin(angle) * SENSOR_DIST;
+      const cx = Math.floor(px / CELL), cy = Math.floor(py / CELL);
+      if (!this.isOpen(cx, cy)) return 0;
+
+      const trail = Math.pow(this._sense(field, px, py) + 1, trailPower);
+      const caution = cautionary
+        ? Math.pow(this._sense(colony.cautPhero, px, py) + 1, trailPower)
+        : 1;
+      return trail / caution;
+    });
+
+    const total = weights[0] + weights[1] + weights[2];
+    // Boxed in on all three sensors: turn hard and try again next step.
+    if (total <= 0) return this.rng.next() < 0.5 ? -TURN_RATE : TURN_RATE;
+
+    let r = this.rng.next() * total;
+    for (let i = 0; i < 3; i++) {
+      r -= weights[i];
+      if (r <= 0) return Math.max(-TURN_RATE, Math.min(TURN_RATE, offsets[i]));
+    }
+    return 0;
+  }
+
+  /**
+   * Advance along the heading, sliding along whatever it runs into rather than
+   * stopping dead. Sliding gives wall-following for free, which is a real ant
+   * behaviour and reads as competence rather than as collision handling.
+   *
+   * Returns the distance actually travelled.
+   */
+  private _advance(ant: Ant): number {
+    const stepX = Math.cos(ant.heading) * V;
+    const stepY = Math.sin(ant.heading) * V;
+    const fromX = ant.x, fromY = ant.y;
+
+    const tryMove = (nx: number, ny: number): boolean => {
+      if (!this.isOpen(Math.floor(nx / CELL), Math.floor(ny / CELL))) return false;
+      ant.x = nx; ant.y = ny;
+      return true;
+    };
+
+    if (!tryMove(ant.x + stepX, ant.y + stepY)) {
+      // Blocked head-on: keep whichever component still fits.
+      if (tryMove(ant.x + stepX, ant.y)) {
+        ant.heading = stepX > 0 ? 0 : Math.PI;
+      } else if (tryMove(ant.x, ant.y + stepY)) {
+        ant.heading = stepY > 0 ? Math.PI / 2 : -Math.PI / 2;
+      } else {
+        // Cornered. Turn around and spend the step doing it.
+        ant.heading = normalizeAngle(ant.heading + Math.PI);
+        return 0;
       }
-      const scale = V / dist;
-      ant.x += dx * scale;
-      ant.y += dy * scale;
-      return;
     }
 
-    ant.x = tpx; ant.y = tpy;
-    ant.cx = ant.tx; ant.cy = ant.ty;
+    return Math.hypot(ant.x - fromX, ant.y - fromY);
+  }
 
-    // Check food sources
+  /** Lay pheromone in proportion to ground actually covered. */
+  private _deposit(ant: Ant, colony: Colony, distance: number) {
+    if (distance <= 0) return;
+
+    const field = ant.state === "searching" ? colony.homePhero : colony.foodPhero;
+    const wanted = distance * DEPOSIT_PER_PX;
+
+    if (ant.tank > 0) {
+      const amount = Math.min(ant.tank, wanted);
+      ant.tank -= amount;
+      splatDeposit(ant.x, ant.y, CELL, amount,
+        (cx, cy) => this.isOpen(cx, cy),
+        (cx, cy, add) => { field[cy * COLS + cx] += add; });
+    } else if (this.params.cautionary) {
+      splatDeposit(ant.x, ant.y, CELL, wanted,
+        (cx, cy) => this.isOpen(cx, cy),
+        (cx, cy, add) => { colony.cautPhero[cy * COLS + cx] += add; });
+    }
+  }
+
+  /** Food pickup and nest delivery, both resolved against the occupied cell. */
+  private _handleCell(ant: Ant, colony: Colony) {
+    const { tankMax } = this.params;
+
     if (ant.state === "searching") {
       const srcIdx = this.foodSources.findIndex(s => s.x === ant.cx && s.y === ant.cy);
       if (srcIdx >= 0) {
@@ -442,38 +494,35 @@ export class Simulation {
           ant.state = "returning";
           ant.hasFood = true;
           ant.tank = tankMax;
-          const [ntx, nty] = [ant.prevCx, ant.prevCy];
-          ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-          ant.tx = ntx; ant.ty = nty;
-          return;
+          ant.heading = normalizeAngle(ant.heading + Math.PI);
         }
-        // depleted — fall through, keep searching
       }
+      return;
     }
 
-    // Check nest
-    if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
+    if (ant.cx === colony.nestX && ant.cy === colony.nestY) {
       ant.state = "searching";
       ant.hasFood = false;
       ant.tank = tankMax;
       colony.foodCollected++;
-      const [ntx, nty] = [ant.prevCx, ant.prevCy];
-      ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-      ant.tx = ntx; ant.ty = nty;
-      return;
+      ant.heading = normalizeAngle(ant.heading + Math.PI);
+    }
+  }
+
+  private _moveAnt(ant: Ant, colony: Colony) {
+    if (!ant.manual) {
+      ant.heading = normalizeAngle(
+        ant.heading
+        + this._chooseTurn(ant, colony)
+        + (this.rng.next() - 0.5) * 2 * WANDER,
+      );
     }
 
-    if (ant.manual) {
-      ant.tx = ant.cx; ant.ty = ant.cy;
-      return;
-    }
+    const travelled = this._advance(ant);
+    this._deposit(ant, colony, travelled);
 
-    const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
-    const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
-    const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
-    const next = powerChoice(this.rng, candidates, phero, trailPower, this.params.cautionary ? colony.cautPhero : undefined, trailPower);
-
-    ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-    ant.tx = next[0]; ant.ty = next[1];
+    ant.cx = Math.floor(ant.x / CELL);
+    ant.cy = Math.floor(ant.y / CELL);
+    this._handleCell(ant, colony);
   }
 }
