@@ -22,3 +22,8 @@
   decision now draws from one seeded stream, the seed is editable and travels in
   the URL, and the previously unused highway score reads out live. Runs are
   reproducible and comparable, which the later tuning phases depend on.
+- **2026-08-29** — Food now grows back. Both engines share one spawning policy:
+  the world sustains a standing quantity rather than a fixed larder, and new
+  sources cluster near where food has been so trails stay worth maintaining.
+  On by default in the shared world (tunable by env, `FOOD_CAPACITY_UNITS=0`
+  disables), opt-in in the maze so the lab stays controlled.

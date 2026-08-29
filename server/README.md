@@ -34,6 +34,25 @@ clients can supply an allowed Origin and are not authenticated. Strong player
 identity, durable ownership, moderator roles, and per-identity abuse controls
 remain future work.
 
+## Food growth
+
+The world sustains a standing quantity of food rather than a fixed larder.
+Every `FOOD_SPAWN_INTERVAL_TICKS` steps, while standing food is under
+`FOOD_CAPACITY_UNITS`, new sources appear; as colonies eat, headroom reopens
+and more arrives. Colony populations rising and falling against that ceiling is
+the intended behaviour.
+
+New sources land inside the bounding box of everything the world contains plus a
+margin, on open ground that is neither a nest nor an occupied cell. Most land
+near where food has been before, at a rate set by `FOOD_CLUSTER_CHANCE`.
+Clustering is what makes trails worth building: under uniform spawning the place
+a colony just ate will not refill, so maintaining a route to it earns nothing and
+colonies that invest in infrastructure do worse than colonies that wander.
+
+Eaten sites stay in the grove memory, so a stripped patch regrows nearby.
+Restored worlds seed that memory from their snapshot. Setting
+`FOOD_CAPACITY_UNITS=0` disables growth and restores the hand-fed world.
+
 ## Streaming limits
 
 Tick and pheromone messages are complete, high-frequency snapshots. If a
@@ -82,6 +101,9 @@ and loads `seeds/infinite-world.json` without database persistence.
 - `DATABASE_URL`: Postgres connection string; required for durable world state.
 - `ALLOWED_ORIGINS`: comma-separated browser origins allowed to use the API and
   WebSocket, for example `https://stigsim.protocol-institute.org`.
+- `FOOD_CAPACITY_UNITS`: standing food the world sustains (default 4000; 0 disables growth).
+- `FOOD_SPAWN_INTERVAL_TICKS`: simulation steps between growth attempts (default 250).
+- `FOOD_CLUSTER_CHANCE`: share of new sources landing near existing groves (default 0.7).
 - `PORT`: injected by the hosting platform.
 - `NODE_ENV=production`: makes missing origin configuration a startup error.
 
