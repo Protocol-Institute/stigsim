@@ -30,6 +30,7 @@ import { calculateFixedSteps } from "./fixed-step";
 import { ThrottledFailureReporter } from "./degraded-status";
 import { performance } from "node:perf_hooks";
 import { TICKS_PER_SEC } from "../../shared/infinite-contract";
+import { DEFAULT_FOOD_SPAWN, isSpawnTick, type FoodSpawnConfig } from "../../shared/food-spawn";
 import type { LeaderboardEntry } from "../../shared/infinite-contract";
 
 export const sim = new InfiniteSimulation();
@@ -47,6 +48,32 @@ const FOOD_EDITS_PER_SECOND = 5;
 const MAX_VOLATILE_BUFFER_BYTES = 512 * 1024;
 const SIM_STEP_MS = 1_000 / TICKS_PER_SEC;
 const MAX_CATCH_UP_STEPS = 5;
+
+/**
+ * Food growth is operator-tunable without a behaviour redeploy: the right
+ * carrying capacity for a live world depends on how many colonies are actually
+ * playing, which is not knowable from here.
+ *
+ * Setting FOOD_CAPACITY_UNITS=0 turns growth off and restores the hand-fed
+ * world.
+ */
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    console.warn(`[food] Ignoring invalid ${name}="${raw}", using ${fallback}`);
+    return fallback;
+  }
+  return value;
+}
+
+const foodSpawnConfig: FoodSpawnConfig = {
+  ...DEFAULT_FOOD_SPAWN,
+  capacityUnits: envNumber("FOOD_CAPACITY_UNITS", DEFAULT_FOOD_SPAWN.capacityUnits),
+  intervalTicks: envNumber("FOOD_SPAWN_INTERVAL_TICKS", DEFAULT_FOOD_SPAWN.intervalTicks),
+  clusterChance: envNumber("FOOD_CLUSTER_CHANCE", DEFAULT_FOOD_SPAWN.clusterChance),
+};
 
 type WorldData = {
   version?: number;
@@ -187,6 +214,13 @@ const simInterval = setInterval(() => {
   for (let i = 0; i < fixedStep.steps; i++) {
     const dead = sim.step();
     for (const colony of dead) void handleColonyDeath(colony);
+
+    if (foodSpawnConfig.capacityUnits > 0 && isSpawnTick(sim.tick, foodSpawnConfig)) {
+      // Live world, never replayed, so the ambient stream is the right one.
+      for (const source of sim.growFood(foodSpawnConfig, Math.random)) {
+        broadcast(foodUpsertMessage(source));
+      }
+    }
   }
 }, 10);
 

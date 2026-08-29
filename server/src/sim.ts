@@ -12,6 +12,12 @@ import {
   type ColonyParams,
   type FoodSourceWire,
 } from "../../shared/infinite-contract";
+import {
+  planFoodSpawn,
+  SiteMemory,
+  type FoodSpawnConfig,
+  type SpawnRegion,
+} from "../../shared/food-spawn";
 
 const CELL_PX = CELL;
 
@@ -199,6 +205,8 @@ export class InfiniteSimulation {
   colonies: InfiniteColony[] = [];
   foodSources: FoodSource[] = [];
   tick = 0;
+  /** Where food has been, used to cluster new growth into persistent groves. */
+  foodMemory = new SiteMemory();
   private nextColonyId = 0;
 
   isOpen(x: number, y: number): boolean {
@@ -312,7 +320,69 @@ export class InfiniteSimulation {
     }
     const src: FoodSource = { x, y, remaining: units, total: units };
     this.foodSources.push(src);
+    this.foodMemory.remember(x, y);
     return src;
+  }
+
+  /**
+   * The box within which new food may appear: everything the world currently
+   * contains, plus a margin. An unbounded grid has no natural bounds, and
+   * scattering food across empty space nothing has ever reached would just make
+   * it unreachable.
+   */
+  spawnRegion(margin = 12): SpawnRegion {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+    const include = (x: number, y: number) => {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    };
+
+    for (const key of this.walls) {
+      const comma = key.indexOf(",");
+      include(Number(key.slice(0, comma)), Number(key.slice(comma + 1)));
+    }
+    for (const colony of this.colonies) include(colony.nestX, colony.nestY);
+    for (const source of this.foodSources) include(source.x, source.y);
+
+    // A blank world still needs somewhere to put things.
+    if (!Number.isFinite(minX)) return { minX: -margin, minY: -margin, maxX: margin, maxY: margin };
+
+    return { minX: minX - margin, minY: minY - margin, maxX: maxX + margin, maxY: maxY + margin };
+  }
+
+  /** Whether new food may be created on this cell. */
+  canGrowFoodAt(x: number, y: number): boolean {
+    if (!this.isOpen(x, y)) return false;
+    if (this.colonies.some(c => c.nestX === x && c.nestY === y)) return false;
+    return !this.foodSources.some(s => s.x === x && s.y === y);
+  }
+
+  /** Total food units standing in the world. */
+  get standingFoodUnits(): number {
+    return this.foodSources.reduce((sum, source) => sum + source.remaining, 0);
+  }
+
+  /**
+   * Grow new food according to `config`. Returns the sources created so the
+   * caller can broadcast them; an empty array means the world was at capacity
+   * or nowhere valid could be found.
+   */
+  growFood(config: FoodSpawnConfig, random: () => number): FoodSource[] {
+    const planned = planFoodSpawn(
+      {
+        standingUnits: this.standingFoodUnits,
+        region: this.spawnRegion(),
+        memory: this.foodMemory.entries,
+        canPlaceAt: (x, y) => this.canGrowFoodAt(x, y),
+      },
+      config,
+      random,
+    );
+
+    return planned.map(source => this.addFood(source.x, source.y, source.units));
   }
 
   removeFood(x: number, y: number): boolean {
@@ -401,6 +471,7 @@ export class InfiniteSimulation {
         src.remaining--;
         if (src.remaining <= 0) {
           this.foodSources.splice(srcIdx, 1);
+          this.foodMemory.remember(src.x, src.y);
           for (const c of this.colonies) c.discoveredSources.delete(`${src.x},${src.y}`);
         } else {
           colony.setAt("food", src.x, src.y, NEST_SEED);
