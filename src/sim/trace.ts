@@ -1,6 +1,7 @@
 import type { RunConfig, RunSeeds, SimParams } from "./types";
 import type { TimedCommand } from "./commands";
-import { isTimedCommand } from "./commands";
+import { isTimedCommand, isAntCount, validParams } from "./commands";
+import { MAX_COLONIES, MAX_FOOD_PER_SOURCE, MAX_FOOD_SOURCES } from "./constants";
 import type { MetricsSample, MetricsRecorder } from "./metrics";
 import type { Simulation } from "./sim";
 import { fingerprint } from "./fingerprint";
@@ -9,7 +10,7 @@ export const TRACE_FORMAT = "stigsim-trace";
 /** The file format. Bump when the shape of a trace changes. */
 export const TRACE_VERSION = 1;
 /** Simulation behaviour. Bump whenever a change alters how the model runs. */
-export const SIM_VERSION = 1;
+export const SIM_VERSION = 2;
 
 export interface TraceRunConfig {
   numAnts: number;
@@ -114,10 +115,15 @@ function validSeeds(v: unknown): v is RunSeeds {
   return (s.master === null || isStr(s.master)) && isStr(s.maze) && isStr(s.food) && isStr(s.ants);
 }
 
-function validParams(v: unknown): v is SimParams {
+function validColonySample(v: unknown): boolean {
   if (typeof v !== "object" || v === null) return false;
-  const p = v as Record<string, unknown>;
-  return isNum(p.evapRate) && isNum(p.trailPower) && isNum(p.tankMax) && typeof p.cautionary === "boolean";
+  const c = v as Record<string, unknown>;
+  return (
+    isNum(c.food) && isNum(c.ratePerKTick) && isNum(c.highwayScore) &&
+    typeof c.pheroMass === "object" && c.pheroMass !== null &&
+    typeof c.pheroEntropy === "object" && c.pheroEntropy !== null &&
+    (c.meanTripRatio === null || isNum(c.meanTripRatio))
+  );
 }
 
 function validMetricsSample(v: unknown): v is MetricsSample {
@@ -125,22 +131,36 @@ function validMetricsSample(v: unknown): v is MetricsSample {
   const s = v as Record<string, unknown>;
   return (
     isInt(s.t) && s.t >= 0 &&
-    Array.isArray(s.colonies) &&
+    Array.isArray(s.colonies) && s.colonies.every(validColonySample) &&
     Array.isArray(s.foodRemaining) && s.foodRemaining.every(isNum)
   );
 }
 
-function validConfig(v: unknown): v is TraceRunConfig {
-  if (typeof v !== "object" || v === null) return false;
+/**
+ * Kept as named checks rather than one conjunction so a rejected trace can say
+ * which field was wrong. Someone who is handed a trace that will not load has
+ * no other way to work out why.
+ */
+const CONFIG_CHECKS: [string, (c: Record<string, unknown>) => boolean][] = [
+  ["ant count", c => isAntCount(c.numAnts)],
+  ["parameter block", c => validParams(c.params)],
+  ["loop rate", c => isNum(c.loopRate) && c.loopRate >= 0 && c.loopRate <= 1],
+  ["colony count", c => isInt(c.numColonies) && c.numColonies >= 1 && c.numColonies <= MAX_COLONIES],
+  ["food source count", c => isInt(c.numFoodSources) && c.numFoodSources >= 0 && c.numFoodSources <= MAX_FOOD_SOURCES],
+  ["food-per-source amount", c => isNum(c.foodPerSource) && c.foodPerSource > 0 && c.foodPerSource <= MAX_FOOD_PER_SOURCE],
+];
+
+function configError(v: unknown): string | null {
+  if (typeof v !== "object" || v === null) {
+    return "That trace has a missing or malformed run config.";
+  }
   const c = v as Record<string, unknown>;
-  return (
-    isInt(c.numAnts) && c.numAnts >= 0 &&
-    validParams(c.params) &&
-    isNum(c.loopRate) && c.loopRate >= 0 && c.loopRate <= 1 &&
-    isInt(c.numColonies) && c.numColonies >= 1 && c.numColonies <= 4 &&
-    isInt(c.numFoodSources) && c.numFoodSources >= 0 &&
-    isNum(c.foodPerSource) && c.foodPerSource > 0
-  );
+  for (const [field, ok] of CONFIG_CHECKS) {
+    if (!ok(c)) {
+      return `That trace has an unusable ${field}: missing, malformed, or outside the range this build allows.`;
+    }
+  }
+  return null;
 }
 
 export function parseTrace(text: string): ParseResult {
@@ -179,12 +199,23 @@ export function parseTrace(text: string): ParseResult {
   if (!validSeeds(run.seeds)) {
     return { ok: false, error: "That trace has missing or malformed run seeds." };
   }
-  if (!validConfig(run.config)) {
-    return { ok: false, error: "That trace has a missing or malformed run config." };
+  const badConfig = configError(run.config);
+  if (badConfig !== null) {
+    return { ok: false, error: badConfig };
   }
 
-  if (!Array.isArray(t.commands) || !t.commands.every(isTimedCommand)) {
-    return { ok: false, error: "That trace contains a command this build does not recognise." };
+  if (!Array.isArray(t.commands)) {
+    return { ok: false, error: "That trace has a malformed command list." };
+  }
+  const badCommand = t.commands.findIndex(c => !isTimedCommand(c));
+  if (badCommand >= 0) {
+    const kind = (t.commands[badCommand] as { cmd?: { kind?: unknown } } | null)?.cmd?.kind;
+    return {
+      ok: false,
+      error: isStr(kind)
+        ? `That trace's command ${badCommand + 1} (${kind}) is malformed or outside the range this build allows.`
+        : `That trace's command ${badCommand + 1} is not one this build recognises.`,
+    };
   }
   if (!Array.isArray(t.fingerprints) ||
       !t.fingerprints.every(f =>

@@ -28,11 +28,20 @@ function mixLayer(h: number, layer: Float32Array): number {
   return h;
 }
 
-/** An exact hash of everything that determines how the run continues. */
+/**
+ * An exact hash of everything that determines how the run continues: the
+ * visible state, and the position of the ant random stream. The stream
+ * position matters on its own. Two simulations can agree on every ant, cell,
+ * and counter while standing at different points in the sequence, and from
+ * there they draw different numbers and diverge for good. Leaving it out
+ * would let a replay report a match for hundreds of ticks after it had
+ * already stopped reproducing the recording.
+ */
 export function fingerprint(sim: Simulation): string {
   let h = FNV_OFFSET;
 
   h = mixU32(h, sim.tick);
+  h = mixU32(h, sim.antsDraws);
   h = mixU32(h, sim.numAnts);
   h = mixU32(h, sim.colonies.length);
   h = mixU32(h, sim.foodSources.length);

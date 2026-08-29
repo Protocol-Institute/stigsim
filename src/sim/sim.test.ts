@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Simulation, DEFAULT_PARAMS, COLS, ROWS, makeSeeds } from "./index";
+import { Simulation, DEFAULT_PARAMS, COLS, ROWS, DIRS4, makeSeeds } from "./index";
 import type { RunConfig } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
@@ -90,4 +90,29 @@ test("holding the maze and food seeds fixed while varying ants keeps the map", (
     a.allAnts.map(x => [x.cx, x.cy]),
     b.allAnts.map(x => [x.cx, x.cy]),
   );
+});
+
+test("an ant sealed into its cell does not crash the simulation", () => {
+  // Sealing the last open neighbour of an occupied cell is a permitted edit:
+  // applySetWall refuses only nest and food cells. The server simulation has
+  // always guarded the empty-candidate case; the client did not, and a trace
+  // that records these four strokes is enough to reach it.
+  const sim = new Simulation(config());
+  for (let i = 0; i < 80; i++) sim.step();
+
+  const blocked = (x: number, y: number) =>
+    x < 0 || x >= COLS || y < 0 || y >= ROWS ||
+    sim.colonies.some(c => c.nestX === x && c.nestY === y) ||
+    sim.foodSources.some(s => s.x === x && s.y === y);
+
+  const ant = sim.allAnts.find(a =>
+    !blocked(a.cx, a.cy) &&
+    DIRS4.every(([dx, dy]) => !blocked(a.cx + dx, a.cy + dy)));
+  assert.ok(ant, "expected an ant whose four neighbours are all wallable");
+
+  for (const [dx, dy] of DIRS4) {
+    sim.apply({ kind: "setWall", x: ant.cx + dx, y: ant.cy + dy, open: false });
+  }
+
+  assert.doesNotThrow(() => { for (let i = 0; i < 60; i++) sim.step(); });
 });

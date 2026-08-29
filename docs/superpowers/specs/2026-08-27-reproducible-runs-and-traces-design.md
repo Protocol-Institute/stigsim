@@ -120,12 +120,26 @@ every exponent it can produce is reachable without `Math.pow`:
 
 ```js
 function deterministicPow(base, power) {
-  const whole = Math.floor(power);
-  let r = 1;
-  for (let i = 0; i < whole; i++) r *= base;
-  return power === whole ? r : r * Math.sqrt(base);
+  if (!isHalfStep(power)) throw new RangeError(...);
+  let n = Math.abs(power);
+  const half = !Number.isInteger(n);
+  n = Math.floor(n);
+  let r = 1, b = base;                 // exponentiation by squaring, so a
+  while (n > 0) {                      // large exponent cannot stall a tick
+    if (n % 2 === 1) r *= b;
+    n = Math.floor(n / 2);
+    if (n > 0) b *= b;
+  }
+  if (half) r *= Math.sqrt(base);
+  return power < 0 ? 1 / r : r;
 }
 ```
+
+The domain check and the squaring both came out of review; see the revisions
+note at the end. The original draft looped `Math.floor(power)` times and
+silently returned `base ^ 2.5` when asked for `base ^ 2.3`, which is fine for a
+slider that steps in halves and wrong for a trace file that can carry any
+number.
 
 The slider keeps its current range and 0.5 step. The result is not bit-identical
 to a correctly-rounded `pow`, since it accumulates slightly more rounding error,
@@ -388,3 +402,31 @@ replays.
 Fingerprinting and metrics sampling add per-tick work. The estimates here are
 small but unmeasured; both intervals are configurable, so they can be relaxed if
 measurement disagrees.
+
+## Revisions after review
+
+Ergod's review of PR #3 found four things this design got wrong or left open.
+The code now differs from the text above in these places.
+
+`deterministicPow` was defined only for non-negative exponents that are
+multiples of a half, but nothing enforced that. The trail-bias slider satisfies
+it; a trace file does not, and an off-domain exponent aliased silently to a
+nearby one. It now checks its domain and throws, computes the integer part by
+squaring rather than by repeated multiplication, and handles negative exponents
+as reciprocals.
+
+Fingerprints hashed the visible state but not the position of the ant random
+stream, so a replay whose draw count had diverged could report a match for
+hundreds of ticks. The stream position is now part of the hash.
+
+`parseTrace` bounded only the colony count and the loop rate. Every other number
+a trace carries is now bounded as well, in `src/sim/constants.ts`, and the same
+guards bound command values.
+
+`powerChoice` returned `undefined` when an edit sealed every exit from a cell an
+ant occupied. The server simulation had guarded this since it was written; the
+extraction into `src/sim/` carried the unguarded client version forward. The
+guard is now present in both.
+
+These changes alter simulation results, so `SIM_VERSION` moved to 2 and the
+golden fixture was regenerated.

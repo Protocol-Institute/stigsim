@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   makeRng, makeSeeds, deriveStreamSeed, generateMasterSeed,
-  shuffleInPlace, deterministicPow,
+  shuffleInPlace, deterministicPow, isHalfStep,
 } from "./rng";
 
 test("the same seed produces the same sequence", () => {
@@ -79,4 +79,47 @@ test("deterministicPow matches Math.pow across the slider's value set", () => {
 test("deterministicPow is stable across repeated calls", () => {
   const first = deterministicPow(37.125, 7.5);
   for (let i = 0; i < 100; i++) assert.equal(deterministicPow(37.125, 7.5), first);
+});
+
+// ─── deterministicPow domain ─────────────────────────────────────────────────
+
+test("deterministicPow matches Math.pow closely on its domain", () => {
+  for (const [base, power] of [[2, 3], [2, 2.5], [4, 0.5], [1.5, 8], [3, 10]] as [number, number][]) {
+    const got = deterministicPow(base, power);
+    const want = Math.pow(base, power);
+    assert.ok(Math.abs(got - want) / want < 1e-12, `${base}^${power}: ${got} vs ${want}`);
+  }
+});
+
+test("deterministicPow inverts negative exponents instead of aliasing them", () => {
+  assert.ok(Math.abs(deterministicPow(2, -1.5) - 0.35355339059327373) < 1e-15);
+  assert.ok(Math.abs(deterministicPow(2, -2) - 0.25) < 1e-15);
+});
+
+test("deterministicPow refuses exponents it cannot compute exactly", () => {
+  // 2.3 used to silently return 2^2.5, an answer that looks plausible and is
+  // 15% wrong. A trace carrying such a value must fail loudly instead.
+  assert.throws(() => deterministicPow(2, 2.3), RangeError);
+  assert.throws(() => deterministicPow(2, NaN), RangeError);
+  assert.throws(() => deterministicPow(2, Infinity), RangeError);
+});
+
+test("deterministicPow cost is logarithmic, so a large exponent cannot stall a tick", () => {
+  const started = Date.now();
+  assert.ok(Number.isFinite(deterministicPow(1.0000001, 1e9)));
+  assert.ok(Date.now() - started < 1000);
+});
+
+test("isHalfStep accepts multiples of a half and nothing else", () => {
+  for (const v of [0, 0.5, 1, 2.5, -1.5, 10]) assert.equal(isHalfStep(v), true, `${v}`);
+  for (const v of [0.25, 2.3, NaN, Infinity]) assert.equal(isHalfStep(v), false, `${v}`);
+});
+
+// ─── Draw counting ───────────────────────────────────────────────────────────
+
+test("an rng counts the draws taken from it, excluding warm-up", () => {
+  const r = makeRng("draw-count");
+  assert.equal(r.draws, 0);
+  for (let i = 0; i < 7; i++) r();
+  assert.equal(r.draws, 7);
 });

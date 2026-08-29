@@ -53,12 +53,31 @@ behaviour the ECMAScript specification leaves implementation-defined;
 `Math.pow`, `Math.log`, `Math.exp`, and the trigonometric functions are the
 usual causes, and none of them may be used to compute simulation state.
 
+`deterministicPow` in `src/sim/rng.ts` replaces `Math.pow`. It is defined only
+on exponents that are multiples of a half, and throws on anything else rather
+than returning an approximation that would look like a valid run. Anything that
+can set the trail-bias exponent has to screen it with `isHalfStep` first.
+
+Fingerprints cover the position of the ant random stream as well as the visible
+state. Two simulations can agree on every ant and every cell while standing at
+different points in the sequence, and from there they diverge for good, so a
+hash of visible state alone would report a match well past the point where a
+replay had stopped reproducing the recording.
+
 ## Traces
 
 A trace is one JSON file holding the run seeds, the initial configuration,
 every recorded intervention, periodic state fingerprints, and the metrics
 samples. Save one from the Run panel and load it back to replay the run
 exactly.
+
+A trace is an ordinary file, so `parseTrace` treats one as untrusted: it bounds
+every number against the limits in `src/sim/constants.ts` before the trace is
+allowed to become a running simulation. Without those bounds a corrupt or
+hand-edited file can exhaust the heap, stall a tick for minutes, or drive the
+pheromone field to infinity. Any new field a trace carries needs a bound too,
+and command values are bounded by the same guards in `src/sim/commands.ts` so
+the loader and the command bus cannot drift apart.
 
 `src/sim/fixtures/golden.trace.json` is replayed by `pnpm test:client` as a
 regression guard. If that test fails, simulation behaviour changed. The usual

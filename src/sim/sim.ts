@@ -209,6 +209,11 @@ export class Simulation {
     return this.recorded;
   }
 
+  /** Draws taken from the ant stream. Part of the run's continuation state. */
+  get antsDraws(): number {
+    return this.antsRng.draws;
+  }
+
   enqueue(cmd: Command) {
     this.pending.push(cmd);
   }
@@ -437,6 +442,13 @@ export class Simulation {
 
     const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
     const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
+    // An edit can seal every exit from a cell an ant is standing in, which
+    // applySetWall permits: it refuses only nest and food cells. The ant waits
+    // where it is until something opens up. The server simulation has always
+    // had this guard; the client did not, and powerChoice returns undefined on
+    // an empty list.
+    if (candidates.length === 0) return;
+
     const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
     const next = powerChoice(
       candidates, phero, trailPower, this.antsRng,

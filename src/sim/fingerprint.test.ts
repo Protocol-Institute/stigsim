@@ -101,3 +101,28 @@ test("recorded fingerprints match a recomputation of the same run", () => {
   }
   assert.deepEqual(a.fingerprints, b.fingerprints);
 });
+
+test("the fingerprint covers the ant stream position, not just visible state", () => {
+  const a = new Simulation(config());
+  const b = new Simulation(config());
+  for (let i = 0; i < 50; i++) { a.step(); b.step(); }
+  assert.equal(fingerprint(a), fingerprint(b));
+
+  // Burn one draw in `a` and nothing else. Every value the fingerprint used to
+  // hash is still identical between the two, but the runs have permanently
+  // diverged: from here they draw different numbers. A fingerprint that misses
+  // this reports a match for as long as it takes the difference to surface,
+  // which is exactly the "plausible wrong answer" it exists to prevent.
+  (a as unknown as { antsRng: () => number }).antsRng();
+
+  assert.notEqual(fingerprint(a), fingerprint(b));
+});
+
+test("a burned draw is caught at the next checkpoint rather than hundreds of ticks later", () => {
+  const a = new Simulation(config());
+  const b = new Simulation(config());
+  (a as unknown as { antsRng: () => number }).antsRng();
+  a.step();
+  b.step();
+  assert.notEqual(fingerprint(a), fingerprint(b));
+});

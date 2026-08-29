@@ -168,10 +168,17 @@ test("parseTrace rejects missing or malformed seeds and config", () => {
   assert.ok(!noSeedsResult.ok);
   assert.match(noSeedsResult.error, /seed/i);
 
+  // The message names the field that failed, so someone handed a trace that
+  // will not load can tell what is wrong with it.
   const badConfig = JSON.stringify({ ...trace, run: { ...trace.run, config: { ...trace.run.config, numAnts: -3 } } });
   const badConfigResult = parseTrace(badConfig);
   assert.ok(!badConfigResult.ok);
-  assert.match(badConfigResult.error, /config/i);
+  assert.match(badConfigResult.error, /ant count/i);
+
+  const noConfig = JSON.stringify({ ...trace, run: { ...trace.run, config: null } });
+  const noConfigResult = parseTrace(noConfig);
+  assert.ok(!noConfigResult.ok);
+  assert.match(noConfigResult.error, /config/i);
 });
 
 test("parseTrace loads a trace from a different sim version but warns", () => {
@@ -180,4 +187,53 @@ test("parseTrace loads a trace from a different sim version but warns", () => {
   const result = parseTrace(JSON.stringify(trace));
   assert.ok(result.ok, result.ok ? "" : result.error);
   assert.match(result.warning ?? "", /recorded under a different/i);
+});
+
+// ─── Loader bounds ───────────────────────────────────────────────────────────
+
+/** A minimal well-formed trace whose config can be poked at. */
+function traceWith(configOverrides: Record<string, unknown> = {}, paramOverrides: Record<string, unknown> = {}) {
+  const { sim, rec } = runSim(10);
+  const t = buildTrace(sim, rec) as unknown as Record<string, unknown>;
+  const run = t.run as { config: Record<string, unknown> };
+  run.config = { ...run.config, ...configOverrides };
+  run.config.params = { ...(run.config.params as object), ...paramOverrides };
+  return JSON.stringify(t);
+}
+
+test("the loader rejects an ant count that would exhaust memory", () => {
+  // new Replayer(trace) allocates numAnts ants per colony immediately. At the
+  // measured ~131 bytes per ant, 1e9 asks the heap for about 131 GB and takes
+  // the tab down before anything can report a problem.
+  const result = parseTrace(traceWith({ numAnts: 1e9 }));
+  assert.equal(result.ok, false);
+});
+
+test("the loader rejects params that stall a tick or amplify pheromone", () => {
+  assert.equal(parseTrace(traceWith({}, { trailPower: 1e12 })).ok, false);
+  assert.equal(parseTrace(traceWith({}, { trailPower: 2.3 })).ok, false);
+  assert.equal(parseTrace(traceWith({}, { evapRate: -1 })).ok, false);
+  assert.equal(parseTrace(traceWith({}, { tankMax: 0 })).ok, false);
+});
+
+test("the loader rejects out-of-range colony, source, and food counts", () => {
+  assert.equal(parseTrace(traceWith({ numColonies: 99 })).ok, false);
+  assert.equal(parseTrace(traceWith({ numFoodSources: 1e9 })).ok, false);
+  assert.equal(parseTrace(traceWith({ foodPerSource: 1e12 })).ok, false);
+});
+
+test("the loader still accepts everything the sliders can produce", () => {
+  assert.equal(parseTrace(traceWith({ numAnts: 100, numColonies: 4, numFoodSources: 8, foodPerSource: 10000 },
+    { evapRate: 0.001, trailPower: 10, tankMax: 16000 })).ok, true);
+  assert.equal(parseTrace(traceWith({ numAnts: 1, numColonies: 1, numFoodSources: 1, foodPerSource: 50 },
+    { evapRate: 0.02, trailPower: 1, tankMax: 1600 })).ok, true);
+});
+
+test("the loader checks the shape of each metrics colony entry", () => {
+  const { sim, rec } = runSim(10);
+  const t = buildTrace(sim, rec) as unknown as Record<string, unknown>;
+  const metrics = t.metrics as { samples: Record<string, unknown>[] };
+  assert.ok(metrics.samples.length > 0, "expected at least one sample");
+  metrics.samples[0].colonies = [1, 2, 3];
+  assert.equal(parseTrace(JSON.stringify(t)).ok, false);
 });

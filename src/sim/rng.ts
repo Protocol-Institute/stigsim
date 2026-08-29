@@ -1,10 +1,18 @@
 import type { RunSeeds } from "./types";
 
-export type Rng = () => number;
+export type Rng = {
+  (): number;
+  /**
+   * How many values have been drawn. Fingerprints mix this in, so a replay
+   * that draws a different number of times is caught at the next checkpoint
+   * even when the extra draws have not yet changed anything visible.
+   */
+  draws: number;
+};
 
 /** Small Fast Counter, 32-bit. Shifts, xor, and wrapping addition only. */
 export function sfc32(a: number, b: number, c: number, d: number): Rng {
-  return function next(): number {
+  const next = function (): number {
     a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0;
     let t = (a + b) | 0;
     a = b ^ (b >>> 9);
@@ -13,8 +21,11 @@ export function sfc32(a: number, b: number, c: number, d: number): Rng {
     d = (d + 1) | 0;
     t = (t + d) | 0;
     c = (c + t) | 0;
+    next.draws++;
     return (t >>> 0) / 4294967296;
-  };
+  } as Rng;
+  next.draws = 0;
+  return next;
 }
 
 /** Hashes a string into four 32-bit words suitable for seeding sfc32. */
@@ -44,6 +55,7 @@ export function makeRng(seed: string): Rng {
   const rng = sfc32(a, b, c, d);
   // Discard the first draws so poorly-distributed seeds settle.
   for (let i = 0; i < 12; i++) rng();
+  rng.draws = 0;
   return rng;
 }
 
@@ -89,15 +101,41 @@ export function shuffleInPlace<T>(arr: T[], rng: Rng): void {
   }
 }
 
+/** True for exponents deterministicPow can compute: the multiples of a half. */
+export function isHalfStep(v: number): boolean {
+  return Number.isFinite(v) && Number.isInteger(v * 2);
+}
+
 /**
  * Exponentiation without Math.pow, whose precision the ECMAScript
- * specification leaves implementation-defined. Multiplication and square root
- * are both exactly specified by IEEE-754, and the trail-bias slider steps in
- * halves, so every exponent it can produce is reachable this way.
+ * specification leaves implementation-defined. Multiplication, division, and
+ * square root are all exactly specified by IEEE-754, so this returns the same
+ * bits on every conforming engine.
+ *
+ * The domain is the multiples of a half, which is what the trail-bias slider
+ * produces. Anything else throws rather than returning a plausible-looking
+ * wrong answer: there is no engine-safe way to raise a number to 2.3, and a
+ * silent approximation would be indistinguishable from a correct run while
+ * changing how the ants behave. Callers taking an exponent from outside the
+ * program must screen it with isHalfStep first; the trace loader does.
  */
 export function deterministicPow(base: number, power: number): number {
-  const whole = Math.floor(power);
+  if (!isHalfStep(power)) {
+    throw new RangeError(`deterministicPow needs a multiple of 0.5, got ${power}`);
+  }
+  let n = Math.abs(power);
+  const half = !Number.isInteger(n);
+  n = Math.floor(n);
+
+  // Exponentiation by squaring. Repeated multiplication would be O(n), which
+  // a large exponent from a trace file could turn into an unrecoverable stall.
   let r = 1;
-  for (let i = 0; i < whole; i++) r *= base;
-  return power === whole ? r : r * Math.sqrt(base);
+  let b = base;
+  while (n > 0) {
+    if (n % 2 === 1) r *= b;
+    n = Math.floor(n / 2);
+    if (n > 0) b *= b;
+  }
+  if (half) r *= Math.sqrt(base);
+  return power < 0 ? 1 / r : r;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Simulation, DEFAULT_PARAMS, makeSeeds, isCommand } from "./index";
+import { Simulation, DEFAULT_PARAMS, makeSeeds, isCommand, MAX_ANTS_PER_COLONY } from "./index";
 import type { RunConfig, Command } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
@@ -225,4 +225,48 @@ test("isCommand accepts valid commands and rejects malformed input", () => {
     { kind: "setManualAnt", index: "3" },
   ];
   for (const cmd of bad) assert.ok(!isCommand(cmd), `accepted ${JSON.stringify(cmd)}`);
+});
+
+// ─── Range guards ────────────────────────────────────────────────────────────
+//
+// A trace is an ordinary file. These bounds are what stops a corrupt or
+// hand-written one from allocating unbounded memory, stalling a tick, or
+// driving the pheromone field to infinity when it is replayed.
+
+test("setAntCount rejects counts that would exhaust memory", () => {
+  assert.equal(isCommand({ kind: "setAntCount", n: 50 }), true);
+  assert.equal(isCommand({ kind: "setAntCount", n: MAX_ANTS_PER_COLONY }), true);
+  assert.equal(isCommand({ kind: "setAntCount", n: MAX_ANTS_PER_COLONY + 1 }), false);
+  assert.equal(isCommand({ kind: "setAntCount", n: 1e9 }), false);
+  assert.equal(isCommand({ kind: "setAntCount", n: -1 }), false);
+});
+
+test("setParam rejects an evaporation rate that amplifies pheromone", () => {
+  // decay is 1 - evapRate, so a negative rate multiplies every cell upwards
+  // without bound and reaches Infinity within a few hundred ticks.
+  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: 0.005 }), true);
+  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: 0 }), true);
+  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: -1 }), false);
+  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: 1e12 }), false);
+});
+
+test("setParam rejects a trail power outside the exponent domain", () => {
+  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 5 }), true);
+  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 2.5 }), true);
+  // Not a multiple of a half: deterministicPow cannot compute it exactly.
+  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 2.3 }), false);
+  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: -2 }), false);
+  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 1e7 }), false);
+});
+
+test("setParam rejects an out-of-range tank and an unknown key", () => {
+  assert.equal(isCommand({ kind: "setParam", key: "tankMax", value: 6400 }), true);
+  assert.equal(isCommand({ kind: "setParam", key: "tankMax", value: 0 }), false);
+  assert.equal(isCommand({ kind: "setParam", key: "tankMax", value: 1e12 }), false);
+  assert.equal(isCommand({ kind: "setParam", key: "toString", value: 1 }), false);
+});
+
+test("setFood rejects an amount beyond the supported range", () => {
+  assert.equal(isCommand({ kind: "setFood", x: 3, y: 3, amount: 500 }), true);
+  assert.equal(isCommand({ kind: "setFood", x: 3, y: 3, amount: 1e12 }), false);
 });
