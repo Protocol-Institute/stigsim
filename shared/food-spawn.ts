@@ -69,6 +69,15 @@ export interface SpawnWorld {
   region: SpawnRegion;
   /** Places food has occupied recently. Empty is fine; spawning is then uniform. */
   memory: readonly SpawnSite[];
+  /**
+   * The only cells food may appear on, when the world can enumerate them.
+   *
+   * Without this, placement samples the region at random and rejects what does
+   * not fit — fine when most of the world is fertile, useless when a room-sized
+   * world has one small patch of fertile ground: a few dozen random darts at
+   * six thousand cells will essentially never land on the six that qualify.
+   */
+  sites?: readonly SpawnSite[];
   /** Whether a source may be created on this cell. */
   canPlaceAt(x: number, y: number): boolean;
 }
@@ -127,14 +136,26 @@ function choosePlacement(
   random: () => number,
   claimed: Set<string>,
 ): SpawnSite | null {
-  const { region, memory } = world;
+  const { region, memory, sites } = world;
   const clustered = memory.length > 0 && random() < config.clusterChance;
 
   for (let attempt = 0; attempt < config.placementAttempts; attempt++) {
     let x: number;
     let y: number;
 
-    if (clustered) {
+    if (sites) {
+      if (sites.length === 0) return null;
+      // Prefer somewhere food has been, if that place is still fertile.
+      const nearby = clustered
+        ? sites.filter(s => memory.some(m =>
+            Math.abs(m.x - s.x) <= config.clusterRadius &&
+            Math.abs(m.y - s.y) <= config.clusterRadius))
+        : sites;
+      const pool = nearby.length > 0 ? nearby : sites;
+      const pick = pool[Math.floor(random() * pool.length)];
+      x = pick.x;
+      y = pick.y;
+    } else if (clustered) {
       const anchor = memory[Math.floor(random() * memory.length)];
       const r = config.clusterRadius;
       x = anchor.x + randomInt(random, -r, r);

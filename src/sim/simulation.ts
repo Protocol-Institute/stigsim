@@ -28,6 +28,9 @@ import {
 } from "./constants";
 import { normalizeAngle, sampleField, splatDeposit } from "./field";
 import { Facing, Terrain, TerrainLayer } from "./terrain";
+import { generateWorld, type CellType, type WorldKind } from "./world";
+
+export type { CellType, WorldKind } from "./world";
 
 export interface SimParams {
   evapRate: number;
@@ -50,7 +53,9 @@ export interface SimParams {
 export const DEFAULT_PARAMS: SimParams = {
   evapRate: 0.005,
   trailPower: 5,
-  tankMax: 6400,
+  // Sized against the room, not the old maze: a gland has to outlast a search
+  // and the walk home, and this floor is 96 cells across.
+  tankMax: 25_600,
   cautionary: false,
   sensorDist: SENSOR_DIST,
   sensorAngle: SENSOR_ANGLE,
@@ -89,7 +94,6 @@ export const DEFAULT_NUM_COLONIES = 1;
 export const DEFAULT_NUM_FOOD_SOURCES = 1;
 export const DEFAULT_FOOD_PER_SOURCE = 500;
 
-export type CellType = 0 | 1;
 export type AntState = "searching" | "returning";
 
 export interface FoodSource {
@@ -125,40 +129,6 @@ export interface Ant {
   manual?: boolean;
 }
 
-export function generateMaze(rng: Rng, loopRate: number = 0.1): CellType[][] {
-  const grid: CellType[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-  const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-  function carve(cx: number, cy: number) {
-    visited[cy][cx] = true;
-    grid[cy][cx] = 1;
-    const dirs = rng.shuffle([[0, -2], [0, 2], [-2, 0], [2, 0]]);
-    for (const [dx, dy] of dirs) {
-      const nx = cx + dx, ny = cy + dy;
-      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx]) {
-        grid[cy + dy / 2][cx + dx / 2] = 1;
-        carve(nx, ny);
-      }
-    }
-  }
-  carve(1, 1);
-  for (let y = 1; y < ROWS - 1; y++)
-    for (let x = 1; x < COLS - 1; x++)
-      if (grid[y][x] === 0 && rng.chance(loopRate)) grid[y][x] = 1;
-  // Ensure all colony nest corners are open
-  for (const [nx, ny] of COLONY_NESTS) grid[ny][nx] = 1;
-  return grid;
-}
-
-/**
- * How concentrated the ant-laid pheromone is: the share of it sitting in the
- * busiest tenth of open cells. Near 1 means the colonies have committed to a
- * few routes; low means scent is still spread thinly across the maze.
- *
- * Nest and food cells are excluded. Both are pinned to NEST_SEED every step by
- * the model rather than earned by any ant, and they are large enough to
- * dominate: counting them reported a fully converged 100% on a fresh maze where
- * no ant had yet moved.
- */
 export function computeHighwayScore(sim: Simulation): number {
   const anchors = new Set<number>();
   for (const c of sim.colonies) anchors.add(c.nestY * COLS + c.nestX);
@@ -196,6 +166,9 @@ export class Simulation {
   foodPerSource: number;
   params: SimParams;
   loopRate: number;
+  worldKind: WorldKind;
+  /** Cells where food prefers to appear, from the generator. */
+  crumbZones: [number, number][];
   grid: CellType[][];
   colonies: Colony[];
   foodSources: FoodSource[];
@@ -213,6 +186,7 @@ export class Simulation {
     numFoodSources: number = 1,
     foodPerSource: number = 500,
     seed: string = randomSeed(),
+    worldKind: WorldKind = "kitchen",
   ) {
     this.numAnts = numAnts;
     this.params = { ...params };
@@ -222,8 +196,13 @@ export class Simulation {
     this.foodPerSource = foodPerSource;
     this.seed = seed;
     this.rng = new Rng(seed);
-    this.terrain = new TerrainLayer(COLS, ROWS);
-    this.grid = generateMaze(this.rng, loopRate);
+    this.worldKind = worldKind;
+
+    const world = generateWorld(worldKind, COLS, ROWS, this.rng, loopRate);
+    this.grid = world.grid;
+    this.terrain = world.terrain;
+    this.crumbZones = world.crumbZones;
+    this._nestSites = world.nests;
     this.colonies = this._initColonies();
     this.foodSources = this._placeFoodSources();
     for (const colony of this.colonies) this._seedNest(colony);
@@ -231,7 +210,7 @@ export class Simulation {
 
   private _initColonies(): Colony[] {
     return Array.from({ length: this.numColonies }, (_, id) => {
-      const [nestX, nestY] = COLONY_NESTS[id];
+      const [nestX, nestY] = this._nestSites[id] ?? COLONY_NESTS[id % COLONY_NESTS.length];
       this.grid[nestY][nestX] = 1;
       return {
         id,
@@ -262,9 +241,16 @@ export class Simulation {
         if (farEnough) open.push([x, y]);
       }
     }
-    this.rng.shuffle(open);
-    const count = Math.min(this.numFoodSources, open.length);
-    return open.slice(0, count).map(([x, y]) => {
+    // Crumbs collect where the generator says they collect — under the table,
+    // by the bin. Falling back to open floor keeps the maze working, which has
+    // no such places.
+    const loam = open.filter(([x, y]) => this.terrain.at(x, y) === Terrain.Loam);
+    const preferred = loam.length > 0 ? loam : open;
+
+    this.rng.shuffle(preferred);
+    const count = Math.min(this.numFoodSources, preferred.length);
+    const open2 = preferred;
+    return open2.slice(0, count).map(([x, y]) => {
       this.foodMemory.remember(x, y);
       return { x, y, remaining: this.foodPerSource, total: this.foodPerSource };
     });
@@ -324,12 +310,20 @@ export class Simulation {
     return this.colonies.reduce((s, c) => s + c.foodCollected, 0);
   }
 
+  /** Every open loam cell, or null when the world has none. */
+  loamSites(): { x: number; y: number }[] | null {
+    const sites: { x: number; y: number }[] = [];
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        if (this.terrain.at(x, y) === Terrain.Loam && this.grid[y][x] === 1) sites.push({ x, y });
+      }
+    }
+    return sites.length > 0 ? sites : null;
+  }
+
   /** Whether any loam has been painted, which confines food growth to it. */
   get hasLoam(): boolean {
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) if (this.terrain.at(x, y) === Terrain.Loam) return true;
-    }
-    return false;
+    return this.loamSites() !== null;
   }
 
   /** Total food units still standing in the maze. */
@@ -343,17 +337,18 @@ export class Simulation {
    * can come back rather than only ever being replaced by a new one elsewhere.
    */
   private _growFood() {
+    // Once any loam exists food grows only there, so hand the spawner the list
+    // rather than making it find six cells in six thousand by throwing darts.
+    const sites = this.loamSites();
     const planned = planFoodSpawn(
       {
         standingUnits: this.standingFoodUnits,
         region: { minX: 1, minY: 1, maxX: COLS - 2, maxY: ROWS - 2 },
         memory: this.foodMemory.entries,
+        sites: sites ?? undefined,
         canPlaceAt: (x, y) =>
           this.grid[y][x] === 1 &&
-          !this.colonies.some(c => c.nestX === x && c.nestY === y) &&
-          // Once any loam exists, food grows only there — the grove becomes a
-          // place on the map rather than a habit of the spawner.
-          (!this.hasLoam || this.terrain.at(x, y) === Terrain.Loam),
+          !this.colonies.some(c => c.nestX === x && c.nestY === y),
       },
       mazeFoodSpawnConfig(this.numFoodSources, this.foodPerSource),
       () => this.rng.next(),
@@ -437,10 +432,25 @@ export class Simulation {
   /** Bumped whenever terrain is painted, to invalidate the decay cache. */
   terrainVersion = 0;
 
+  /** Nest positions offered by the generator, best first. */
+  private _nestSites: [number, number][] = [];
+
+  /**
+   * Bumped whenever anything the renderer caches changes — terrain or walls.
+   * The ground layer is expensive to draw and static between edits.
+   */
+  worldVersion = 0;
+
   paintTerrain(cx: number, cy: number, terrain: Terrain, facing: Facing = Facing.East) {
     if (this.terrain.at(cx, cy) === terrain && this.terrain.facingAt(cx, cy) === facing) return;
     this.terrain.set(cx, cy, terrain, facing);
     this.terrainVersion++;
+    this.worldVersion++;
+  }
+
+  /** Tell the renderer the grid was edited directly. */
+  markWorldChanged() {
+    this.worldVersion++;
   }
 
   /** Whether a cell is inside the maze and walkable. */

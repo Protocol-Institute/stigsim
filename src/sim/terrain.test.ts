@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Facing, Terrain, TerrainLayer, TERRAIN, TERRAIN_BRUSHES } from "./terrain";
 import { DEFAULT_PARAMS, Simulation } from "./simulation";
-import { COLS, ROWS } from "./constants";
+import { CELL, COLS, ROWS } from "./constants";
 
 test("an unpainted layer is plain everywhere and reports itself empty", () => {
   const layer = new TerrainLayer(8, 8);
@@ -58,13 +58,33 @@ test("exactly one surface is fertile, and it is loam", () => {
   assert.deepEqual(fertile, [Terrain.Loam]);
 });
 
+/**
+ * A world with nothing painted. Terrain mechanics are tested in isolation, so
+ * these start from the maze generator, which paints no ground — a kitchen comes
+ * with grout, spills and crumb patches already in place.
+ */
 function plainSim(seed = "terrain"): Simulation {
-  return new Simulation(10, { ...DEFAULT_PARAMS }, 0.1, 1, 1, 500, seed);
+  return new Simulation(10, { ...DEFAULT_PARAMS }, 0.1, 1, 1, 500, seed, "maze");
 }
 
-/** Total pheromone across a colony's home field. */
+/**
+ * Ant-laid pheromone in a colony's home field.
+ *
+ * The nest and its neighbours are re-seeded to NEST_SEED every step by the
+ * model whatever the ground is, so counting them measures the seeding rather
+ * than what the ground kept.
+ */
 function homeTotal(sim: Simulation): number {
-  return sim.colonies[0].homePhero.reduce((a, b) => a + b, 0);
+  const colony = sim.colonies[0];
+  const skip = new Set<number>([colony.nestY * COLS + colony.nestX]);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    skip.add((colony.nestY + dy) * COLS + (colony.nestX + dx));
+  }
+  let total = 0;
+  for (let i = 0; i < colony.homePhero.length; i++) {
+    if (!skip.has(i)) total += colony.homePhero[i];
+  }
+  return total;
 }
 
 test("a world with no terrain painted behaves exactly as before", () => {
@@ -127,7 +147,7 @@ test("painting terrain invalidates the decay cache", () => {
 
 test("food grows only on loam once any has been painted", () => {
   const sim = new Simulation(
-    10, { ...DEFAULT_PARAMS, replenish: true }, 0.1, 1, 1, 500, "loam",
+    10, { ...DEFAULT_PARAMS, replenish: true }, 0.1, 1, 1, 500, "loam", "maze",
   );
   assert.equal(sim.hasLoam, false);
 
@@ -162,22 +182,39 @@ test("the layer covers the maze", () => {
 });
 
 /**
- * A symmetric world: two corridors of equal length joining the nest at (1,1)
- * to a food source at (25,8). Anything that makes a colony prefer one over the
- * other has to come from the ground, because the geometry is a mirror.
+ * A symmetric world: two corridors of equal length joining a nest to a food
+ * source at (25,8). Anything that makes a colony prefer one over the other has
+ * to come from the ground, because the geometry is a mirror.
+ *
+ * The nest sits midway up the left spine rather than in the corner. From a
+ * corner one corridor is nearer, and ants that travel in near-straight lines
+ * also overshoot the closer junction — neither of which the ground is
+ * responsible for.
  */
 function twoCorridorWorld(seed: string): Simulation {
-  const sim = new Simulation(30, { ...DEFAULT_PARAMS }, 0, 1, 1, 5_000, seed);
+  const sim = new Simulation(30, { ...DEFAULT_PARAMS }, 0, 1, 1, 5_000, seed, "maze");
 
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) sim.grid[y][x] = 0;
   const open = (x: number, y: number) => { sim.grid[y][x] = 1; };
 
-  for (let y = 1; y <= 13; y++) { open(1, y); open(25, y); }   // end spines
-  for (let x = 1; x <= 25; x++) { open(x, 3); open(x, 13); }   // the two routes
-  open(1, 1);                                                   // nest
-  for (let y = 1; y <= 3; y++) open(1, y);
+  // Exactly the two routes and the spines joining their ends. No stubs: a
+  // dead end at one end of a spine is somewhere to get caught, and that is an
+  // asymmetry the ground did not put there.
+  for (let y = 3; y <= 13; y++) { open(1, y); open(25, y); }
+  for (let x = 1; x <= 25; x++) { open(x, 3); open(x, 13); }
 
   sim.foodSources = [{ x: 25, y: 8, remaining: 5_000, total: 5_000 }];
+
+  // Move the nest to the midpoint between the two corridors and bring the ants
+  // with it, so neither route is the near one.
+  const colony = sim.colonies[0];
+  colony.nestX = 1;
+  colony.nestY = 8;
+  for (const ant of colony.ants) {
+    ant.x = 1 * CELL + CELL / 2;
+    ant.y = 8 * CELL + CELL / 2;
+    ant.cx = 1; ant.cy = 8;
+  }
   return sim;
 }
 
@@ -242,7 +279,7 @@ test("ground that is not a scarp is crossable from anywhere", () => {
 });
 
 test("ants cannot walk up a scarp", () => {
-  const sim = new Simulation(20, { ...DEFAULT_PARAMS }, 0, 1, 1, 500, "scarp");
+  const sim = new Simulation(20, { ...DEFAULT_PARAMS }, 0, 1, 1, 500, "scarp", "maze");
 
   // A single east-west corridor with a one-way step partway along it.
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) sim.grid[y][x] = 0;
