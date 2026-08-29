@@ -7,8 +7,6 @@
 
 ## Upcoming
 
-- Terrain that costs different amounts to cross and holds pheromone
-  differently (phase 3 of the continuous-ground plan).
 - Port continuous movement and terrain to Infinite Mode, which needs the
   shared-core extraction and a wire-contract change (phase 4).
 - Add automated tests for core simulation behavior.
@@ -35,3 +33,9 @@
   than per step, and collisions slide along walls. Sensor geometry was tuned by
   sweeping 32 seeds headlessly and both antennae are now controls. First
   frontend tests added.
+- **2026-08-29** — Terrain landed in the maze simulator. Six surfaces differing
+  in speed, how fast pheromone evaporates on them, how much of a deposit they
+  hold, and whether food grows there; scarps additionally fall one way. Terrain
+  is an overlay, and a world with nothing painted runs identically to one
+  without the feature. Verified that colonies route around mire when the way
+  through is no shorter.

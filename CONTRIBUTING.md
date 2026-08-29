@@ -22,7 +22,10 @@ pnpm build
 
 Stigsim has a standalone React/Vite simulator and an optional server-authoritative shared-world mode.
 
-- `src/AntSim.tsx` contains the simulation model and interface.
+- `src/sim/` contains the maze simulation model, free of React: `simulation.ts`
+  (the model), `field.ts` (reading and writing the pheromone field at a point),
+  `terrain.ts` (the ground), `rng.ts` (the seeded stream), `constants.ts`.
+- `src/AntSim.tsx` contains the renderer and the controls.
 - `src/App.tsx` is the application entry component.
 - `src/styles.css` contains global styles; most simulation-specific presentation lives with the simulator.
 - `public/` contains static site assets.

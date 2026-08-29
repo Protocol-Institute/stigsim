@@ -47,6 +47,10 @@ You can:
 - Adjust maze loops and food sources
 - Tune colony size, simulation speed, evaporation, trail bias, and gland size
 - Change how far ahead an ant can smell and how far apart its antennae sit
+- Paint the ground ants walk on: hardpan that holds trails hard, sand that
+  forgets them, mire that carries bodies but no scent, undergrowth that is
+  costly to cross but shelters what is laid there, loam where food grows, and
+  scarps that fall one way so the route out is not the route back
 - Fix the seed to replay a run exactly, or share the link to hand it to someone
 - Enable cautionary pheromones that discourage unsustainable routes
 - Let eaten food grow back, turning the maze from a fixed larder into a small
