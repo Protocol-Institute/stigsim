@@ -23,6 +23,8 @@ import {
   type SimParams,
 } from "./sim/simulation";
 import { randomSeed } from "./sim/rng";
+import { GroundLayer, PheroLayer } from "./sim/render-layers";
+import type { WorldKind } from "./sim/world";
 import { Facing, FACING_NAMES, FACINGS, FACING_VECTORS, Terrain, TERRAIN, TERRAIN_BRUSHES } from "./sim/terrain";
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
@@ -42,6 +44,7 @@ type EditMode = "none" | "wall" | "food" | "ground";
 function render(
   ctx: CanvasRenderingContext2D,
   sim: Simulation,
+  layers: { ground: GroundLayer; phero: PheroLayer },
   viewMode: ViewMode = "all",
   watchedAntIdx: number = 0,
   editMode: EditMode = "none",
@@ -50,7 +53,7 @@ function render(
   const allAnts = sim.allAnts;
   const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
 
-  // Void background
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#0a0602";
   ctx.fillRect(0, 0, W, H);
 
@@ -64,73 +67,15 @@ function render(
     ctx.setTransform(zoom, 0, 0, zoom, W / 2 - ant.x * zoom, H / 2 - ant.y * zoom);
   }
 
-  // Compute per-colony phero maxima for normalization
-  const maxH = sim.colonies.map(c => {
-    let m = NEST_SEED;
-    for (let i = 0; i < c.homePhero.length; i++) if (c.homePhero[i] > m) m = c.homePhero[i];
-    return m;
-  });
-  const maxF = sim.colonies.map(c => {
-    let m = NEST_SEED;
-    for (let i = 0; i < c.foodPhero.length; i++) if (c.foodPhero[i] > m) m = c.foodPhero[i];
-    return m;
-  });
-  const maxCH = sim.colonies.map(c => {
-    let m = 1;
-    for (let i = 0; i < c.cautPhero.length; i++) if (c.cautPhero[i] > m) m = c.cautPhero[i];
-    return m;
-  });
+  // Ground is cached and only redrawn when the world changes.
+  layers.ground.sync(sim.grid, sim.terrain, sim.worldVersion);
+  ctx.drawImage(layers.ground.canvas, 0, 0, W, H);
 
-  // Base path fill
-  ctx.fillStyle = "#1a1208";
-  ctx.fillRect(0, 0, W, H);
-
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      const px = x * CELL, py = y * CELL;
-      if (sim.grid[y][x] === 0) {
-        ctx.fillStyle = "#0d0a06";
-        ctx.fillRect(px, py, CELL, CELL);
-        continue;
-      }
-      const ground = sim.terrain.props(x, y);
-      ctx.fillStyle = ground.fill;
-      ctx.fillRect(px, py, CELL, CELL);
-      if (ground.speckle) drawSpeckle(ctx, px, py, x, y, ground.speckle);
-      if (sim.terrain.at(x, y) === Terrain.Scarp) {
-        drawScarp(ctx, px, py, sim.terrain.facingAt(x, y));
-      }
-
-      const idx = y * COLS + x;
-
-      // Layer pheromones for each colony
-      for (let ci = 0; ci < sim.colonies.length; ci++) {
-        const colony = sim.colonies[ci];
-        const colors = COLONY_COLORS[ci];
-
-        const hi = colony.homePhero[idx];
-        if (hi > 0.5) {
-          const alpha = Math.min(0.55, (hi / maxH[ci]) * 0.55);
-          ctx.fillStyle = `rgba(${colors.homeRGB},${alpha.toFixed(3)})`;
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-        const fi = colony.foodPhero[idx];
-        if (fi > 0.5) {
-          const alpha = Math.min(0.6, (fi / maxF[ci]) * 0.6);
-          ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-        if (sim.params.cautionary) {
-          const ci2 = colony.cautPhero[idx];
-          if (ci2 > 0.5) {
-            const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
-            ctx.fillStyle = `rgba(220,60,40,${alpha.toFixed(3)})`;
-            ctx.fillRect(px, py, CELL, CELL);
-          }
-        }
-      }
-    }
-  }
+  // Pheromone is one pixel per cell, scaled up. Smoothing is left on: a
+  // diffuse chemical field reads better blended than tiled.
+  layers.phero.sync(sim.colonies, COLONY_COLORS, sim.params.cautionary, NEST_SEED);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(layers.phero.canvas, 0, 0, W, H);
 
   // Draw nests
   ctx.font = `${CELL - 4}px serif`;
@@ -374,52 +319,6 @@ function IconReset({ size = 22 }: { size?: number }) {
   );
 }
 
-/**
- * Texture a terrain cell with a few fixed specks.
- *
- * Surfaces are told apart by texture rather than by hue: pheromone is drawn
- * over the ground at up to 0.6 alpha in saturated colony colours, and saturated
- * ground would compete with the trails, which are the actual subject. Positions
- * come from the cell's own coordinates so the pattern holds still between
- * frames instead of boiling.
- */
-function drawSpeckle(
-  ctx: CanvasRenderingContext2D,
-  px: number, py: number,
-  gx: number, gy: number,
-  color: string,
-) {
-  ctx.fillStyle = color;
-  let h = (gx * 73_856_093) ^ (gy * 19_349_663);
-  for (let i = 0; i < 3; i++) {
-    h = (h * 1_103_515_245 + 12_345) & 0x7fffffff;
-    const ox = (h >> 8) % CELL;
-    const oy = (h >> 16) % CELL;
-    ctx.fillRect(px + ox, py + oy, 2, 2);
-  }
-}
-
-/** Mark which way a scarp falls: chevrons pointing downhill. */
-function drawScarp(ctx: CanvasRenderingContext2D, px: number, py: number, facing: Facing) {
-  const [fx, fy] = FACING_VECTORS[facing];
-  const cx = px + CELL / 2, cy = py + CELL / 2;
-  // Perpendicular to the fall, so the chevron opens across the face.
-  const wx = -fy, wy = fx;
-
-  ctx.strokeStyle = "rgba(226,214,226,0.55)";
-  ctx.lineWidth = 1.25;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  for (const lead of [-3, 2]) {
-    const tipX = cx + fx * (lead + 3), tipY = cy + fy * (lead + 3);
-    ctx.beginPath();
-    ctx.moveTo(tipX - fx * 3 + wx * 3.5, tipY - fy * 3 + wy * 3.5);
-    ctx.lineTo(tipX, tipY);
-    ctx.lineTo(tipX - fx * 3 - wx * 3.5, tipY - fy * 3 - wy * 3.5);
-    ctx.stroke();
-  }
-}
-
 // ─── Seed <-> URL ────────────────────────────────────────────────────────────
 const MAX_SEED_LENGTH = 32;
 
@@ -445,6 +344,7 @@ export default function AntSim() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const simRef = useRef<Simulation | null>(null);
+  const layersRef = useRef({ ground: new GroundLayer(COLS, ROWS), phero: new PheroLayer(COLS, ROWS) });
   const rafRef = useRef<number>(0);
   const frameCountRef = useRef(0);
 
@@ -455,13 +355,19 @@ export default function AntSim() {
   const highwayCounterRef = useRef(0);
   const foodTimestampsRef = useRef<number[]>([]);
   const prevTotalRef = useRef(0);
-  const [framesPerTick, setFramesPerTick] = useState(4);
+  // 1..16. Below 9 the simulation skips frames; above it, several steps run per
+  // frame. A room-sized world takes tens of thousands of steps to bootstrap a
+  // trail network, which is minutes of watching at one step per frame.
+  const [speed, setSpeed] = useState(9);
+  const framesPerTick = speed <= 8 ? 9 - speed : 1;
+  const stepsPerFrame = speed <= 8 ? 1 : speed - 8;
   const [numAnts, setNumAnts] = useState(DEFAULT_NUM_ANTS);
   const [params, setParams] = useState<SimParams>(DEFAULT_PARAMS);
   const [canvasScale, setCanvasScale] = useState(1);
   const [watchedAntIdx, setWatchedAntIdx] = useState(0);
   const [manualControl, setManualControl] = useState(false);
   const [loopRate, setLoopRate] = useState(0.1);
+  const [worldKind, setWorldKind] = useState<WorldKind>("kitchen");
   const [seed, setSeed] = useState(initialSeed);
   const [seedDraft, setSeedDraft] = useState(seed);
   const [numColonies, setNumColonies] = useState(DEFAULT_NUM_COLONIES);
@@ -488,6 +394,8 @@ export default function AntSim() {
   paramsRef.current = params;
   const framesPerTickRef = useRef(framesPerTick);
   framesPerTickRef.current = framesPerTick;
+  const stepsPerFrameRef = useRef(stepsPerFrame);
+  stepsPerFrameRef.current = stepsPerFrame;
   const numAntsRef = useRef(numAnts);
   numAntsRef.current = numAnts;
   const viewModeRef = useRef(viewMode);
@@ -500,6 +408,8 @@ export default function AntSim() {
   loopRateRef.current = loopRate;
   const seedRef = useRef(seed);
   seedRef.current = seed;
+  const worldKindRef = useRef(worldKind);
+  worldKindRef.current = worldKind;
   const numColoniesRef = useRef(numColonies);
   numColoniesRef.current = numColonies;
   const numFoodSourcesRef = useRef(numFoodSources);
@@ -587,7 +497,7 @@ export default function AntSim() {
   const forceRender = useCallback(() => {
     const sim = simRef.current;
     const ctx = canvasRef.current?.getContext("2d");
-    if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+    if (sim && ctx) render(ctx, sim, layersRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
   }, []);
 
   const cellFromPointer = useCallback((e: React.PointerEvent): { x: number; y: number } | null => {
@@ -621,8 +531,10 @@ export default function AntSim() {
 
       if (dragActionRef.current === "open" && wasWall) {
         sim.grid[gy][gx] = 1;
+        sim.markWorldChanged();
       } else if (dragActionRef.current === "close" && !wasWall) {
         sim.grid[gy][gx] = 0;
+        sim.markWorldChanged();
         // An ant caught inside the new wall is turned around; it walks itself
         // out on the next step rather than being stranded in rock.
         for (const colony of sim.colonies) {
@@ -710,7 +622,11 @@ export default function AntSim() {
       numFoodSourcesRef.current,
       foodPerSourceRef.current,
       seedRef.current,
+      worldKindRef.current,
     );
+    // A new world starts its version count again, so the cached ground layer
+    // must be told rather than left matching on a stale number.
+    layersRef.current.ground.invalidate();
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
     setHighwayScore(0);
@@ -725,7 +641,7 @@ export default function AntSim() {
       watchedAntIdxRef.current = idx;
     }
     const ctx = canvasRef.current?.getContext("2d");
-    if (ctx && simRef.current) render(ctx, simRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+    if (ctx && simRef.current) render(ctx, simRef.current, layersRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
   }, []);
 
   useEffect(() => { initSim(); }, [initSim]);
@@ -737,7 +653,7 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource, seed]);
+  }, [loopRate, numColonies, numFoodSources, foodPerSource, seed, worldKind]);
 
   useEffect(() => {
     setSeedDraft(seed);
@@ -754,7 +670,7 @@ export default function AntSim() {
       frameCountRef.current++;
       if (frameCountRef.current >= framesPerTickRef.current) {
         frameCountRef.current = 0;
-        sim.step();
+        for (let n = 0; n < stepsPerFrameRef.current; n++) sim.step();
         setColonyScores(sim.colonies.map(c => c.foodCollected));
         const total = sim.totalFoodCollected;
         const now = Date.now();
@@ -773,7 +689,7 @@ export default function AntSim() {
           setHighwayScore(computeHighwayScore(sim));
         }
       }
-      render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+      render(ctx, sim, layersRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
@@ -783,7 +699,7 @@ export default function AntSim() {
   useEffect(() => {
     const sim = simRef.current;
     const ctx = canvasRef.current?.getContext("2d");
-    if (sim && ctx) render(ctx, sim, viewMode, watchedAntIdx, editModeRef.current, hoverCellRef.current);
+    if (sim && ctx) render(ctx, sim, layersRef.current, viewMode, watchedAntIdx, editModeRef.current, hoverCellRef.current);
   }, [viewMode, watchedAntIdx]);
 
   const handleReset = () => {
@@ -794,8 +710,8 @@ export default function AntSim() {
     initSim();
   };
 
-  const stepsPerSec = Math.round(60 / framesPerTick);
-  const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
+  const stepsPerSec = Math.round((60 / framesPerTick) * stepsPerFrame);
+  const speedLabel = stepsPerSec >= 240 ? "Very fast" : stepsPerSec >= 100 ? "Fast" : stepsPerSec >= 30 ? "Medium" : "Slow";
   const tankCells = Math.round(params.tankMax / (DEPOSIT_PER_PX * CELL));
   const loopPct = Math.round(loopRate * 100);
   const loopLabel = loopRate === 0 ? "None (tree)" : loopRate < 0.05 ? "Very few" : loopRate < 0.15 ? "Some" : loopRate < 0.3 ? "Many" : "Lots";
@@ -904,7 +820,7 @@ export default function AntSim() {
           touchAction: editMode !== "none" ? "none" : "auto",
         }}
       >
-        <div style={{ width: W, height: H * canvasScale, overflow: "hidden" }}>
+        <div style={{ width: W * canvasScale, height: H * canvasScale, overflow: "hidden" }}>
           <div style={{ width: W, height: H, transform: `scale(${canvasScale})`, transformOrigin: "top left" }}>
             <canvas ref={canvasRef} width={W} height={H} style={{ display: "block" }} />
           </div>
@@ -1216,12 +1132,11 @@ export default function AntSim() {
 
         <ControlCard
           label="Simulation speed"
-          description={`How many steps run per second. ${speedLabel} — ${stepsPerSec} steps/sec.`}
-          value={framesPerTick}
-          displayValue={speedLabel}
-          min={1} max={30} step={1}
-          rtl
-          onChange={setFramesPerTick}
+          description={`How many steps run per second. ${speedLabel} — about ${stepsPerSec} steps/sec. A room takes tens of thousands of steps to grow a trail network, so the upper half of this slider runs several steps per frame.`}
+          value={speed}
+          displayValue={`${stepsPerSec}/s`}
+          min={1} max={16} step={1}
+          onChange={setSpeed}
           style={{ flex: "1 1 270px" }}
         />
       </div>
@@ -1371,7 +1286,7 @@ export default function AntSim() {
             description="How much pheromone each ant can carry. Larger glands mark longer paths before running dry. Smaller glands mean only short routes get reinforced."
             value={params.tankMax}
             displayValue={`~${tankCells} cells`}
-            min={1600} max={16000} step={800}
+            min={3200} max={80000} step={1600}
             onChange={v => updateParam("tankMax", v)}
           />
 
@@ -1421,9 +1336,40 @@ export default function AntSim() {
       {/* ── Maze settings ──────────────────────────────────────────────────────── */}
       <div style={{ width: "100%", maxWidth: 600 }}>
         <p style={{ margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
-          Maze settings
+          World settings
         </p>
         <div style={{
+          background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 10,
+          padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8,
+          marginBottom: 10,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>World</span>
+            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b" }}>
+              {worldKind === "kitchen" ? "kitchen" : "maze"}
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+            A kitchen is mostly open floor, with grout lines that hold a trail, a worktop and table reached only at a few points, a tight dark run behind the units, a spill that takes no scent and a step that only goes one way. Terrain comes with the room. A maze is the old world: corridors one cell wide, where an ant's antennae span the whole passage and there is nothing to steer towards. <strong style={{ color: "#e5d5b5" }}>Changing this rebuilds the world.</strong>
+          </p>
+          <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
+            {(["kitchen", "maze"] as WorldKind[]).map(kind => (
+              <button
+                key={kind}
+                onClick={() => setWorldKind(kind)}
+                style={{
+                  flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                  fontWeight: 600, fontSize: "0.78rem", letterSpacing: "0.02em",
+                  background: worldKind === kind ? "#f59e0b" : "transparent",
+                  color: worldKind === kind ? "#000" : "#a08060",
+                }}
+              >
+                {kind === "kitchen" ? "Kitchen" : "Maze"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {worldKind === "maze" && <div style={{
           background: "#0f0a04",
           border: "1px solid #3d2e18",
           borderRadius: 10,
@@ -1451,7 +1397,7 @@ export default function AntSim() {
             <span>0% — tree maze</span>
             <span>50% — many loops</span>
           </div>
-        </div>
+        </div>}
 
         {/* Seed */}
         <div style={{
