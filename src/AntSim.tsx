@@ -1,5 +1,12 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import { Rng, randomSeed } from "./sim/rng";
+import {
+  DEFAULT_FOOD_SPAWN,
+  isSpawnTick,
+  planFoodSpawn,
+  SiteMemory,
+  type FoodSpawnConfig,
+} from "../shared/food-spawn";
 
 // ─── Maze dimensions ───────────────────────────────────────────────────────
 const COLS = 31;
@@ -39,6 +46,13 @@ export interface SimParams {
   trailPower: number;
   tankMax: number;
   cautionary: boolean;
+  /**
+   * Whether eaten food grows back. Off by default: the maze is a controlled
+   * laboratory, and a fixed larder is what makes two runs comparable. Turning
+   * it on converts the maze into a small ecology where routes have to be worth
+   * maintaining over time.
+   */
+  replenish: boolean;
 }
 
 const DEFAULT_PARAMS: SimParams = {
@@ -46,7 +60,33 @@ const DEFAULT_PARAMS: SimParams = {
   trailPower: 5,
   tankMax: 6400,
   cautionary: false,
+  replenish: false,
 };
+
+// Growth in the maze is brisker than in the shared world: a run is watched for
+// minutes rather than inhabited for days.
+const MAZE_FOOD_SPAWN: FoodSpawnConfig = {
+  ...DEFAULT_FOOD_SPAWN,
+  intervalTicks: 120,
+  maxSourcesPerAttempt: 2,
+  clusterRadius: 4,
+};
+
+/**
+ * Size new piles against the larder this run was configured with, rather than
+ * the shared world's fixed 120-600 units. The maze's whole capacity can be as
+ * low as 50 units, and a fixed minimum larger than the capacity means headroom
+ * never reaches it and nothing ever grows.
+ */
+function mazeFoodSpawnConfig(numFoodSources: number, foodPerSource: number): FoodSpawnConfig {
+  const minUnits = Math.max(1, Math.round(foodPerSource * 0.25));
+  return {
+    ...MAZE_FOOD_SPAWN,
+    capacityUnits: numFoodSources * foodPerSource,
+    minUnits,
+    maxUnits: Math.max(minUnits, foodPerSource),
+  };
+}
 
 // Simulation steps between highway-score samples.
 const HIGHWAY_SAMPLE_EVERY = 15;
@@ -196,6 +236,8 @@ class Simulation {
   foodSources: FoodSource[];
   seed: string;
   rng: Rng;
+  tick = 0;
+  foodMemory = new SiteMemory();
 
   constructor(
     numAnts: number,
@@ -255,11 +297,10 @@ class Simulation {
     }
     this.rng.shuffle(open);
     const count = Math.min(this.numFoodSources, open.length);
-    return open.slice(0, count).map(([x, y]) => ({
-      x, y,
-      remaining: this.foodPerSource,
-      total: this.foodPerSource,
-    }));
+    return open.slice(0, count).map(([x, y]) => {
+      this.foodMemory.remember(x, y);
+      return { x, y, remaining: this.foodPerSource, total: this.foodPerSource };
+    });
   }
 
   private _seedNest(colony: Colony) {
@@ -321,7 +362,45 @@ class Simulation {
     return this.colonies.reduce((s, c) => s + c.foodCollected, 0);
   }
 
+  /** Total food units still standing in the maze. */
+  get standingFoodUnits(): number {
+    return this.foodSources.reduce((sum, source) => sum + source.remaining, 0);
+  }
+
+  /**
+   * Top the maze back up towards the larder it was configured with. New units
+   * merge into an existing pile when one is already there, so a stripped source
+   * can come back rather than only ever being replaced by a new one elsewhere.
+   */
+  private _growFood() {
+    const planned = planFoodSpawn(
+      {
+        standingUnits: this.standingFoodUnits,
+        region: { minX: 1, minY: 1, maxX: COLS - 2, maxY: ROWS - 2 },
+        memory: this.foodMemory.entries,
+        canPlaceAt: (x, y) =>
+          this.grid[y][x] === 1 &&
+          !this.colonies.some(c => c.nestX === x && c.nestY === y),
+      },
+      mazeFoodSpawnConfig(this.numFoodSources, this.foodPerSource),
+      () => this.rng.next(),
+    );
+
+    for (const { x, y, units } of planned) {
+      const existing = this.foodSources.find(s => s.x === x && s.y === y);
+      if (existing) {
+        existing.remaining += units;
+        existing.total += units;
+      } else {
+        this.foodSources.push({ x, y, remaining: units, total: units });
+      }
+      this.foodMemory.remember(x, y);
+    }
+  }
+
   step() {
+    this.tick++;
+    if (this.params.replenish && isSpawnTick(this.tick, MAZE_FOOD_SPAWN)) this._growFood();
     const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
       for (let i = 0; i < colony.homePhero.length; i++) {
@@ -377,6 +456,7 @@ class Simulation {
         colony.discoveredSources.add(srcIdx);
         if (src.remaining > 0) {
           src.remaining--;
+          if (src.remaining === 0) this.foodMemory.remember(src.x, src.y);
           colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
           ant.state = "returning";
           ant.hasFood = true;
@@ -1544,6 +1624,46 @@ export default function AntSim() {
             onChange={v => { setFoodPerSource(v); }}
             style={{ flex: "1 1 270px" }}
           />
+
+          {/* Replenishing food toggle */}
+          <div style={{
+            background: "#0f0a04",
+            border: "1px solid #3d2e18",
+            borderRadius: 10,
+            padding: "14px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            flex: "1 1 270px",
+            minWidth: 0,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Replenishing food</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>
+                {params.replenish ? "on" : "off"}
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+              Off, the maze holds a fixed larder and the run ends when it is eaten — two runs stay comparable. On, food grows back towards that same total, mostly near where food has been before, so a route is only worth keeping if it still leads somewhere.
+            </p>
+            <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
+              {([false, true] as const).map(val => (
+                <button
+                  key={String(val)}
+                  onClick={() => { updateParam("replenish", val); }}
+                  style={{
+                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                    fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
+                    letterSpacing: "0.02em",
+                    background: params.replenish === val ? "#f59e0b" : "transparent",
+                    color: params.replenish === val ? "#000" : "#a08060",
+                  }}
+                >
+                  {val ? "On" : "Off"}
+                </button>
+              ))}
+            </div>
+          </div>
 
         </div>
       </div>
