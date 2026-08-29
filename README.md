@@ -7,7 +7,9 @@ SIGFPT (Formal Protocol Theory) initiative.
 Stigmergy is coordination through a shared environment: agents respond to
 traces left by other agents instead of communicating directly or following a
 central controller. In Stigsim, ants explore mazes, discover food, and reinforce
-useful routes with pheromone trails. The project offers two ways to explore that
+useful routes with pheromone trails. Ants move continuously rather than hopping
+between cells: each one holds a heading, smells the field at three points ahead
+of it, and steers. The project offers two ways to explore that
 idea: a self-contained maze sandbox and a persistent multiplayer world.
 
 ## Play online
@@ -44,7 +46,15 @@ You can:
 
 - Adjust maze loops and food sources
 - Tune colony size, simulation speed, evaporation, trail bias, and gland size
+- Change how far ahead an ant can smell and how far apart its antennae sit
+- Paint the ground ants walk on: hardpan that holds trails hard, sand that
+  forgets them, mire that carries bodies but no scent, undergrowth that is
+  costly to cross but shelters what is laid there, loam where food grows, and
+  scarps that fall one way so the route out is not the route back
+- Fix the seed to replay a run exactly, or share the link to hand it to someone
 - Enable cautionary pheromones that discourage unsustainable routes
+- Let eaten food grow back, turning the maze from a fixed larder into a small
+  ecology where a route is only worth keeping while it still leads somewhere
 - Edit walls and food sources while the simulation is running
 - Observe whole colonies or control an individual ant
 
@@ -55,6 +65,10 @@ Every connected player sees the same walls, food, colonies, ants, and pheromone
 activity. Player actions are sent to an authoritative server, broadcast to other
 players in real time, and periodically saved so the world can survive server
 restarts and continue between visits.
+
+Food grows back. The world sustains a standing quantity rather than a fixed
+larder, and new sources appear mostly near where food has been before, so groves
+persist and the trails leading to them stay worth maintaining.
 
 The durable world includes terrain, food resources, colony identities and
 settings, colony ages, collected-food scores, and completed leaderboard

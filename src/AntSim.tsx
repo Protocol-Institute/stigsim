@@ -1,29 +1,34 @@
 import { useRef, useEffect, useCallback, useState } from "react";
-
-// ─── Maze dimensions ───────────────────────────────────────────────────────
-const COLS = 31;
-const ROWS = 31;
-const CELL = 16;
-const W = COLS * CELL;
-const H = ROWS * CELL;
-
-// ─── Movement (fixed) ──────────────────────────────────────────────────────
-const V = 4;
-const ARRIVE_THRESH = V + 1;
-const NEST_SEED = 1000;
-const DEFAULT_NUM_ANTS = 20;
-const DEPOSIT_RATE = 20;
+import {
+  CELL,
+  COLONY_NESTS,
+  COLS,
+  DEFAULT_NUM_ANTS,
+  DEPOSIT_PER_PX,
+  H,
+  NEST_SEED,
+  ROWS,
+  W,
+} from "./sim/constants";
+import {
+  cellCenter,
+  computeHighwayScore,
+  DEFAULT_FOOD_PER_SOURCE,
+  DEFAULT_NUM_COLONIES,
+  DEFAULT_NUM_FOOD_SOURCES,
+  DEFAULT_PARAMS,
+  HIGHWAY_SAMPLE_EVERY,
+  Simulation,
+  type Ant,
+  type SimParams,
+} from "./sim/simulation";
+import { randomSeed } from "./sim/rng";
+import { GroundLayer, PheroLayer } from "./sim/render-layers";
+import type { WorldKind } from "./sim/world";
+import { Facing, FACING_NAMES, FACINGS, FACING_VECTORS, Terrain, TERRAIN, TERRAIN_BRUSHES } from "./sim/terrain";
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
 const VIEW_HALF = CELL * 1;
-
-// ─── Colony nest corner positions (up to 4) ──────────────────────────────────
-const COLONY_NESTS: [number, number][] = [
-  [1, 1],
-  [COLS - 2, ROWS - 2],
-  [COLS - 2, 1],
-  [1, ROWS - 2],
-];
 
 // ─── Colony visual identity ──────────────────────────────────────────────────
 const COLONY_COLORS = [
@@ -33,372 +38,13 @@ const COLONY_COLORS = [
   { primary: "#c084fc", homeRGB: "192,132,252", foodRGB: "252,132,200" },
 ];
 
-export interface SimParams {
-  evapRate: number;
-  trailPower: number;
-  tankMax: number;
-  cautionary: boolean;
-}
-
-const DEFAULT_PARAMS: SimParams = {
-  evapRate: 0.005,
-  trailPower: 5,
-  tankMax: 6400,
-  cautionary: false,
-};
-
-const DEFAULT_NUM_COLONIES = 1;
-const DEFAULT_NUM_FOOD_SOURCES = 1;
-const DEFAULT_FOOD_PER_SOURCE = 500;
-
-type CellType = 0 | 1;
-type AntState = "searching" | "returning";
 type ViewMode = "all" | "one";
-type EditMode = "none" | "wall" | "food";
-
-interface FoodSource {
-  x: number;
-  y: number;
-  remaining: number;
-  total: number;
-}
-
-interface Colony {
-  id: number;
-  nestX: number;
-  nestY: number;
-  homePhero: Float32Array;
-  foodPhero: Float32Array;
-  cautPhero: Float32Array;
-  ants: Ant[];
-  foodCollected: number;
-  discoveredSources: Set<number>;
-}
-
-interface Ant {
-  x: number; y: number;
-  cx: number; cy: number;
-  tx: number; ty: number;
-  prevCx: number; prevCy: number;
-  state: AntState;
-  hasFood: boolean;
-  tank: number;
-  colonyId: number;
-  manual?: boolean;
-}
-
-function generateMaze(loopRate: number = 0.1): CellType[][] {
-  const grid: CellType[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-  const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-  function carve(cx: number, cy: number) {
-    visited[cy][cx] = true;
-    grid[cy][cx] = 1;
-    const dirs = [[0, -2], [0, 2], [-2, 0], [2, 0]].sort(() => Math.random() - 0.5);
-    for (const [dx, dy] of dirs) {
-      const nx = cx + dx, ny = cy + dy;
-      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx]) {
-        grid[cy + dy / 2][cx + dx / 2] = 1;
-        carve(nx, ny);
-      }
-    }
-  }
-  carve(1, 1);
-  for (let y = 1; y < ROWS - 1; y++)
-    for (let x = 1; x < COLS - 1; x++)
-      if (grid[y][x] === 0 && Math.random() < loopRate) grid[y][x] = 1;
-  // Ensure all colony nest corners are open
-  for (const [nx, ny] of COLONY_NESTS) grid[ny][nx] = 1;
-  return grid;
-}
-
-function computeHighwayScore(sim: Simulation): number {
-  const open: number[] = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (sim.grid[y][x] === 1) {
-        const idx = y * COLS + x;
-        let total = 0;
-        for (const c of sim.colonies) total += c.foodPhero[idx] + c.homePhero[idx];
-        open.push(total);
-      }
-    }
-  }
-  if (open.length === 0) return 0;
-  const total = open.reduce((a, b) => a + b, 0);
-  if (total < 1) return 0;
-  open.sort((a, b) => b - a);
-  const topN = Math.max(1, Math.floor(open.length * 0.1));
-  const topSum = open.slice(0, topN).reduce((a, b) => a + b, 0);
-  return topSum / total;
-}
-
-const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-function openNeighbours(grid: CellType[][], x: number, y: number, exX?: number, exY?: number): [number, number][] {
-  return DIRS4
-    .map(([dx, dy]) => [x + dx, y + dy] as [number, number])
-    .filter(([nx, ny]) =>
-      nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
-      grid[ny][nx] === 1 && !(nx === exX && ny === exY)
-    );
-}
-
-function powerChoice(
-  cells: [number, number][],
-  phero: Float32Array,
-  power: number,
-  cautPhero?: Float32Array,
-  cautPower?: number,
-): [number, number] {
-  const scores = cells.map(([cx, cy]) => {
-    const idx = cy * COLS + cx;
-    const trail = Math.pow(phero[idx] + 1, power);
-    const caution = (cautPhero && cautPower) ? Math.pow(cautPhero[idx] + 1, cautPower) : 1;
-    return trail / caution;
-  });
-  const total = scores.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < cells.length; i++) { r -= scores[i]; if (r <= 0) return cells[i]; }
-  return cells[cells.length - 1];
-}
-
-const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
-
-class Simulation {
-  numAnts: number;
-  numColonies: number;
-  numFoodSources: number;
-  foodPerSource: number;
-  params: SimParams;
-  loopRate: number;
-  grid: CellType[][];
-  colonies: Colony[];
-  foodSources: FoodSource[];
-
-  constructor(
-    numAnts: number,
-    params: SimParams,
-    loopRate: number = 0.1,
-    numColonies: number = 1,
-    numFoodSources: number = 1,
-    foodPerSource: number = 500,
-  ) {
-    this.numAnts = numAnts;
-    this.params = { ...params };
-    this.loopRate = loopRate;
-    this.numColonies = numColonies;
-    this.numFoodSources = numFoodSources;
-    this.foodPerSource = foodPerSource;
-    this.grid = generateMaze(loopRate);
-    this.colonies = this._initColonies();
-    this.foodSources = this._placeFoodSources();
-    for (const colony of this.colonies) this._seedNest(colony);
-  }
-
-  private _initColonies(): Colony[] {
-    return Array.from({ length: this.numColonies }, (_, id) => {
-      const [nestX, nestY] = COLONY_NESTS[id];
-      this.grid[nestY][nestX] = 1;
-      return {
-        id,
-        nestX,
-        nestY,
-        homePhero: new Float32Array(COLS * ROWS),
-        foodPhero: new Float32Array(COLS * ROWS),
-        cautPhero: new Float32Array(COLS * ROWS),
-        ants: this._spawnAnts(id, nestX, nestY),
-        foodCollected: 0,
-        discoveredSources: new Set<number>(),
-      };
-    });
-  }
-
-  private _placeFoodSources(): FoodSource[] {
-    const nestSet = new Set(this.colonies.map(c => c.nestY * COLS + c.nestX));
-    // Minimum Manhattan distance from any nest
-    const minDist = Math.floor(Math.min(COLS, ROWS) / 4);
-    const open: [number, number][] = [];
-    for (let y = 2; y < ROWS - 2; y++) {
-      for (let x = 2; x < COLS - 2; x++) {
-        if (this.grid[y][x] !== 1) continue;
-        if (nestSet.has(y * COLS + x)) continue;
-        const farEnough = this.colonies.every(
-          c => Math.abs(c.nestX - x) + Math.abs(c.nestY - y) >= minDist
-        );
-        if (farEnough) open.push([x, y]);
-      }
-    }
-    // Fisher-Yates shuffle
-    for (let i = open.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [open[i], open[j]] = [open[j], open[i]];
-    }
-    const count = Math.min(this.numFoodSources, open.length);
-    return open.slice(0, count).map(([x, y]) => ({
-      x, y,
-      remaining: this.foodPerSource,
-      total: this.foodPerSource,
-    }));
-  }
-
-  private _seedNest(colony: Colony) {
-    const { nestX, nestY } = colony;
-    colony.homePhero[nestY * COLS + nestX] = NEST_SEED;
-    for (const [dx, dy] of DIRS4) {
-      const nx = nestX + dx, ny = nestY + dy;
-      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && this.grid[ny][nx]) {
-        const idx = ny * COLS + nx;
-        colony.homePhero[idx] = Math.max(colony.homePhero[idx], NEST_SEED * 0.85);
-      }
-    }
-  }
-
-  private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
-    const { px, py } = cellCenter(nestX, nestY);
-    return Array.from({ length: this.numAnts }, () => ({
-      x: px, y: py,
-      cx: nestX, cy: nestY,
-      tx: nestX, ty: nestY,
-      prevCx: nestX, prevCy: nestY,
-      state: "searching" as AntState,
-      hasFood: false,
-      tank: this.params.tankMax,
-      colonyId,
-    }));
-  }
-
-  get allAnts(): Ant[] {
-    return this.colonies.flatMap(c => c.ants);
-  }
-
-  setAntCount(n: number) {
-    for (const colony of this.colonies) {
-      const { nestX, nestY } = colony;
-      const { px, py } = cellCenter(nestX, nestY);
-      if (n > colony.ants.length) {
-        const toAdd = n - colony.ants.length;
-        for (let i = 0; i < toAdd; i++) {
-          colony.ants.push({
-            x: px, y: py,
-            cx: nestX, cy: nestY,
-            tx: nestX, ty: nestY,
-            prevCx: nestX, prevCy: nestY,
-            state: "searching",
-            hasFood: false,
-            tank: this.params.tankMax,
-            colonyId: colony.id,
-          });
-        }
-      } else if (n < colony.ants.length) {
-        colony.ants.splice(n);
-      }
-    }
-    this.numAnts = n;
-  }
-
-  get totalFoodCollected(): number {
-    return this.colonies.reduce((s, c) => s + c.foodCollected, 0);
-  }
-
-  step() {
-    const decay = 1 - this.params.evapRate;
-    for (const colony of this.colonies) {
-      for (let i = 0; i < colony.homePhero.length; i++) {
-        colony.homePhero[i] *= decay;
-        colony.foodPhero[i] *= decay;
-        colony.cautPhero[i] *= decay;
-      }
-      this._seedNest(colony);
-      // Re-seed discovered food sources that still have food
-      for (const srcIdx of colony.discoveredSources) {
-        const src = this.foodSources[srcIdx];
-        if (src.remaining > 0) {
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
-        }
-      }
-      for (const ant of colony.ants) this._moveAnt(ant, colony);
-    }
-  }
-
-  private _moveAnt(ant: Ant, colony: Colony) {
-    const { tankMax, trailPower } = this.params;
-    const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
-    const dx = tpx - ant.x, dy = tpy - ant.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > ARRIVE_THRESH) {
-      const idx = ant.cy * COLS + ant.cx;
-      if (ant.tank > 0) {
-        const deposit = Math.min(ant.tank, DEPOSIT_RATE);
-        if (ant.state === "searching") {
-          colony.homePhero[idx] += deposit;
-        } else {
-          colony.foodPhero[idx] += deposit;
-        }
-        ant.tank -= deposit;
-      } else if (this.params.cautionary) {
-        colony.cautPhero[idx] += DEPOSIT_RATE;
-      }
-      const scale = V / dist;
-      ant.x += dx * scale;
-      ant.y += dy * scale;
-      return;
-    }
-
-    ant.x = tpx; ant.y = tpy;
-    ant.cx = ant.tx; ant.cy = ant.ty;
-
-    // Check food sources
-    if (ant.state === "searching") {
-      const srcIdx = this.foodSources.findIndex(s => s.x === ant.cx && s.y === ant.cy);
-      if (srcIdx >= 0) {
-        const src = this.foodSources[srcIdx];
-        colony.discoveredSources.add(srcIdx);
-        if (src.remaining > 0) {
-          src.remaining--;
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
-          ant.state = "returning";
-          ant.hasFood = true;
-          ant.tank = tankMax;
-          const [ntx, nty] = [ant.prevCx, ant.prevCy];
-          ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-          ant.tx = ntx; ant.ty = nty;
-          return;
-        }
-        // depleted — fall through, keep searching
-      }
-    }
-
-    // Check nest
-    if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
-      ant.state = "searching";
-      ant.hasFood = false;
-      ant.tank = tankMax;
-      colony.foodCollected++;
-      const [ntx, nty] = [ant.prevCx, ant.prevCy];
-      ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-      ant.tx = ntx; ant.ty = nty;
-      return;
-    }
-
-    if (ant.manual) {
-      ant.tx = ant.cx; ant.ty = ant.cy;
-      return;
-    }
-
-    const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
-    const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
-    const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
-    const next = powerChoice(candidates, phero, trailPower, this.params.cautionary ? colony.cautPhero : undefined, trailPower);
-
-    ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-    ant.tx = next[0]; ant.ty = next[1];
-  }
-}
+type EditMode = "none" | "wall" | "food" | "ground";
 
 function render(
   ctx: CanvasRenderingContext2D,
   sim: Simulation,
+  layers: { ground: GroundLayer; phero: PheroLayer },
   viewMode: ViewMode = "all",
   watchedAntIdx: number = 0,
   editMode: EditMode = "none",
@@ -407,7 +53,7 @@ function render(
   const allAnts = sim.allAnts;
   const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
 
-  // Void background
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#0a0602";
   ctx.fillRect(0, 0, W, H);
 
@@ -421,68 +67,15 @@ function render(
     ctx.setTransform(zoom, 0, 0, zoom, W / 2 - ant.x * zoom, H / 2 - ant.y * zoom);
   }
 
-  // Compute per-colony phero maxima for normalization
-  const maxH = sim.colonies.map(c => {
-    let m = NEST_SEED;
-    for (let i = 0; i < c.homePhero.length; i++) if (c.homePhero[i] > m) m = c.homePhero[i];
-    return m;
-  });
-  const maxF = sim.colonies.map(c => {
-    let m = NEST_SEED;
-    for (let i = 0; i < c.foodPhero.length; i++) if (c.foodPhero[i] > m) m = c.foodPhero[i];
-    return m;
-  });
-  const maxCH = sim.colonies.map(c => {
-    let m = 1;
-    for (let i = 0; i < c.cautPhero.length; i++) if (c.cautPhero[i] > m) m = c.cautPhero[i];
-    return m;
-  });
+  // Ground is cached and only redrawn when the world changes.
+  layers.ground.sync(sim.grid, sim.terrain, sim.worldVersion);
+  ctx.drawImage(layers.ground.canvas, 0, 0, W, H);
 
-  // Base path fill
-  ctx.fillStyle = "#1a1208";
-  ctx.fillRect(0, 0, W, H);
-
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      const px = x * CELL, py = y * CELL;
-      if (sim.grid[y][x] === 0) {
-        ctx.fillStyle = "#0d0a06";
-        ctx.fillRect(px, py, CELL, CELL);
-        continue;
-      }
-      ctx.fillStyle = "#2a1e0e";
-      ctx.fillRect(px, py, CELL, CELL);
-
-      const idx = y * COLS + x;
-
-      // Layer pheromones for each colony
-      for (let ci = 0; ci < sim.colonies.length; ci++) {
-        const colony = sim.colonies[ci];
-        const colors = COLONY_COLORS[ci];
-
-        const hi = colony.homePhero[idx];
-        if (hi > 0.5) {
-          const alpha = Math.min(0.55, (hi / maxH[ci]) * 0.55);
-          ctx.fillStyle = `rgba(${colors.homeRGB},${alpha.toFixed(3)})`;
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-        const fi = colony.foodPhero[idx];
-        if (fi > 0.5) {
-          const alpha = Math.min(0.6, (fi / maxF[ci]) * 0.6);
-          ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-        if (sim.params.cautionary) {
-          const ci2 = colony.cautPhero[idx];
-          if (ci2 > 0.5) {
-            const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
-            ctx.fillStyle = `rgba(220,60,40,${alpha.toFixed(3)})`;
-            ctx.fillRect(px, py, CELL, CELL);
-          }
-        }
-      }
-    }
-  }
+  // Pheromone is one pixel per cell, scaled up. Smoothing is left on: a
+  // diffuse chemical field reads better blended than tiled.
+  layers.phero.sync(sim.colonies, COLONY_COLORS, sim.params.cautionary, NEST_SEED);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(layers.phero.canvas, 0, 0, W, H);
 
   // Draw nests
   ctx.font = `${CELL - 4}px serif`;
@@ -537,11 +130,8 @@ function render(
       ctx.fill();
 
       // Direction dot
-      const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
-      const ddx = tpx - ant.x, ddy = tpy - ant.y;
-      const dl = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
       ctx.beginPath();
-      ctx.arc(ant.x + (ddx / dl) * 5, ant.y + (ddy / dl) * 5, 1.5, 0, Math.PI * 2);
+      ctx.arc(ant.x + Math.cos(ant.heading) * 5, ant.y + Math.sin(ant.heading) * 5, 1.5, 0, Math.PI * 2);
       ctx.fillStyle = "#fff";
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -729,30 +319,67 @@ function IconReset({ size = 22 }: { size?: number }) {
   );
 }
 
+// ─── Seed <-> URL ────────────────────────────────────────────────────────────
+const MAX_SEED_LENGTH = 32;
+
+/** The seed named by `?seed=`, or a fresh one when the URL does not name a run. */
+function initialSeed(): string {
+  const fromUrl = new URLSearchParams(window.location.search).get("seed")?.trim();
+  return fromUrl ? fromUrl.slice(0, MAX_SEED_LENGTH) : randomSeed();
+}
+
+/**
+ * Keep the address bar pointing at the run on screen, so it can be copied and
+ * handed to someone else. replaceState rather than pushState: re-rolling the
+ * seed a dozen times should not bury the previous page under a dozen entries.
+ */
+function writeSeedToUrl(seed: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("seed", seed);
+  window.history.replaceState(null, "", url);
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────
 export default function AntSim() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const simRef = useRef<Simulation | null>(null);
+  const layersRef = useRef({ ground: new GroundLayer(COLS, ROWS), phero: new PheroLayer(COLS, ROWS) });
   const rafRef = useRef<number>(0);
   const frameCountRef = useRef(0);
 
   const [running, setRunning] = useState(false);
   const [colonyScores, setColonyScores] = useState<number[]>([0]);
   const [foodRate, setFoodRate] = useState(0);
+  const [highwayScore, setHighwayScore] = useState(0);
+  const highwayCounterRef = useRef(0);
   const foodTimestampsRef = useRef<number[]>([]);
   const prevTotalRef = useRef(0);
-  const [framesPerTick, setFramesPerTick] = useState(4);
+  // 1..16. Below 9 the simulation skips frames; above it, several steps run per
+  // frame. A room-sized world takes tens of thousands of steps to bootstrap a
+  // trail network, which is minutes of watching at one step per frame.
+  const [speed, setSpeed] = useState(9);
+  const framesPerTick = speed <= 8 ? 9 - speed : 1;
+  const stepsPerFrame = speed <= 8 ? 1 : speed - 8;
   const [numAnts, setNumAnts] = useState(DEFAULT_NUM_ANTS);
   const [params, setParams] = useState<SimParams>(DEFAULT_PARAMS);
   const [canvasScale, setCanvasScale] = useState(1);
   const [watchedAntIdx, setWatchedAntIdx] = useState(0);
   const [manualControl, setManualControl] = useState(false);
   const [loopRate, setLoopRate] = useState(0.1);
+  const [worldKind, setWorldKind] = useState<WorldKind>("kitchen");
+  const [seed, setSeed] = useState(initialSeed);
+  const [seedDraft, setSeedDraft] = useState(seed);
   const [numColonies, setNumColonies] = useState(DEFAULT_NUM_COLONIES);
   const [numFoodSources, setNumFoodSources] = useState(DEFAULT_NUM_FOOD_SOURCES);
   const [foodPerSource, setFoodPerSource] = useState(DEFAULT_FOOD_PER_SOURCE);
   const [editMode, setEditMode] = useState<EditMode>("none");
+  const [brush, setBrush] = useState<Terrain>(Terrain.Hardpan);
+  const brushRef = useRef<Terrain>(brush);
+  brushRef.current = brush;
+  const [facing, setFacing] = useState<Facing>(Facing.East);
+  const facingRef = useRef<Facing>(facing);
+  facingRef.current = facing;
   const editModeRef = useRef<EditMode>("none");
   editModeRef.current = editMode;
   const hoverCellRef = useRef<{ x: number; y: number } | null>(null);
@@ -767,6 +394,8 @@ export default function AntSim() {
   paramsRef.current = params;
   const framesPerTickRef = useRef(framesPerTick);
   framesPerTickRef.current = framesPerTick;
+  const stepsPerFrameRef = useRef(stepsPerFrame);
+  stepsPerFrameRef.current = stepsPerFrame;
   const numAntsRef = useRef(numAnts);
   numAntsRef.current = numAnts;
   const viewModeRef = useRef(viewMode);
@@ -777,6 +406,10 @@ export default function AntSim() {
   manualControlRef.current = manualControl;
   const loopRateRef = useRef(loopRate);
   loopRateRef.current = loopRate;
+  const seedRef = useRef(seed);
+  seedRef.current = seed;
+  const worldKindRef = useRef(worldKind);
+  worldKindRef.current = worldKind;
   const numColoniesRef = useRef(numColonies);
   numColoniesRef.current = numColonies;
   const numFoodSourcesRef = useRef(numFoodSources);
@@ -811,6 +444,9 @@ export default function AntSim() {
     if (!sim) return;
     if (manualControl) {
       const all = sim.allAnts;
+      // View-level draw, deliberately outside the seeded stream: taking a value
+      // from sim.rng here would shift every later model draw, so which ant you
+      // chose to drive would change how the rest of the colony behaved.
       const idx = Math.floor(Math.random() * all.length);
       setWatchedAntIdx(idx);
       watchedAntIdxRef.current = idx;
@@ -836,13 +472,8 @@ export default function AntSim() {
     if (!sim) return;
     const ant = sim.allAnts[watchedAntIdxRef.current];
     if (!ant) return;
-    const nx = ant.cx + ddx, ny = ant.cy + ddy;
-    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
-    if (sim.grid[ny][nx] !== 1) return;
-    ant.prevCx = ant.cx;
-    ant.prevCy = ant.cy;
-    ant.tx = nx;
-    ant.ty = ny;
+    // Steering, not teleporting: the d-pad points the ant and it walks.
+    ant.heading = Math.atan2(ddy, ddx);
   }, []);
 
   useEffect(() => {
@@ -866,7 +497,7 @@ export default function AntSim() {
   const forceRender = useCallback(() => {
     const sim = simRef.current;
     const ctx = canvasRef.current?.getContext("2d");
-    if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+    if (sim && ctx) render(ctx, sim, layersRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
   }, []);
 
   const cellFromPointer = useCallback((e: React.PointerEvent): { x: number; y: number } | null => {
@@ -900,16 +531,22 @@ export default function AntSim() {
 
       if (dragActionRef.current === "open" && wasWall) {
         sim.grid[gy][gx] = 1;
+        sim.markWorldChanged();
       } else if (dragActionRef.current === "close" && !wasWall) {
         sim.grid[gy][gx] = 0;
+        sim.markWorldChanged();
+        // An ant caught inside the new wall is turned around; it walks itself
+        // out on the next step rather than being stranded in rock.
         for (const colony of sim.colonies) {
           for (const ant of colony.ants) {
-            if (ant.tx === gx && ant.ty === gy) {
-              ant.tx = ant.cx; ant.ty = ant.cy;
-            }
+            if (ant.cx === gx && ant.cy === gy) ant.heading += Math.PI;
           }
         }
       }
+    } else if (mode === "ground") {
+      // Ground is painted on open floor only; rock has no surface to speak of.
+      if (sim.grid[gy][gx] === 0) return;
+      sim.paintTerrain(gx, gy, brushRef.current, facingRef.current);
     } else if (mode === "food") {
       const isWall = sim.grid[gy][gx] === 0;
       const isNest = sim.colonies.some(c => c.nestX === gx && c.nestY === gy);
@@ -964,6 +601,14 @@ export default function AntSim() {
     forceRender();
   }, [forceRender]);
 
+  // Commit the seed box on blur or Enter rather than on every keystroke, so
+  // typing a seed does not regenerate the maze once per character.
+  const applySeedDraft = () => {
+    const next = seedDraft.trim().slice(0, MAX_SEED_LENGTH);
+    if (!next) { setSeedDraft(seed); return; }
+    if (next !== seed) setSeed(next);
+  };
+
   const updateParam = <K extends keyof SimParams>(key: K, value: SimParams[K]) => {
     setParams(p => ({ ...p, [key]: value }));
   };
@@ -976,19 +621,27 @@ export default function AntSim() {
       numColoniesRef.current,
       numFoodSourcesRef.current,
       foodPerSourceRef.current,
+      seedRef.current,
+      worldKindRef.current,
     );
+    // A new world starts its version count again, so the cached ground layer
+    // must be told rather than left matching on a stale number.
+    layersRef.current.ground.invalidate();
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
+    setHighwayScore(0);
+    highwayCounterRef.current = 0;
     foodTimestampsRef.current = [];
     prevTotalRef.current = 0;
     if (viewModeRef.current === "one") {
       const total = simRef.current.allAnts.length;
+      // View-level draw — see the note on manual control above.
       const idx = Math.floor(Math.random() * total);
       setWatchedAntIdx(idx);
       watchedAntIdxRef.current = idx;
     }
     const ctx = canvasRef.current?.getContext("2d");
-    if (ctx && simRef.current) render(ctx, simRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+    if (ctx && simRef.current) render(ctx, simRef.current, layersRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
   }, []);
 
   useEffect(() => { initSim(); }, [initSim]);
@@ -1000,7 +653,13 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource]);
+  }, [loopRate, numColonies, numFoodSources, foodPerSource, seed, worldKind,
+      params.replenish, params.foodCapacity]);
+
+  useEffect(() => {
+    setSeedDraft(seed);
+    writeSeedToUrl(seed);
+  }, [seed]);
 
   useEffect(() => {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
@@ -1012,7 +671,7 @@ export default function AntSim() {
       frameCountRef.current++;
       if (frameCountRef.current >= framesPerTickRef.current) {
         frameCountRef.current = 0;
-        sim.step();
+        for (let n = 0; n < stepsPerFrameRef.current; n++) sim.step();
         setColonyScores(sim.colonies.map(c => c.foodCollected));
         const total = sim.totalFoodCollected;
         const now = Date.now();
@@ -1024,8 +683,14 @@ export default function AntSim() {
         const cutoff = now - 30_000;
         foodTimestampsRef.current = foodTimestampsRef.current.filter(t => t > cutoff);
         setFoodRate(foodTimestampsRef.current.length * 2);
+        // Sorting every open cell is wasteful at step rate and the number does
+        // not move fast enough to be worth it.
+        if (++highwayCounterRef.current >= HIGHWAY_SAMPLE_EVERY) {
+          highwayCounterRef.current = 0;
+          setHighwayScore(computeHighwayScore(sim));
+        }
       }
-      render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+      render(ctx, sim, layersRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
@@ -1035,7 +700,7 @@ export default function AntSim() {
   useEffect(() => {
     const sim = simRef.current;
     const ctx = canvasRef.current?.getContext("2d");
-    if (sim && ctx) render(ctx, sim, viewMode, watchedAntIdx, editModeRef.current, hoverCellRef.current);
+    if (sim && ctx) render(ctx, sim, layersRef.current, viewMode, watchedAntIdx, editModeRef.current, hoverCellRef.current);
   }, [viewMode, watchedAntIdx]);
 
   const handleReset = () => {
@@ -1046,9 +711,9 @@ export default function AntSim() {
     initSim();
   };
 
-  const stepsPerSec = Math.round(60 / framesPerTick);
-  const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
-  const tankCells = Math.round(params.tankMax / (DEPOSIT_RATE * (CELL / V)));
+  const stepsPerSec = Math.round((60 / framesPerTick) * stepsPerFrame);
+  const speedLabel = stepsPerSec >= 240 ? "Very fast" : stepsPerSec >= 100 ? "Fast" : stepsPerSec >= 30 ? "Medium" : "Slow";
+  const tankCells = Math.round(params.tankMax / (DEPOSIT_PER_PX * CELL));
   const loopPct = Math.round(loopRate * 100);
   const loopLabel = loopRate === 0 ? "None (tree)" : loopRate < 0.05 ? "Very few" : loopRate < 0.15 ? "Some" : loopRate < 0.3 ? "Many" : "Lots";
 
@@ -1119,6 +784,20 @@ export default function AntSim() {
               </div>
             ))
           )}
+
+          <div
+            title="Share of all pheromone sitting in the busiest tenth of open cells. High means the colonies have committed to a few routes; low means scent is still spread across the maze."
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 20,
+              padding: "clamp(3px,0.4vw,5px) clamp(10px,1.5vw,14px)",
+            }}
+          >
+            <span style={{ fontSize: "clamp(0.58rem,1.5vw,0.68rem)", opacity: 0.45, letterSpacing: "0.05em", textTransform: "uppercase" }}>highway</span>
+            <span style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "4ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+              {highwayScore > 0 ? `${(highwayScore * 100).toFixed(0)}%` : "—"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1142,7 +821,7 @@ export default function AntSim() {
           touchAction: editMode !== "none" ? "none" : "auto",
         }}
       >
-        <div style={{ width: W, height: H * canvasScale, overflow: "hidden" }}>
+        <div style={{ width: W * canvasScale, height: H * canvasScale, overflow: "hidden" }}>
           <div style={{ width: W, height: H, transform: `scale(${canvasScale})`, transformOrigin: "top left" }}>
             <canvas ref={canvasRef} width={W} height={H} style={{ display: "block" }} />
           </div>
@@ -1156,6 +835,7 @@ export default function AntSim() {
         display: "flex",
         gap: 8,
         alignItems: "center",
+        flexWrap: "wrap",
       }}>
         <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e", flexShrink: 0 }}>
           Edit
@@ -1163,6 +843,7 @@ export default function AntSim() {
         {([
           { mode: "wall" as EditMode, icon: "🧱", label: "Walls", tip: "Click walls to open them · click paths to wall them · drag to paint" },
           { mode: "food" as EditMode, icon: "🍎", label: "Food", tip: "Click open cells to place food · click existing food to remove it" },
+          { mode: "ground" as EditMode, icon: "🪨", label: "Ground", tip: "Paint the surface ants walk on · drag to paint" },
         ]).map(({ mode, icon, label, tip }) => {
           const active = editMode === mode;
           return (
@@ -1195,13 +876,113 @@ export default function AntSim() {
             </button>
           );
         })}
+        {editMode === "ground" && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+            {TERRAIN_BRUSHES.map(t => {
+              const props = simRef.current?.terrain.describe(t) ?? TERRAIN[t];
+              const active = brush === t;
+              return (
+                <button
+                  key={t}
+                  title={props.blurb}
+                  onClick={() => setBrush(t)}
+                  aria-pressed={active}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "5px 10px",
+                    borderRadius: 7,
+                    border: `1px solid ${active ? "#f59e0b" : "#3d2e18"}`,
+                    background: active ? "#2a1a00" : "#0f0a04",
+                    color: active ? "#f59e0b" : "#a08060",
+                    fontSize: "0.72rem", fontWeight: 600,
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  <span style={{
+                    width: 12, height: 12, borderRadius: 3, flexShrink: 0,
+                    background: props.fill,
+                    border: `1px solid ${props.speckle ?? "#3d2e18"}`,
+                  }} />
+                  {props.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {editMode === "ground" && brush === Terrain.Scarp && (
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <span style={{ fontSize: "0.68rem", color: "#6b5a3e" }}>falls</span>
+            {FACINGS.map(f => (
+              <button
+                key={f}
+                onClick={() => setFacing(f)}
+                aria-pressed={facing === f}
+                title={`Scarp falls ${FACING_NAMES[f].toLowerCase()} — ants may cross only that way`}
+                style={{
+                  width: 28, height: 28, borderRadius: 7,
+                  border: `1px solid ${facing === f ? "#f59e0b" : "#3d2e18"}`,
+                  background: facing === f ? "#2a1a00" : "#0f0a04",
+                  color: facing === f ? "#f59e0b" : "#a08060",
+                  cursor: "pointer", fontSize: "0.85rem", lineHeight: 1,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                {["→", "↓", "←", "↑"][f]}
+              </button>
+            ))}
+          </div>
+        )}
         {editMode !== "none" && (
           <span style={{ fontSize: "0.68rem", color: "#6b5a3e", marginLeft: 4 }}>
             {editMode === "wall"
               ? "Green = open wall · Red = close path · drag to paint"
-              : "Green = place food · Red = remove food"}
+              : editMode === "ground"
+                ? `Painting ${(simRef.current?.terrain.describe(brush) ?? TERRAIN[brush]).name.toLowerCase()} · drag to paint`
+                : "Green = place food · Red = remove food"}
           </span>
         )}
+
+        {/* Seed. Up here rather than buried in the settings: rerolling the
+            world is something you do constantly, and it was a scroll away. */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto", flexShrink: 0 }}>
+          <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
+            Seed
+          </span>
+          <input
+            type="text"
+            value={seedDraft}
+            maxLength={MAX_SEED_LENGTH}
+            spellCheck={false}
+            autoComplete="off"
+            aria-label="Simulation seed"
+            onChange={e => setSeedDraft(e.target.value)}
+            onBlur={() => applySeedDraft()}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); applySeedDraft(); (e.target as HTMLInputElement).blur(); } }}
+            style={{
+              width: "9ch", minWidth: 0,
+              background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8,
+              padding: "6px 8px", color: "#e5d5b5",
+              fontSize: "0.78rem",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              letterSpacing: "0.04em",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setSeed(randomSeed())}
+            title="Build a new world with a fresh seed"
+            style={{
+              flexShrink: 0,
+              background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 8,
+              padding: "7px 12px", color: "#f59e0b",
+              fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.05em",
+              textTransform: "uppercase", cursor: "pointer",
+            }}
+          >
+            New
+          </button>
+        </div>
       </div>}
 
       {/* Legend */}
@@ -1394,12 +1175,11 @@ export default function AntSim() {
 
         <ControlCard
           label="Simulation speed"
-          description={`How many steps run per second. ${speedLabel} — ${stepsPerSec} steps/sec.`}
-          value={framesPerTick}
-          displayValue={speedLabel}
-          min={1} max={30} step={1}
-          rtl
-          onChange={setFramesPerTick}
+          description={`How many steps run per second. ${speedLabel} — about ${stepsPerSec} steps/sec. A room takes tens of thousands of steps to grow a trail network, so the upper half of this slider runs several steps per frame.`}
+          value={speed}
+          displayValue={`${stepsPerSec}/s`}
+          min={1} max={16} step={1}
+          onChange={setSpeed}
           style={{ flex: "1 1 270px" }}
         />
       </div>
@@ -1438,25 +1218,78 @@ export default function AntSim() {
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
 
-          <ControlCard
-            label="Food sources"
-            description="How many food piles are scattered across the maze. All colonies compete for the same piles. Changing this regenerates the maze."
-            value={numFoodSources}
-            displayValue={`${numFoodSources} source${numFoodSources > 1 ? "s" : ""}`}
-            min={1} max={8} step={1}
-            onChange={v => { setNumFoodSources(v); }}
-            style={{ flex: "1 1 270px" }}
-          />
+          {params.replenish ? (
+            <ParamCard
+              label="Total food"
+              description="How much food the world holds at once. Eat into it and more grows back until the world is full again, so this is really how long the run lasts. How that total is broken up — how many piles, and how big each one — is the world's business and comes out different on every seed."
+              value={params.foodCapacity}
+              displayValue={`${params.foodCapacity} units`}
+              min={500} max={20000} step={250}
+              onChange={v => updateParam("foodCapacity", v)}
+            />
+          ) : (
+            <>
+              <ControlCard
+                label="Food sources"
+                description="How many food piles are laid out. All colonies compete for the same piles. Changing this rebuilds the world."
+                value={numFoodSources}
+                displayValue={`${numFoodSources} source${numFoodSources > 1 ? "s" : ""}`}
+                min={1} max={20} step={1}
+                onChange={v => { setNumFoodSources(v); }}
+                style={{ flex: "1 1 270px" }}
+              />
 
-          <ControlCard
-            label="Food per source"
-            description="How many food units each pile contains. Once depleted, the pile goes dark and trails to it gradually fade. Changing this regenerates the maze."
-            value={foodPerSource}
-            displayValue={`${foodPerSource} units`}
-            min={50} max={10000} step={50}
-            onChange={v => { setFoodPerSource(v); }}
-            style={{ flex: "1 1 270px" }}
-          />
+              <ControlCard
+                label="Food per source"
+                description="How many food units each pile contains. Once depleted the pile goes dark and trails to it fade. Changing this rebuilds the world."
+                value={foodPerSource}
+                displayValue={`${foodPerSource} units`}
+                min={50} max={10000} step={50}
+                onChange={v => { setFoodPerSource(v); }}
+                style={{ flex: "1 1 270px" }}
+              />
+            </>
+          )}
+
+          {/* Replenishing food toggle */}
+          <div style={{
+            background: "#0f0a04",
+            border: "1px solid #3d2e18",
+            borderRadius: 10,
+            padding: "14px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            flex: "1 1 270px",
+            minWidth: 0,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Replenishing food</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>
+                {params.replenish ? "on" : "off"}
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+              On, food grows back towards the total this run was set up with, and only where the ground is fertile — the windfall and crumb patches — so a route is worth keeping only while it still leads somewhere. Off, the world holds a fixed larder and the run ends when it has been eaten, which is the cleaner comparison between two settings but is over quickly in a world this size.
+            </p>
+            <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
+              {([false, true] as const).map(val => (
+                <button
+                  key={String(val)}
+                  onClick={() => { updateParam("replenish", val); }}
+                  style={{
+                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                    fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
+                    letterSpacing: "0.02em",
+                    background: params.replenish === val ? "#f59e0b" : "transparent",
+                    color: params.replenish === val ? "#000" : "#a08060",
+                  }}
+                >
+                  {val ? "On" : "Off"}
+                </button>
+              ))}
+            </div>
+          </div>
 
         </div>
       </div>
@@ -1487,11 +1320,29 @@ export default function AntSim() {
           />
 
           <ParamCard
+            label="Antenna spread"
+            description="How far apart an ant's two outer antennae are. Narrow, and the three readings are nearly the same point, so an ant cannot tell which way the trail runs and wanders past it. Wide, and it samples across the whole corridor."
+            value={params.sensorAngle}
+            displayValue={`${Math.round(params.sensorAngle * 180 / Math.PI)}°`}
+            min={0.15} max={1.4} step={0.05}
+            onChange={v => updateParam("sensorAngle", v)}
+          />
+
+          <ParamCard
+            label="Antenna reach"
+            description="How far ahead an ant can smell. Short, and it only notices a trail once it is standing on it. Long, and it smells around the next corner before it can steer, so it misses turns in tight mazes."
+            value={params.sensorDist}
+            displayValue={`${(params.sensorDist / CELL).toFixed(2)} cells`}
+            min={4} max={40} step={1}
+            onChange={v => updateParam("sensorDist", v)}
+          />
+
+          <ParamCard
             label="Gland size"
             description="How much pheromone each ant can carry. Larger glands mark longer paths before running dry. Smaller glands mean only short routes get reinforced."
             value={params.tankMax}
             displayValue={`~${tankCells} cells`}
-            min={1600} max={16000} step={800}
+            min={3200} max={80000} step={1600}
             onChange={v => updateParam("tankMax", v)}
           />
 
@@ -1541,9 +1392,40 @@ export default function AntSim() {
       {/* ── Maze settings ──────────────────────────────────────────────────────── */}
       <div style={{ width: "100%", maxWidth: 600 }}>
         <p style={{ margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
-          Maze settings
+          World settings
         </p>
         <div style={{
+          background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 10,
+          padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8,
+          marginBottom: 10,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>World</span>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#f59e0b", textAlign: "right" }}>
+              {simRef.current?.worldDescription || worldKind}
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+A <strong style={{ color: "#e5d5b5" }}>kitchen</strong> is mostly open floor with a run of units against one or more walls — a single run, a galley, an L, a U, or an island — and a worktop and table reached at a few points. The floor is tiled, boarded or bare lino, which decides whether trails have a grid of grout to follow, parallel lines with no cross-links, or nothing at all. Every seed is a different kitchen. A <strong style={{ color: "#e5d5b5" }}>forest</strong> has the same properties growing instead of tiled: roots branching from tree bases, a fallen log as a trunk route, a sunlit patch that bakes trails off, and a stream that carries bodies but no scent except where stones bridge it. A <strong style={{ color: "#e5d5b5" }}>maze</strong> is the old world — corridors one cell wide, where an ant's antennae span the whole passage and there is nothing to steer towards. <strong style={{ color: "#e5d5b5" }}>Changing this rebuilds the world.</strong>
+          </p>
+          <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
+            {(["kitchen", "forest", "maze"] as WorldKind[]).map(kind => (
+              <button
+                key={kind}
+                onClick={() => setWorldKind(kind)}
+                style={{
+                  flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                  fontWeight: 600, fontSize: "0.78rem", letterSpacing: "0.02em",
+                  background: worldKind === kind ? "#f59e0b" : "transparent",
+                  color: worldKind === kind ? "#000" : "#a08060",
+                }}
+              >
+                {kind === "kitchen" ? "Kitchen" : kind === "forest" ? "Forest" : "Maze"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {worldKind === "maze" && <div style={{
           background: "#0f0a04",
           border: "1px solid #3d2e18",
           borderRadius: 10,
@@ -1571,7 +1453,8 @@ export default function AntSim() {
             <span>0% — tree maze</span>
             <span>50% — many loops</span>
           </div>
-        </div>
+        </div>}
+
       </div>
 
       {/* Footer note */}
