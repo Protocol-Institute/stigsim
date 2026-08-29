@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && vite build && node scripts/prepare-static-routes.mjs",
     "test": "pnpm typecheck && pnpm test:server",
     "test:persistence": "pnpm --dir server exec tsx --test src/sim.persistence.test.ts",
-    "test:server": "pnpm --dir server exec tsx --test src/degraded-status.test.ts src/fixed-step.test.ts src/sim.persistence.test.ts src/sim.starvation.test.ts src/security.test.ts src/transport.test.ts src/ws.integration.test.ts",
+    "test:server": "pnpm --dir server exec tsx --test src/degraded-status.test.ts src/food-spawn.test.ts src/fixed-step.test.ts src/sim.persistence.test.ts src/sim.starvation.test.ts src/security.test.ts src/transport.test.ts src/ws.integration.test.ts",
     "typecheck": "tsc --noEmit && pnpm --dir server typecheck",
     "preview": "vite preview --host 0.0.0.0"
   },
