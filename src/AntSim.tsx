@@ -48,6 +48,9 @@ const DEFAULT_PARAMS: SimParams = {
   cautionary: false,
 };
 
+// Simulation steps between highway-score samples.
+const HIGHWAY_SAMPLE_EVERY = 15;
+
 const DEFAULT_NUM_COLONIES = 1;
 const DEFAULT_NUM_FOOD_SOURCES = 1;
 const DEFAULT_FOOD_PER_SOURCE = 500;
@@ -112,12 +115,27 @@ function generateMaze(rng: Rng, loopRate: number = 0.1): CellType[][] {
   return grid;
 }
 
+/**
+ * How concentrated the ant-laid pheromone is: the share of it sitting in the
+ * busiest tenth of open cells. Near 1 means the colonies have committed to a
+ * few routes; low means scent is still spread thinly across the maze.
+ *
+ * Nest and food cells are excluded. Both are pinned to NEST_SEED every step by
+ * the model rather than earned by any ant, and they are large enough to
+ * dominate: counting them reported a fully converged 100% on a fresh maze where
+ * no ant had yet moved.
+ */
 function computeHighwayScore(sim: Simulation): number {
+  const anchors = new Set<number>();
+  for (const c of sim.colonies) anchors.add(c.nestY * COLS + c.nestX);
+  for (const s of sim.foodSources) anchors.add(s.y * COLS + s.x);
+
   const open: number[] = [];
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       if (sim.grid[y][x] === 1) {
         const idx = y * COLS + x;
+        if (anchors.has(idx)) continue;
         let total = 0;
         for (const c of sim.colonies) total += c.foodPhero[idx] + c.homePhero[idx];
         open.push(total);
@@ -763,6 +781,8 @@ export default function AntSim() {
   const [running, setRunning] = useState(false);
   const [colonyScores, setColonyScores] = useState<number[]>([0]);
   const [foodRate, setFoodRate] = useState(0);
+  const [highwayScore, setHighwayScore] = useState(0);
+  const highwayCounterRef = useRef(0);
   const foodTimestampsRef = useRef<number[]>([]);
   const prevTotalRef = useRef(0);
   const [framesPerTick, setFramesPerTick] = useState(4);
@@ -1018,6 +1038,8 @@ export default function AntSim() {
     );
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
+    setHighwayScore(0);
+    highwayCounterRef.current = 0;
     foodTimestampsRef.current = [];
     prevTotalRef.current = 0;
     if (viewModeRef.current === "one") {
@@ -1069,6 +1091,12 @@ export default function AntSim() {
         const cutoff = now - 30_000;
         foodTimestampsRef.current = foodTimestampsRef.current.filter(t => t > cutoff);
         setFoodRate(foodTimestampsRef.current.length * 2);
+        // Sorting every open cell is wasteful at step rate and the number does
+        // not move fast enough to be worth it.
+        if (++highwayCounterRef.current >= HIGHWAY_SAMPLE_EVERY) {
+          highwayCounterRef.current = 0;
+          setHighwayScore(computeHighwayScore(sim));
+        }
       }
       render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
       rafRef.current = requestAnimationFrame(loop);
@@ -1164,6 +1192,20 @@ export default function AntSim() {
               </div>
             ))
           )}
+
+          <div
+            title="Share of all pheromone sitting in the busiest tenth of open cells. High means the colonies have committed to a few routes; low means scent is still spread across the maze."
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 20,
+              padding: "clamp(3px,0.4vw,5px) clamp(10px,1.5vw,14px)",
+            }}
+          >
+            <span style={{ fontSize: "clamp(0.58rem,1.5vw,0.68rem)", opacity: 0.45, letterSpacing: "0.05em", textTransform: "uppercase" }}>highway</span>
+            <span style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "4ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+              {highwayScore > 0 ? `${(highwayScore * 100).toFixed(0)}%` : "—"}
+            </span>
+          </div>
         </div>
       </div>
 
