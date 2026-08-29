@@ -6,7 +6,6 @@ test("structural world state survives a persistence round trip", () => {
   const original = new InfiniteSimulation();
   original.setWall(4, 5, true);
   const food = original.addFood(8, 9, 321);
-  food.remaining = 111;
 
   const removedLow = original.addColony(0, 0, { name: "Removed low" });
   const colony = original.addColony(2, 3, { name: "Durable", numAnts: 3 });
@@ -15,6 +14,12 @@ test("structural world state survives a persistence round trip", () => {
   original.removeColony(removedHigh.id);
 
   for (let i = 0; i < 125; i++) original.step();
+
+  // Set the partial amount after stepping, not before. Ants forage during
+  // those 125 steps, and whether one reaches (8,9) from (2,3) in time is a
+  // coin toss — which made this assertion fail roughly one run in eight
+  // while looking like a persistence bug.
+  food.remaining = 111;
   colony.foodCollected = 47;
   colony.setAt("food", 50, 50, 500);
 
