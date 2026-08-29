@@ -229,13 +229,20 @@ function rowTotal(sim: Simulation, y: number): number {
 }
 
 test("with two equal routes, neither is preferred without a reason", () => {
+  // Enough seeds that an even split is not a coin landing the same way twice.
+  // Six seeds came up 6/6 once on a world-size change and 11/24 on the same
+  // build with more of them, which is sampling noise rather than a bias.
+  const seeds = Array.from({ length: 20 }, (_, i) => `sym${i}`);
   let topWins = 0;
-  for (const seed of ["a", "b", "c", "d", "e", "f"]) {
+  for (const seed of seeds) {
     const sim = twoCorridorWorld(seed);
     for (let i = 0; i < 3_000; i++) sim.step();
     if (rowTotal(sim, 3) > rowTotal(sim, 13)) topWins++;
   }
-  assert.ok(topWins > 0 && topWins < 6, `symmetric world favoured one route ${topWins}/6 times`);
+  assert.ok(
+    topWins >= 4 && topWins <= seeds.length - 4,
+    `symmetric world favoured one route ${topWins}/${seeds.length} times`,
+  );
 });
 
 test("colonies route around mire even when the way through is no longer", () => {

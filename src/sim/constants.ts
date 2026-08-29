@@ -6,9 +6,11 @@
 // ─── Maze dimensions ───────────────────────────────────────────────────────
 // Room-sized, not maze-sized. An ant's antennae reach about one cell, so a
 // world only becomes worth steering through when open stretches are many cells
-// across. At 96x64 the floor is wider than a colony's whole trail network.
-export const COLS = 96;
-export const ROWS = 64;
+// across — but a floor much wider than a colony's trail network just means long
+// empty crossings. Three quarters of the area it started at, keeping the shape:
+// the open stretches survive and the walk gets shorter.
+export const COLS = 83;
+export const ROWS = 55;
 export const CELL = 16;
 export const W = COLS * CELL;
 export const H = ROWS * CELL;

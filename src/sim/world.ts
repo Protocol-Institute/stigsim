@@ -288,6 +288,11 @@ function generateMazeGrid(cols: number, rows: number, rng: Rng, loopRate: number
 
 // ─── The kitchen ─────────────────────────────────────────────────────────────
 
+/** A count that holds its density as the world resizes. */
+function perArea(cols: number, rows: number, cellsEach: number, least = 1): number {
+  return Math.max(least, Math.round((cols * rows) / cellsEach));
+}
+
 function generateKitchen(cols: number, rows: number, rng: Rng): GeneratedWorld {
   const grid = blankGrid(cols, rows);
   const terrain = new TerrainLayer(cols, rows);
@@ -329,7 +334,7 @@ function generateKitchen(cols: number, rows: number, rng: Rng): GeneratedWorld {
 
   // ── Gaps between appliances: a few narrow ways down from the units into the
   // room. These are the chokepoints the whole floor has to funnel through.
-  const gapCount = 3 + rng.int(3);
+  const gapCount = perArea(cols, rows, 1_500, 3) + rng.int(3);
   const gaps: number[] = [];
   for (let i = 0; i < gapCount; i++) {
     const gx = 3 + rng.int(cols - 6);
@@ -486,7 +491,8 @@ function generateForest(cols: number, rows: number, rng: Rng): GeneratedWorld {
 
   // ── Leaf litter drifts. Slow to wade, but sheltered, so a trail through the
   // litter outlasts one across bare earth.
-  for (let i = 0; i < 14; i++) {
+  const drifts = perArea(cols, rows, 440, 6);
+  for (let i = 0; i < drifts; i++) {
     paintBlob(terrain, grid,
       2 + rng.int(cols - 4), 2 + rng.int(rows - 4),
       3 + rng.int(6), Terrain.Undergrowth, rng);
@@ -534,7 +540,8 @@ function generateForest(cols: number, rows: number, rng: Rng): GeneratedWorld {
   // ── Trees and boulders. Rounded, scattered, and something to follow the edge
   // of — not corridors.
   const trees: [number, number][] = [];
-  for (let i = 0; i < 7; i++) {
+  const standing = perArea(cols, rows, 880, 4);
+  for (let i = 0; i < standing; i++) {
     const tx = 4 + rng.int(cols - 8);
     const ty = 4 + rng.int(rows - 8);
     if (Math.abs(ty - streamY) < 5) continue;
