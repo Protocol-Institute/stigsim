@@ -122,6 +122,17 @@ export const TERRAIN_BRUSHES: Terrain[] = [
 ];
 
 /**
+ * A per-world restyling of the surfaces.
+ *
+ * The mechanics are the same everywhere — ground that holds a trail is ground
+ * that holds a trail — but what that ground *is* depends on where you are. The
+ * same property is grout between kitchen tiles and a tree root on a forest
+ * floor, and being able to see that it is the same property wearing two faces
+ * is most of the point.
+ */
+export type TerrainSkin = Partial<Record<Terrain, Partial<TerrainProps>>>;
+
+/**
  * A sparse terrain layer over a fixed grid.
  *
  * Backed by a flat Uint8Array rather than a map: at 31x31 the array is smaller
@@ -131,10 +142,19 @@ export const TERRAIN_BRUSHES: Terrain[] = [
 export class TerrainLayer {
   private readonly cells: Uint8Array;
   private readonly facings: Uint8Array;
+  private readonly skinned: Record<Terrain, TerrainProps>;
 
-  constructor(readonly cols: number, readonly rows: number) {
+  constructor(readonly cols: number, readonly rows: number, readonly skin: TerrainSkin = {}) {
     this.cells = new Uint8Array(cols * rows);
     this.facings = new Uint8Array(cols * rows);
+    this.skinned = Object.fromEntries(
+      TERRAIN_BRUSHES.map(t => [t, { ...TERRAIN[t], ...(skin[t] ?? {}) }]),
+    ) as Record<Terrain, TerrainProps>;
+  }
+
+  /** Properties of one surface, as this world dresses it. */
+  describe(t: Terrain): TerrainProps {
+    return this.skinned[t] ?? TERRAIN[t];
   }
 
   facingAt(cx: number, cy: number): Facing {
@@ -160,7 +180,7 @@ export class TerrainLayer {
   }
 
   props(cx: number, cy: number): TerrainProps {
-    return TERRAIN[this.at(cx, cy)];
+    return this.describe(this.at(cx, cy));
   }
 
   set(cx: number, cy: number, terrain: Terrain, facing: Facing = Facing.East) {
