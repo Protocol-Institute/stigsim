@@ -33,6 +33,10 @@ export interface SimParams {
   trailPower: number;
   tankMax: number;
   cautionary: boolean;
+  /** How far ahead an ant can smell, in pixels. */
+  sensorDist: number;
+  /** Angle of the outer antennae either side of the heading, radians. */
+  sensorAngle: number;
   /**
    * Whether eaten food grows back. Off by default: the maze is a controlled
    * laboratory, and a fixed larder is what makes two runs comparable. Turning
@@ -47,6 +51,8 @@ export const DEFAULT_PARAMS: SimParams = {
   trailPower: 5,
   tankMax: 6400,
   cautionary: false,
+  sensorDist: SENSOR_DIST,
+  sensorAngle: SENSOR_ANGLE,
   replenish: false,
 };
 
@@ -394,14 +400,14 @@ export class Simulation {
    * scores zero and is never chosen.
    */
   private _chooseTurn(ant: Ant, colony: Colony): number {
-    const { trailPower, cautionary } = this.params;
+    const { trailPower, cautionary, sensorAngle, sensorDist } = this.params;
     const field = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
-    const offsets = [-SENSOR_ANGLE, 0, SENSOR_ANGLE];
+    const offsets = [-sensorAngle, 0, sensorAngle];
 
     const weights = offsets.map(offset => {
       const angle = ant.heading + offset;
-      const px = ant.x + Math.cos(angle) * SENSOR_DIST;
-      const py = ant.y + Math.sin(angle) * SENSOR_DIST;
+      const px = ant.x + Math.cos(angle) * sensorDist;
+      const py = ant.y + Math.sin(angle) * sensorDist;
       const cx = Math.floor(px / CELL), cy = Math.floor(py / CELL);
       if (!this.isOpen(cx, cy)) return 0;
 

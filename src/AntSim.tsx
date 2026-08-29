@@ -1227,6 +1227,24 @@ export default function AntSim() {
           />
 
           <ParamCard
+            label="Antenna spread"
+            description="How far apart an ant's two outer antennae are. Narrow, and the three readings are nearly the same point, so an ant cannot tell which way the trail runs and wanders past it. Wide, and it samples across the whole corridor."
+            value={params.sensorAngle}
+            displayValue={`${Math.round(params.sensorAngle * 180 / Math.PI)}°`}
+            min={0.15} max={1.4} step={0.05}
+            onChange={v => updateParam("sensorAngle", v)}
+          />
+
+          <ParamCard
+            label="Antenna reach"
+            description="How far ahead an ant can smell. Short, and it only notices a trail once it is standing on it. Long, and it smells around the next corner before it can steer, so it misses turns in tight mazes."
+            value={params.sensorDist}
+            displayValue={`${(params.sensorDist / CELL).toFixed(2)} cells`}
+            min={4} max={40} step={1}
+            onChange={v => updateParam("sensorDist", v)}
+          />
+
+          <ParamCard
             label="Gland size"
             description="How much pheromone each ant can carry. Larger glands mark longer paths before running dry. Smaller glands mean only short routes get reinforced."
             value={params.tankMax}

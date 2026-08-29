@@ -29,13 +29,28 @@ export const COLONY_NESTS: [number, number][] = [
 // An ant senses the field at three points ahead of it and steers, rather than
 // choosing between the four cells it touches.
 
-/** How far ahead the sensors reach, in pixels. */
-export const SENSOR_DIST = CELL * 1.15;
-/** Angle of the left and right sensors either side of the heading, radians. */
-export const SENSOR_ANGLE = 0.55;
-/** Most an ant may turn in one step, radians. */
+// Defaults below were chosen by sweeping the real model across 32 seeds; see
+// the tuning notes in CONTRIBUTING.md.
+
+/** How far ahead the sensors reach, in pixels — about one cell. */
+export const SENSOR_DIST = CELL;
+/**
+ * Angle of the left and right sensors either side of the heading, radians.
+ *
+ * The sensitive one. Below about 0.5 the three sensors sit too close together
+ * to tell directions apart and ants barely follow trails at all; the useful
+ * band is roughly 0.8 to 1.0.
+ */
+export const SENSOR_ANGLE = 0.9;
+/**
+ * Most an ant may turn in one step, radians. Above about 0.6 ants turn faster
+ * than they travel and trails stop holding their shape.
+ */
 export const TURN_RATE = 0.55;
-/** Random jitter added to the heading each step, radians. */
+/**
+ * Random jitter added to the heading each step, radians. Zero makes a colony
+ * too committed to explore; much above 0.2 drowns the signal it follows.
+ */
 export const WANDER = 0.10;
 
 /**
