@@ -835,6 +835,7 @@ export default function AntSim() {
         display: "flex",
         gap: 8,
         alignItems: "center",
+        flexWrap: "wrap",
       }}>
         <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e", flexShrink: 0 }}>
           Edit
@@ -941,6 +942,47 @@ export default function AntSim() {
                 : "Green = place food · Red = remove food"}
           </span>
         )}
+
+        {/* Seed. Up here rather than buried in the settings: rerolling the
+            world is something you do constantly, and it was a scroll away. */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto", flexShrink: 0 }}>
+          <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
+            Seed
+          </span>
+          <input
+            type="text"
+            value={seedDraft}
+            maxLength={MAX_SEED_LENGTH}
+            spellCheck={false}
+            autoComplete="off"
+            aria-label="Simulation seed"
+            onChange={e => setSeedDraft(e.target.value)}
+            onBlur={() => applySeedDraft()}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); applySeedDraft(); (e.target as HTMLInputElement).blur(); } }}
+            style={{
+              width: "9ch", minWidth: 0,
+              background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8,
+              padding: "6px 8px", color: "#e5d5b5",
+              fontSize: "0.78rem",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              letterSpacing: "0.04em",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => setSeed(randomSeed())}
+            title="Build a new world with a fresh seed"
+            style={{
+              flexShrink: 0,
+              background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 8,
+              padding: "7px 12px", color: "#f59e0b",
+              fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.05em",
+              textTransform: "uppercase", cursor: "pointer",
+            }}
+          >
+            New
+          </button>
+        </div>
       </div>}
 
       {/* Legend */}
@@ -1413,72 +1455,6 @@ A <strong style={{ color: "#e5d5b5" }}>kitchen</strong> is mostly open floor wit
           </div>
         </div>}
 
-        {/* Seed */}
-        <div style={{
-          background: "#0f0a04",
-          border: "1px solid #3d2e18",
-          borderRadius: 10,
-          padding: "14px 16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          marginTop: 10,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Seed</span>
-            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>
-              {seed}
-            </span>
-          </div>
-          <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-            Every random choice in the run — the maze, where food lands, which way each ant turns — comes from this seed. The same seed and the same settings replay the same run exactly, so a difference between two runs is the setting you changed and not luck. The address bar tracks the seed, so copying the link hands someone your exact run. <strong style={{ color: "#e5d5b5" }}>Changing this regenerates the maze.</strong>
-          </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
-            <input
-              type="text"
-              value={seedDraft}
-              maxLength={MAX_SEED_LENGTH}
-              spellCheck={false}
-              autoComplete="off"
-              aria-label="Simulation seed"
-              onChange={e => setSeedDraft(e.target.value)}
-              onBlur={() => applySeedDraft()}
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); applySeedDraft(); (e.target as HTMLInputElement).blur(); } }}
-              style={{
-                flex: "1 1 auto",
-                minWidth: 0,
-                background: "#1a1208",
-                border: "1px solid #3d2e18",
-                borderRadius: 8,
-                padding: "8px 10px",
-                color: "#e5d5b5",
-                fontSize: "0.85rem",
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                letterSpacing: "0.04em",
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => setSeed(randomSeed())}
-              title="Start a new run with a fresh seed"
-              style={{
-                flexShrink: 0,
-                background: "#1a1208",
-                border: "1px solid #3d2e18",
-                borderRadius: 8,
-                padding: "8px 14px",
-                color: "#f59e0b",
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-              }}
-            >
-              New seed
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* Footer note */}
