@@ -1,7 +1,7 @@
 import type { RunConfig, RunSeeds, SimParams } from "./types";
 import type { TimedCommand } from "./commands";
 import { isTimedCommand, isAntCount, validParams } from "./commands";
-import { MAX_COLONIES, MAX_FOOD_PER_SOURCE, MAX_FOOD_SOURCES } from "./constants";
+import { MAX_COLONIES, MAX_FOOD_PER_SOURCE, MAX_FOOD_SOURCES, MAX_TICKS } from "./constants";
 import type { MetricsSample, MetricsRecorder } from "./metrics";
 import type { Simulation } from "./sim";
 import { fingerprint } from "./fingerprint";
@@ -191,6 +191,9 @@ export function parseTrace(text: string): ParseResult {
   if (!isInt(t.simVersion)) {
     return { ok: false, error: "That trace has no readable simulation version." };
   }
+  if (!isStr(t.createdAt)) {
+    return { ok: false, error: "That trace has no readable creation timestamp." };
+  }
 
   const run = t.run as Record<string, unknown> | undefined;
   if (typeof run !== "object" || run === null) {
@@ -227,15 +230,42 @@ export function parseTrace(text: string): ParseResult {
 
   const metrics = t.metrics as Record<string, unknown> | undefined;
   if (typeof metrics !== "object" || metrics === null ||
-      !isInt(metrics.interval) || typeof metrics.truncated !== "boolean" ||
+      !isInt(metrics.interval) || metrics.interval <= 0 ||
+      typeof metrics.truncated !== "boolean" ||
       !Array.isArray(metrics.samples)) {
     return { ok: false, error: "That trace has a malformed metrics block." };
   }
   if (!metrics.samples.every(validMetricsSample)) {
     return { ok: false, error: "That trace has a malformed metrics sample." };
   }
-  if (!isInt(t.endTick) || t.endTick < 0) {
+  const endTick = t.endTick;
+  if (!isInt(endTick) || endTick < 0) {
     return { ok: false, error: "That trace has no readable end tick." };
+  }
+  if (endTick > MAX_TICKS) {
+    return {
+      ok: false,
+      error: `That trace claims to run for ${endTick} ticks, more than this build will replay (${MAX_TICKS}).`,
+    };
+  }
+
+  // A trace whose checkpoints or commands sit past its end tick is
+  // self-contradictory, and the surplus would never be replayed. One tick of
+  // slack is legitimate: flushPending stamps a paused edit at tick + 1, so a
+  // trace saved while an edit is outstanding carries its last command there.
+  const lateFingerprint = (t.fingerprints as { t: number }[]).find(f => f.t > endTick);
+  if (lateFingerprint !== undefined) {
+    return {
+      ok: false,
+      error: `That trace has a checkpoint at tick ${lateFingerprint.t}, after its end tick of ${endTick}.`,
+    };
+  }
+  const lateCommand = (t.commands as TimedCommand[]).find(c => c.t > endTick + 1);
+  if (lateCommand !== undefined) {
+    return {
+      ok: false,
+      error: `That trace has a command at tick ${lateCommand.t}, after its end tick of ${endTick}.`,
+    };
   }
 
   const trace = raw as Trace;

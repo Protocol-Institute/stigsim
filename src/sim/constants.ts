@@ -54,3 +54,12 @@ export const MAX_EVAP_RATE = 1;
  */
 export const MAX_TRAIL_POWER = 32;
 export const MAX_TANK = 1e6;
+/**
+ * Ticks a trace may claim to end at. The replay bar offers endTick as a seek
+ * target and Replayer.seek runs there synchronously, so this is what stands
+ * between a corrupt trace and a frozen tab: at the measured rate, a billion
+ * ticks is over an hour of unresponsive page. Two million is roughly nine
+ * hours of continuous running at 60 ticks per second, well past any session
+ * anyone will record in a browser.
+ */
+export const MAX_TICKS = 2_000_000;

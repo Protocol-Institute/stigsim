@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   Simulation, DEFAULT_PARAMS, makeSeeds, MetricsRecorder,
   buildTrace, serializeTrace, parseTrace, traceToRunConfig, traceFilename,
-  TRACE_FORMAT, TRACE_VERSION, SIM_VERSION, FINGERPRINT_INTERVAL, fingerprint,
+  TRACE_FORMAT, TRACE_VERSION, SIM_VERSION, FINGERPRINT_INTERVAL, fingerprint, MAX_TICKS,
 } from "./index";
 import type { RunConfig, Trace } from "./index";
 
@@ -236,4 +236,67 @@ test("the loader checks the shape of each metrics colony entry", () => {
   assert.ok(metrics.samples.length > 0, "expected at least one sample");
   metrics.samples[0].colonies = [1, 2, 3];
   assert.equal(parseTrace(JSON.stringify(t)).ok, false);
+});
+
+test("the loader bounds the end tick", () => {
+  // endTick drives the replay bar's seek range, and Replayer.seek runs to the
+  // target synchronously. An unbounded value hands the user a Jump button that
+  // freezes the tab: at the measured tick rate 1e9 ticks is over an hour.
+  const { sim, rec } = runSim(100);
+  const trace = buildTrace(sim, rec);
+  const withEnd = (endTick: number) =>
+    parseTrace(JSON.stringify({ ...trace, endTick, fingerprints: [] }));
+
+  assert.equal(withEnd(1e9).ok, false);
+  assert.equal(withEnd(Number.MAX_SAFE_INTEGER).ok, false);
+  assert.equal(withEnd(MAX_TICKS + 1).ok, false);
+  assert.equal(withEnd(MAX_TICKS).ok, true);
+  assert.equal(withEnd(100).ok, true);
+});
+
+test("the loader rejects a trace whose ticks contradict its end tick", () => {
+  const { sim, rec } = runSim(100);
+  const trace = buildTrace(sim, rec);
+
+  const lateFingerprint = parseTrace(JSON.stringify({
+    ...trace, fingerprints: [{ t: 5000, h: "abcdabcd" }],
+  }));
+  assert.equal(lateFingerprint.ok, false);
+  assert.match(lateFingerprint.ok ? "" : lateFingerprint.error, /after its end tick/i);
+
+  const lateCommand = parseTrace(JSON.stringify({
+    ...trace, commands: [{ t: 5000, cmd: { kind: "setCautionary", value: true } }],
+  }));
+  assert.equal(lateCommand.ok, false);
+  assert.match(lateCommand.ok ? "" : lateCommand.error, /after its end tick/i);
+});
+
+test("a trace saved during a paused edit still loads", () => {
+  // flushPending records at tick + 1, so a trace saved while an edit is
+  // outstanding legitimately carries one command past its end tick. The
+  // consistency check has to allow exactly that much slack.
+  const sim = new Simulation(config());
+  const rec = new MetricsRecorder();
+  for (let i = 0; i < 120; i++) { sim.step(); rec.maybeSample(sim); }
+  sim.enqueue({ kind: "setCautionary", value: true });
+  sim.flushPending();
+
+  const trace = buildTrace(sim, rec);
+  assert.equal(trace.commands[trace.commands.length - 1].t, trace.endTick + 1);
+  assert.equal(parseTrace(serializeTrace(trace)).ok, true);
+});
+
+test("the loader validates the header fields it does not otherwise use", () => {
+  // Nothing reads these back today, but a trace that claims a type and does not
+  // have it is a lie the rest of the code is entitled to trust.
+  const { sim, rec } = runSim(100);
+  const trace = buildTrace(sim, rec);
+  assert.equal(parseTrace(JSON.stringify({ ...trace, createdAt: 5 })).ok, false);
+  assert.equal(parseTrace(JSON.stringify({ ...trace, createdAt: {} })).ok, false);
+  assert.equal(parseTrace(JSON.stringify({
+    ...trace, metrics: { ...trace.metrics, interval: 0 },
+  })).ok, false);
+  assert.equal(parseTrace(JSON.stringify({
+    ...trace, metrics: { ...trace.metrics, interval: -10 },
+  })).ok, false);
 });
