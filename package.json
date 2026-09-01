@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && vite build && node scripts/prepare-static-routes.mjs",
     "test": "pnpm typecheck && pnpm test:coverage && pnpm test:server",
     "test:client": "tsx --test packages/sim-core/src/*.test.ts packages/sim-trace/src/*.test.ts",
-    "test:coverage": "tsx --test --experimental-test-coverage --test-coverage-exclude=\"**/node_modules/**\" --test-coverage-exclude=\"**/*.test.ts\" --test-coverage-exclude=\"**/fixtures/**\" --test-coverage-lines=93 --test-coverage-branches=92 --test-coverage-functions=97 packages/sim-core/src/*.test.ts packages/sim-trace/src/*.test.ts",
+    "test:coverage": "tsx --test --experimental-test-coverage --test-coverage-exclude=\"**/node_modules/**\" --test-coverage-exclude=\"**/*.test.ts\" --test-coverage-exclude=\"**/fixtures/**\" --test-coverage-exclude=\"packages/sim-core/src/types.ts\" --test-coverage-lines=95 --test-coverage-branches=92 --test-coverage-functions=97 packages/sim-core/src/*.test.ts packages/sim-trace/src/*.test.ts",
     "golden": "tsx packages/sim-trace/src/fixtures/make-golden.ts",
     "test:persistence": "pnpm --dir server exec tsx --test src/sim.persistence.test.ts",
     "test:server": "pnpm --dir server exec tsx --test src/degraded-status.test.ts src/fixed-step.test.ts src/sim.persistence.test.ts src/sim.starvation.test.ts src/security.test.ts src/transport.test.ts src/ws.integration.test.ts",

@@ -98,10 +98,16 @@ command, or traces stop reproducing. If the change was deliberate, bump
 thresholds set in `test:coverage` (lines, branches, and functions). Use
 `pnpm test:client` for a fast run without the gate while iterating.
 
-The reported line percentage understates real coverage, because TypeScript
-interface and type-alias declarations count as lines that never execute.
-`types.ts` reads around 18% for that reason alone and is not worth chasing;
-judge a change by whether the *branches* it adds are exercised.
+TypeScript interface and type-alias declarations count as lines that never
+execute, and Node's coverage instrumentation attributes them differently across
+major versions: `packages/sim-core/src/types.ts` reads about 18%, and including
+it moved whole-project line coverage by more than a point between Node 22 and
+Node 24 — enough to fail the gate on one and pass on the other. It is excluded
+from coverage for that reason. If a module that is excluded ever gains real
+logic, move that logic to a covered module rather than widening the exclusion.
+
+Thresholds are set against the lowest-reporting supported Node version, not the
+newest, since `engines` allows Node 22.
 
 A test whose name claims an invariant should fail when that invariant is
 broken. Before trusting a new test, break the code it covers and watch it go
