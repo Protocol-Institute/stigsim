@@ -1,5 +1,5 @@
-import { Simulation } from "./sim";
-import { fingerprint } from "./fingerprint";
+import { Simulation } from "@stigsim/sim-core";
+import { fingerprint } from "@stigsim/sim-core";
 import { traceToRunConfig, type Trace } from "./trace";
 
 /**

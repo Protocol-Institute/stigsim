@@ -22,8 +22,10 @@ pnpm build
 
 Stigsim has a standalone React/Vite simulator and an optional server-authoritative shared-world mode.
 
-- `src/sim/` contains the simulation core. It must not import React or touch
-  the DOM, so it can run headless.
+- `packages/sim-core/` contains the simulation core. It must not import React
+  or touch the DOM, so it can run headless on the server as well as in a browser.
+- `packages/sim-trace/` contains run metrics, the trace format, and replay. It
+  depends on `sim-core`; nothing in `sim-core` may depend on it.
 - `src/render.ts` draws a simulation to a canvas.
 - `src/AntSim.tsx` is the standalone simulator interface.
 - `src/App.tsx` is the application entry component.
@@ -41,19 +43,19 @@ Keep the core simulation logic independent of React where practical. Preserve th
 Maze Simulator runs are reproducible from a seed. `pnpm test:client` covers
 this within one engine. The cross-engine question cannot run in CI, because
 Safari cannot be driven there, so check it by hand before a release that
-touches `src/sim/`:
+touches `packages/sim-core/`:
 
 1. Open the app in Chrome, Firefox, and Safari.
 2. Enter the same run seed in each and press reset.
 3. Run each to at least tick 5000 without editing anything.
 4. Compare the fingerprint shown in the Run panel at the same tick.
 
-They must match. If they do not, something in `src/sim/` is relying on
+They must match. If they do not, something in `packages/sim-core/` is relying on
 behaviour the ECMAScript specification leaves implementation-defined;
 `Math.pow`, `Math.log`, `Math.exp`, and the trigonometric functions are the
 usual causes, and none of them may be used to compute simulation state.
 
-`deterministicPow` in `src/sim/rng.ts` replaces `Math.pow`. It is defined only
+`deterministicPow` in `packages/sim-core/src/rng.ts` replaces `Math.pow`. It is defined only
 on exponents that are multiples of a half, and throws on anything else rather
 than returning an approximation that would look like a valid run. Anything that
 can set the trail-bias exponent has to screen it with `isHalfStep` first.
@@ -72,20 +74,46 @@ samples. Save one from the Run panel and load it back to replay the run
 exactly.
 
 A trace is an ordinary file, so `parseTrace` treats one as untrusted: it bounds
-every number against the limits in `src/sim/constants.ts` before the trace is
+every number against the limits in `packages/sim-core/src/constants.ts` before the trace is
 allowed to become a running simulation. Without those bounds a corrupt or
 hand-edited file can exhaust the heap, stall a tick for minutes, or drive the
 pheromone field to infinity. Any new field a trace carries needs a bound too,
-and command values are bounded by the same guards in `src/sim/commands.ts` so
+and command values are bounded by the same guards in
+`packages/sim-core/src/commands.ts` so
 the loader and the command bus cannot drift apart.
 
-`src/sim/fixtures/golden.trace.json` is replayed by `pnpm test:client` as a
+`packages/sim-trace/src/fixtures/golden.trace.json` is replayed by
+`pnpm test:client` as a
 regression guard. If that test fails, simulation behaviour changed. The usual
 cause is a new mutation path that does not go through the command bus in
-`src/sim/commands.ts`; every way of changing a running simulation must be a
+`packages/sim-core/src/commands.ts`; every way of changing a running simulation
+must be a
 command, or traces stop reproducing. If the change was deliberate, bump
-`SIM_VERSION` in `src/sim/trace.ts` and regenerate the fixture with
+`SIM_VERSION` in `packages/sim-trace/src/trace.ts` and regenerate the fixture with
 `pnpm golden`.
+
+## Coverage
+
+`pnpm test` runs the package tests under coverage and fails below the
+thresholds set in `test:coverage` (lines, branches, and functions). Use
+`pnpm test:client` for a fast run without the gate while iterating.
+
+TypeScript interface and type-alias declarations count as lines that never
+execute, and Node's coverage instrumentation attributes them differently across
+major versions: `packages/sim-core/src/types.ts` reads about 18%, and including
+it moved whole-project line coverage by more than a point between Node 22 and
+Node 24 — enough to fail the gate on one and pass on the other. It is excluded
+from coverage for that reason. If a module that is excluded ever gains real
+logic, move that logic to a covered module rather than widening the exclusion.
+
+Thresholds are set against the lowest-reporting supported Node version, not the
+newest, since `engines` allows Node 22.
+
+A test whose name claims an invariant should fail when that invariant is
+broken. Before trusting a new test, break the code it covers and watch it go
+red — `setFood adds and removes sources and keeps discovered indices
+consistent` passed for some time against a completely broken remap, because it
+never populated `discoveredSources` before removing a source.
 
 ## Project guidance
 

@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  Simulation, DEFAULT_PARAMS, makeSeeds, MetricsRecorder,
-  buildTrace, serializeTrace, parseTrace, traceToRunConfig, traceFilename,
-  TRACE_FORMAT, TRACE_VERSION, SIM_VERSION, FINGERPRINT_INTERVAL, fingerprint, MAX_TICKS,
+  Simulation, DEFAULT_PARAMS, makeSeeds,
+  FINGERPRINT_INTERVAL, fingerprint, MAX_TICKS,
+} from "@stigsim/sim-core";
+import type { RunConfig } from "@stigsim/sim-core";
+import {
+  MetricsRecorder, buildTrace, serializeTrace, parseTrace, traceToRunConfig,
+  traceFilename, TRACE_FORMAT, TRACE_VERSION, SIM_VERSION,
 } from "./index";
-import type { RunConfig, Trace } from "./index";
+import type { Trace } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
   return {

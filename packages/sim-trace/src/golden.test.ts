@@ -24,7 +24,7 @@ test("the golden trace replays without diverging", () => {
 This means simulation behaviour changed. Either the change was
 unintended, or a mutation path was added without routing it through the
 command bus, or the change was deliberate. If deliberate, bump
-SIM_VERSION in src/sim/trace.ts and regenerate the fixture with
+SIM_VERSION in packages/sim-trace/src/trace.ts and regenerate the fixture with
 "pnpm golden".`,
   );
   assert.equal(r.tick, result.trace.endTick);

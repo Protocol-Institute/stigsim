@@ -5,6 +5,3 @@ export * from "./sim";
 export * from "./rng";
 export * from "./commands";
 export * from "./fingerprint";
-export * from "./metrics";
-export * from "./trace";
-export * from "./replay";

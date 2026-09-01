@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Simulation, DEFAULT_PARAMS, makeSeeds, COLS } from "@stigsim/sim-core";
+import type { RunConfig } from "@stigsim/sim-core";
 import {
-  Simulation, DEFAULT_PARAMS, makeSeeds, COLS,
   MetricsRecorder, METRICS_INTERVAL, shortestFromNest, metricsToCsv,
 } from "./index";
-import type { RunConfig, MetricsSample } from "./index";
+import type { MetricsSample } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
   return {

@@ -1,10 +1,10 @@
-import type { RunConfig, RunSeeds, SimParams } from "./types";
-import type { TimedCommand } from "./commands";
-import { isTimedCommand, isAntCount, validParams } from "./commands";
-import { MAX_COLONIES, MAX_FOOD_PER_SOURCE, MAX_FOOD_SOURCES, MAX_TICKS } from "./constants";
+import type { RunConfig, RunSeeds, SimParams } from "@stigsim/sim-core";
+import type { TimedCommand } from "@stigsim/sim-core";
+import { isTimedCommand, isAntCount, validParams } from "@stigsim/sim-core";
+import { MAX_COLONIES, MAX_FOOD_PER_SOURCE, MAX_FOOD_SOURCES, MAX_TICKS } from "@stigsim/sim-core";
 import type { MetricsSample, MetricsRecorder } from "./metrics";
-import type { Simulation } from "./sim";
-import { fingerprint } from "./fingerprint";
+import type { Simulation } from "@stigsim/sim-core";
+import { fingerprint } from "@stigsim/sim-core";
 
 export const TRACE_FORMAT = "stigsim-trace";
 /** The file format. Bump when the shape of a trace changes. */
