@@ -1,590 +1,20 @@
 import { useRef, useEffect, useCallback, useState } from "react";
-
-// ─── Maze dimensions ───────────────────────────────────────────────────────
-const COLS = 31;
-const ROWS = 31;
-const CELL = 16;
-const W = COLS * CELL;
-const H = ROWS * CELL;
-
-// ─── Movement (fixed) ──────────────────────────────────────────────────────
-const V = 4;
-const ARRIVE_THRESH = V + 1;
-const NEST_SEED = 1000;
-const DEFAULT_NUM_ANTS = 20;
-const DEPOSIT_RATE = 20;
-
-// ─── One-ant view: half-size of the source window in pixels ─────────────────
-const VIEW_HALF = CELL * 1;
-
-// ─── Colony nest corner positions (up to 4) ──────────────────────────────────
-const COLONY_NESTS: [number, number][] = [
-  [1, 1],
-  [COLS - 2, ROWS - 2],
-  [COLS - 2, 1],
-  [1, ROWS - 2],
-];
-
-// ─── Colony visual identity ──────────────────────────────────────────────────
-const COLONY_COLORS = [
-  { primary: "#4b9eff", homeRGB: "80,158,255", foodRGB: "80,220,200" },
-  { primary: "#ff6b6b", homeRGB: "255,107,107", foodRGB: "255,200,80"  },
-  { primary: "#4bde80", homeRGB: "75,222,128",  foodRGB: "200,255,80"  },
-  { primary: "#c084fc", homeRGB: "192,132,252", foodRGB: "252,132,200" },
-];
-
-export interface SimParams {
-  evapRate: number;
-  trailPower: number;
-  tankMax: number;
-  cautionary: boolean;
-}
-
-const DEFAULT_PARAMS: SimParams = {
-  evapRate: 0.005,
-  trailPower: 5,
-  tankMax: 6400,
-  cautionary: false,
-};
-
-const DEFAULT_NUM_COLONIES = 1;
-const DEFAULT_NUM_FOOD_SOURCES = 1;
-const DEFAULT_FOOD_PER_SOURCE = 500;
-
-type CellType = 0 | 1;
-type AntState = "searching" | "returning";
-type ViewMode = "all" | "one";
-type EditMode = "none" | "wall" | "food";
-
-interface FoodSource {
-  x: number;
-  y: number;
-  remaining: number;
-  total: number;
-}
-
-interface Colony {
-  id: number;
-  nestX: number;
-  nestY: number;
-  homePhero: Float32Array;
-  foodPhero: Float32Array;
-  cautPhero: Float32Array;
-  ants: Ant[];
-  foodCollected: number;
-  discoveredSources: Set<number>;
-}
-
-interface Ant {
-  x: number; y: number;
-  cx: number; cy: number;
-  tx: number; ty: number;
-  prevCx: number; prevCy: number;
-  state: AntState;
-  hasFood: boolean;
-  tank: number;
-  colonyId: number;
-  manual?: boolean;
-}
-
-function generateMaze(loopRate: number = 0.1): CellType[][] {
-  const grid: CellType[][] = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-  const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-  function carve(cx: number, cy: number) {
-    visited[cy][cx] = true;
-    grid[cy][cx] = 1;
-    const dirs = [[0, -2], [0, 2], [-2, 0], [2, 0]].sort(() => Math.random() - 0.5);
-    for (const [dx, dy] of dirs) {
-      const nx = cx + dx, ny = cy + dy;
-      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx]) {
-        grid[cy + dy / 2][cx + dx / 2] = 1;
-        carve(nx, ny);
-      }
-    }
-  }
-  carve(1, 1);
-  for (let y = 1; y < ROWS - 1; y++)
-    for (let x = 1; x < COLS - 1; x++)
-      if (grid[y][x] === 0 && Math.random() < loopRate) grid[y][x] = 1;
-  // Ensure all colony nest corners are open
-  for (const [nx, ny] of COLONY_NESTS) grid[ny][nx] = 1;
-  return grid;
-}
-
-function computeHighwayScore(sim: Simulation): number {
-  const open: number[] = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (sim.grid[y][x] === 1) {
-        const idx = y * COLS + x;
-        let total = 0;
-        for (const c of sim.colonies) total += c.foodPhero[idx] + c.homePhero[idx];
-        open.push(total);
-      }
-    }
-  }
-  if (open.length === 0) return 0;
-  const total = open.reduce((a, b) => a + b, 0);
-  if (total < 1) return 0;
-  open.sort((a, b) => b - a);
-  const topN = Math.max(1, Math.floor(open.length * 0.1));
-  const topSum = open.slice(0, topN).reduce((a, b) => a + b, 0);
-  return topSum / total;
-}
-
-const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-function openNeighbours(grid: CellType[][], x: number, y: number, exX?: number, exY?: number): [number, number][] {
-  return DIRS4
-    .map(([dx, dy]) => [x + dx, y + dy] as [number, number])
-    .filter(([nx, ny]) =>
-      nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
-      grid[ny][nx] === 1 && !(nx === exX && ny === exY)
-    );
-}
-
-function powerChoice(
-  cells: [number, number][],
-  phero: Float32Array,
-  power: number,
-  cautPhero?: Float32Array,
-  cautPower?: number,
-): [number, number] {
-  const scores = cells.map(([cx, cy]) => {
-    const idx = cy * COLS + cx;
-    const trail = Math.pow(phero[idx] + 1, power);
-    const caution = (cautPhero && cautPower) ? Math.pow(cautPhero[idx] + 1, cautPower) : 1;
-    return trail / caution;
-  });
-  const total = scores.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < cells.length; i++) { r -= scores[i]; if (r <= 0) return cells[i]; }
-  return cells[cells.length - 1];
-}
-
-const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
-
-class Simulation {
-  numAnts: number;
-  numColonies: number;
-  numFoodSources: number;
-  foodPerSource: number;
-  params: SimParams;
-  loopRate: number;
-  grid: CellType[][];
-  colonies: Colony[];
-  foodSources: FoodSource[];
-
-  constructor(
-    numAnts: number,
-    params: SimParams,
-    loopRate: number = 0.1,
-    numColonies: number = 1,
-    numFoodSources: number = 1,
-    foodPerSource: number = 500,
-  ) {
-    this.numAnts = numAnts;
-    this.params = { ...params };
-    this.loopRate = loopRate;
-    this.numColonies = numColonies;
-    this.numFoodSources = numFoodSources;
-    this.foodPerSource = foodPerSource;
-    this.grid = generateMaze(loopRate);
-    this.colonies = this._initColonies();
-    this.foodSources = this._placeFoodSources();
-    for (const colony of this.colonies) this._seedNest(colony);
-  }
-
-  private _initColonies(): Colony[] {
-    return Array.from({ length: this.numColonies }, (_, id) => {
-      const [nestX, nestY] = COLONY_NESTS[id];
-      this.grid[nestY][nestX] = 1;
-      return {
-        id,
-        nestX,
-        nestY,
-        homePhero: new Float32Array(COLS * ROWS),
-        foodPhero: new Float32Array(COLS * ROWS),
-        cautPhero: new Float32Array(COLS * ROWS),
-        ants: this._spawnAnts(id, nestX, nestY),
-        foodCollected: 0,
-        discoveredSources: new Set<number>(),
-      };
-    });
-  }
-
-  private _placeFoodSources(): FoodSource[] {
-    const nestSet = new Set(this.colonies.map(c => c.nestY * COLS + c.nestX));
-    // Minimum Manhattan distance from any nest
-    const minDist = Math.floor(Math.min(COLS, ROWS) / 4);
-    const open: [number, number][] = [];
-    for (let y = 2; y < ROWS - 2; y++) {
-      for (let x = 2; x < COLS - 2; x++) {
-        if (this.grid[y][x] !== 1) continue;
-        if (nestSet.has(y * COLS + x)) continue;
-        const farEnough = this.colonies.every(
-          c => Math.abs(c.nestX - x) + Math.abs(c.nestY - y) >= minDist
-        );
-        if (farEnough) open.push([x, y]);
-      }
-    }
-    // Fisher-Yates shuffle
-    for (let i = open.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [open[i], open[j]] = [open[j], open[i]];
-    }
-    const count = Math.min(this.numFoodSources, open.length);
-    return open.slice(0, count).map(([x, y]) => ({
-      x, y,
-      remaining: this.foodPerSource,
-      total: this.foodPerSource,
-    }));
-  }
-
-  private _seedNest(colony: Colony) {
-    const { nestX, nestY } = colony;
-    colony.homePhero[nestY * COLS + nestX] = NEST_SEED;
-    for (const [dx, dy] of DIRS4) {
-      const nx = nestX + dx, ny = nestY + dy;
-      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && this.grid[ny][nx]) {
-        const idx = ny * COLS + nx;
-        colony.homePhero[idx] = Math.max(colony.homePhero[idx], NEST_SEED * 0.85);
-      }
-    }
-  }
-
-  private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
-    const { px, py } = cellCenter(nestX, nestY);
-    return Array.from({ length: this.numAnts }, () => ({
-      x: px, y: py,
-      cx: nestX, cy: nestY,
-      tx: nestX, ty: nestY,
-      prevCx: nestX, prevCy: nestY,
-      state: "searching" as AntState,
-      hasFood: false,
-      tank: this.params.tankMax,
-      colonyId,
-    }));
-  }
-
-  get allAnts(): Ant[] {
-    return this.colonies.flatMap(c => c.ants);
-  }
-
-  setAntCount(n: number) {
-    for (const colony of this.colonies) {
-      const { nestX, nestY } = colony;
-      const { px, py } = cellCenter(nestX, nestY);
-      if (n > colony.ants.length) {
-        const toAdd = n - colony.ants.length;
-        for (let i = 0; i < toAdd; i++) {
-          colony.ants.push({
-            x: px, y: py,
-            cx: nestX, cy: nestY,
-            tx: nestX, ty: nestY,
-            prevCx: nestX, prevCy: nestY,
-            state: "searching",
-            hasFood: false,
-            tank: this.params.tankMax,
-            colonyId: colony.id,
-          });
-        }
-      } else if (n < colony.ants.length) {
-        colony.ants.splice(n);
-      }
-    }
-    this.numAnts = n;
-  }
-
-  get totalFoodCollected(): number {
-    return this.colonies.reduce((s, c) => s + c.foodCollected, 0);
-  }
-
-  step() {
-    const decay = 1 - this.params.evapRate;
-    for (const colony of this.colonies) {
-      for (let i = 0; i < colony.homePhero.length; i++) {
-        colony.homePhero[i] *= decay;
-        colony.foodPhero[i] *= decay;
-        colony.cautPhero[i] *= decay;
-      }
-      this._seedNest(colony);
-      // Re-seed discovered food sources that still have food
-      for (const srcIdx of colony.discoveredSources) {
-        const src = this.foodSources[srcIdx];
-        if (src.remaining > 0) {
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
-        }
-      }
-      for (const ant of colony.ants) this._moveAnt(ant, colony);
-    }
-  }
-
-  private _moveAnt(ant: Ant, colony: Colony) {
-    const { tankMax, trailPower } = this.params;
-    const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
-    const dx = tpx - ant.x, dy = tpy - ant.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > ARRIVE_THRESH) {
-      const idx = ant.cy * COLS + ant.cx;
-      if (ant.tank > 0) {
-        const deposit = Math.min(ant.tank, DEPOSIT_RATE);
-        if (ant.state === "searching") {
-          colony.homePhero[idx] += deposit;
-        } else {
-          colony.foodPhero[idx] += deposit;
-        }
-        ant.tank -= deposit;
-      } else if (this.params.cautionary) {
-        colony.cautPhero[idx] += DEPOSIT_RATE;
-      }
-      const scale = V / dist;
-      ant.x += dx * scale;
-      ant.y += dy * scale;
-      return;
-    }
-
-    ant.x = tpx; ant.y = tpy;
-    ant.cx = ant.tx; ant.cy = ant.ty;
-
-    // Check food sources
-    if (ant.state === "searching") {
-      const srcIdx = this.foodSources.findIndex(s => s.x === ant.cx && s.y === ant.cy);
-      if (srcIdx >= 0) {
-        const src = this.foodSources[srcIdx];
-        colony.discoveredSources.add(srcIdx);
-        if (src.remaining > 0) {
-          src.remaining--;
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
-          ant.state = "returning";
-          ant.hasFood = true;
-          ant.tank = tankMax;
-          const [ntx, nty] = [ant.prevCx, ant.prevCy];
-          ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-          ant.tx = ntx; ant.ty = nty;
-          return;
-        }
-        // depleted — fall through, keep searching
-      }
-    }
-
-    // Check nest
-    if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
-      ant.state = "searching";
-      ant.hasFood = false;
-      ant.tank = tankMax;
-      colony.foodCollected++;
-      const [ntx, nty] = [ant.prevCx, ant.prevCy];
-      ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-      ant.tx = ntx; ant.ty = nty;
-      return;
-    }
-
-    if (ant.manual) {
-      ant.tx = ant.cx; ant.ty = ant.cy;
-      return;
-    }
-
-    const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
-    const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
-    const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
-    const next = powerChoice(candidates, phero, trailPower, this.params.cautionary ? colony.cautPhero : undefined, trailPower);
-
-    ant.prevCx = ant.cx; ant.prevCy = ant.cy;
-    ant.tx = next[0]; ant.ty = next[1];
-  }
-}
-
-function render(
-  ctx: CanvasRenderingContext2D,
-  sim: Simulation,
-  viewMode: ViewMode = "all",
-  watchedAntIdx: number = 0,
-  editMode: EditMode = "none",
-  hoverCell: { x: number; y: number } | null = null,
-) {
-  const allAnts = sim.allAnts;
-  const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
-
-  // Void background
-  ctx.fillStyle = "#0a0602";
-  ctx.fillRect(0, 0, W, H);
-
-  if (viewMode === "one" && safeIdx >= 0) {
-    const ant = allAnts[safeIdx];
-    const zoom = W / (VIEW_HALF * 2);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, W, H);
-    ctx.clip();
-    ctx.setTransform(zoom, 0, 0, zoom, W / 2 - ant.x * zoom, H / 2 - ant.y * zoom);
-  }
-
-  // Compute per-colony phero maxima for normalization
-  const maxH = sim.colonies.map(c => {
-    let m = NEST_SEED;
-    for (let i = 0; i < c.homePhero.length; i++) if (c.homePhero[i] > m) m = c.homePhero[i];
-    return m;
-  });
-  const maxF = sim.colonies.map(c => {
-    let m = NEST_SEED;
-    for (let i = 0; i < c.foodPhero.length; i++) if (c.foodPhero[i] > m) m = c.foodPhero[i];
-    return m;
-  });
-  const maxCH = sim.colonies.map(c => {
-    let m = 1;
-    for (let i = 0; i < c.cautPhero.length; i++) if (c.cautPhero[i] > m) m = c.cautPhero[i];
-    return m;
-  });
-
-  // Base path fill
-  ctx.fillStyle = "#1a1208";
-  ctx.fillRect(0, 0, W, H);
-
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      const px = x * CELL, py = y * CELL;
-      if (sim.grid[y][x] === 0) {
-        ctx.fillStyle = "#0d0a06";
-        ctx.fillRect(px, py, CELL, CELL);
-        continue;
-      }
-      ctx.fillStyle = "#2a1e0e";
-      ctx.fillRect(px, py, CELL, CELL);
-
-      const idx = y * COLS + x;
-
-      // Layer pheromones for each colony
-      for (let ci = 0; ci < sim.colonies.length; ci++) {
-        const colony = sim.colonies[ci];
-        const colors = COLONY_COLORS[ci];
-
-        const hi = colony.homePhero[idx];
-        if (hi > 0.5) {
-          const alpha = Math.min(0.55, (hi / maxH[ci]) * 0.55);
-          ctx.fillStyle = `rgba(${colors.homeRGB},${alpha.toFixed(3)})`;
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-        const fi = colony.foodPhero[idx];
-        if (fi > 0.5) {
-          const alpha = Math.min(0.6, (fi / maxF[ci]) * 0.6);
-          ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
-          ctx.fillRect(px, py, CELL, CELL);
-        }
-        if (sim.params.cautionary) {
-          const ci2 = colony.cautPhero[idx];
-          if (ci2 > 0.5) {
-            const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
-            ctx.fillStyle = `rgba(220,60,40,${alpha.toFixed(3)})`;
-            ctx.fillRect(px, py, CELL, CELL);
-          }
-        }
-      }
-    }
-  }
-
-  // Draw nests
-  ctx.font = `${CELL - 4}px serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  for (const colony of sim.colonies) {
-    const npx = colony.nestX * CELL, npy = colony.nestY * CELL;
-    ctx.fillStyle = COLONY_COLORS[colony.id].primary;
-    ctx.fillRect(npx, npy, CELL, CELL);
-    ctx.fillText("🏠", npx + CELL / 2, npy + CELL / 2);
-  }
-
-  // Draw food sources
-  for (const src of sim.foodSources) {
-    const fpx = src.x * CELL, fpy = src.y * CELL;
-    const frac = src.remaining / src.total;
-    if (src.remaining <= 0) {
-      ctx.fillStyle = "#2a2a2a";
-      ctx.fillRect(fpx, fpy, CELL, CELL);
-      ctx.globalAlpha = 0.35;
-      ctx.fillText("🍎", fpx + CELL / 2, fpy + CELL / 2);
-      ctx.globalAlpha = 1;
-    } else {
-      ctx.fillStyle = "#16a34a";
-      ctx.fillRect(fpx, fpy, CELL, CELL);
-      ctx.fillText("🍎", fpx + CELL / 2, fpy + CELL / 2);
-      // Depletion bar (bottom edge of cell)
-      if (src.total !== src.remaining) {
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(fpx, fpy + CELL - 3, CELL, 3);
-        ctx.fillStyle = "#4ade80";
-        ctx.fillRect(fpx, fpy + CELL - 3, Math.round(CELL * frac), 3);
-      }
-    }
-  }
-
-  // Draw ants
-  for (const colony of sim.colonies) {
-    const colColor = COLONY_COLORS[colony.id].primary;
-    for (let i = 0; i < colony.ants.length; i++) {
-      const ant = colony.ants[i];
-      const flatIdx = sim.colonies.slice(0, colony.id).reduce((s, c) => s + c.ants.length, 0) + i;
-      const isWatched = viewMode === "one" && flatIdx === safeIdx;
-
-      const tankFrac = Math.min(1, ant.tank / sim.params.tankMax);
-      ctx.globalAlpha = 0.25 + 0.75 * tankFrac;
-
-      const r = ant.hasFood ? 4.5 : 3.5;
-      ctx.beginPath();
-      ctx.arc(ant.x, ant.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = ant.hasFood ? "#facc15" : colColor;
-      ctx.fill();
-
-      // Direction dot
-      const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
-      const ddx = tpx - ant.x, ddy = tpy - ant.y;
-      const dl = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
-      ctx.beginPath();
-      ctx.arc(ant.x + (ddx / dl) * 5, ant.y + (ddy / dl) * 5, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = "#fff";
-      ctx.fill();
-      ctx.globalAlpha = 1;
-
-      if (isWatched) {
-        const glowColor = ant.hasFood ? "rgba(250,204,21,0.5)" : `${colColor}88`;
-        ctx.beginPath();
-        ctx.arc(ant.x, ant.y, r + 5, 0, Math.PI * 2);
-        ctx.strokeStyle = glowColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
-  }
-
-  // Edit mode hover highlight
-  if (editMode !== "none" && hoverCell && viewMode === "all") {
-    const { x: hx, y: hy } = hoverCell;
-    const hpx = hx * CELL, hpy = hy * CELL;
-    const isWall = sim.grid[hy][hx] === 0;
-    const isNest = sim.colonies.some(c => c.nestX === hx && c.nestY === hy);
-    const isFoodHere = sim.foodSources.some(s => s.x === hx && s.y === hy);
-    if (editMode === "wall" && !isNest) {
-      ctx.globalAlpha = 0.45;
-      ctx.fillStyle = isWall ? "#22c55e" : "#ef4444";
-      ctx.fillRect(hpx, hpy, CELL, CELL);
-      ctx.globalAlpha = 1;
-    } else if (editMode === "food" && !isWall && !isNest) {
-      ctx.globalAlpha = 0.45;
-      ctx.fillStyle = isFoodHere ? "#ef4444" : "#22c55e";
-      ctx.fillRect(hpx, hpy, CELL, CELL);
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  if (viewMode === "one") {
-    ctx.restore();
-  }
-}
+import {
+  Simulation,
+  COLS, ROWS, CELL, W, H, V, DEPOSIT_RATE, DEFAULT_NUM_ANTS,
+  DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
+  DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
+  MetricsRecorder, metricsToCsv, RATE_WINDOW_TICKS,
+  buildTrace, serializeTrace, traceFilename,
+  Replayer, parseTrace,
+} from "./sim";
+import type { SimParams, Command, MetricsSample } from "./sim";
+import { render, COLONY_COLORS } from "./render";
+import type { ViewMode, EditMode } from "./render";
 
 // ─── Param card ──────────────────────────────────────────────────────────────
 function ParamCard({
-  label, description, value, displayValue, min, max, step, onChange, onPointerUp,
+  label, description, value, displayValue, min, max, step, onChange, onPointerUp, disabled,
 }: {
   label: string;
   description: string;
@@ -593,6 +23,7 @@ function ParamCard({
   min: number; max: number; step: number;
   onChange: (v: number) => void;
   onPointerUp?: (v: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <div style={{
@@ -605,6 +36,7 @@ function ParamCard({
       gap: 8,
       flex: "1 1 270px",
       minWidth: 0,
+      opacity: disabled ? 0.4 : 1,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>{label}</span>
@@ -616,7 +48,8 @@ function ParamCard({
         min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
         onPointerUp={onPointerUp ? e => onPointerUp(Number((e.target as HTMLInputElement).value)) : undefined}
-        style={{ width: "100%", accentColor: "#f59e0b", cursor: "pointer", margin: "2px 0" }}
+        disabled={disabled}
+        style={{ width: "100%", accentColor: "#f59e0b", cursor: disabled ? "not-allowed" : "pointer", margin: "2px 0" }}
       />
     </div>
   );
@@ -624,7 +57,7 @@ function ParamCard({
 
 // ─── Simple control row ───────────────────────────────────────────────────────
 function ControlCard({
-  label, description, value, displayValue, min, max, step, rtl, onChange, style,
+  label, description, value, displayValue, min, max, step, rtl, onChange, style, disabled,
 }: {
   label: string;
   description: string;
@@ -634,6 +67,7 @@ function ControlCard({
   rtl?: boolean;
   onChange: (v: number) => void;
   style?: React.CSSProperties;
+  disabled?: boolean;
 }) {
   return (
     <div style={{
@@ -646,6 +80,7 @@ function ControlCard({
       gap: 8,
       flex: "1 1 270px",
       minWidth: 0,
+      opacity: disabled ? 0.4 : 1,
       ...style,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
@@ -657,7 +92,8 @@ function ControlCard({
         type="range"
         min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
-        style={{ width: "100%", accentColor: "#f59e0b", cursor: "pointer", direction: rtl ? "rtl" : "ltr", margin: "2px 0" }}
+        disabled={disabled}
+        style={{ width: "100%", accentColor: "#f59e0b", cursor: disabled ? "not-allowed" : "pointer", direction: rtl ? "rtl" : "ltr", margin: "2px 0" }}
       />
     </div>
   );
@@ -734,14 +170,14 @@ export default function AntSim() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const simRef = useRef<Simulation | null>(null);
+  const metricsRef = useRef<MetricsRecorder>(new MetricsRecorder());
   const rafRef = useRef<number>(0);
   const frameCountRef = useRef(0);
 
   const [running, setRunning] = useState(false);
   const [colonyScores, setColonyScores] = useState<number[]>([0]);
   const [foodRate, setFoodRate] = useState(0);
-  const foodTimestampsRef = useRef<number[]>([]);
-  const prevTotalRef = useRef(0);
+  const [latestFingerprint, setLatestFingerprint] = useState<{ t: number; h: string } | null>(null);
   const [framesPerTick, setFramesPerTick] = useState(4);
   const [numAnts, setNumAnts] = useState(DEFAULT_NUM_ANTS);
   const [params, setParams] = useState<SimParams>(DEFAULT_PARAMS);
@@ -752,6 +188,10 @@ export default function AntSim() {
   const [numColonies, setNumColonies] = useState(DEFAULT_NUM_COLONIES);
   const [numFoodSources, setNumFoodSources] = useState(DEFAULT_NUM_FOOD_SOURCES);
   const [foodPerSource, setFoodPerSource] = useState(DEFAULT_FOOD_PER_SOURCE);
+  const [seedInput, setSeedInput] = useState(() => generateMasterSeed());
+  const [activeSeed, setActiveSeed] = useState(seedInput);
+  const seedInputRef = useRef(seedInput);
+  seedInputRef.current = seedInput;
   const [editMode, setEditMode] = useState<EditMode>("none");
   const editModeRef = useRef<EditMode>("none");
   editModeRef.current = editMode;
@@ -783,6 +223,42 @@ export default function AntSim() {
   numFoodSourcesRef.current = numFoodSources;
   const foodPerSourceRef = useRef(foodPerSource);
   foodPerSourceRef.current = foodPerSource;
+  const runningRef = useRef(running);
+  runningRef.current = running;
+
+  const replayRef = useRef<Replayer | null>(null);
+  const [replayState, setReplayState] = useState<
+    { tick: number; endTick: number; divergedAt: number | null; seed: string | null } | null
+  >(null);
+  const [traceMessage, setTraceMessage] = useState<string | null>(null);
+  const [seekInput, setSeekInput] = useState("0");
+
+  /**
+   * Mirrors the replayer into the readouts. The scoreboard, rate, and
+   * fingerprint are React state driven by the live loop, so without this they
+   * keep showing whatever the previous live run left behind for the whole
+   * replay — numbers that look like the replay's own and are not.
+   */
+  const syncReplay = useCallback(() => {
+    const r = replayRef.current;
+    setReplayState(r
+      ? { tick: r.tick, endTick: r.endTick, divergedAt: r.divergedAt, seed: r.trace.run.seeds.master }
+      : null);
+    if (!r) return;
+
+    setColonyScores(r.sim.colonies.map(c => c.foodCollected));
+    setLatestFingerprint(r.sim.fingerprints[r.sim.fingerprints.length - 1] ?? null);
+
+    // The metrics recorder only runs for the live simulation, so the rate
+    // comes from the samples the trace carries: the newest one at or before
+    // the tick being shown.
+    let latest: MetricsSample | undefined;
+    for (const sample of r.trace.metrics.samples) {
+      if (sample.t > r.sim.tick) break;
+      latest = sample;
+    }
+    setFoodRate(latest ? latest.colonies.reduce((a, c) => a + c.ratePerKTick, 0) : 0);
+  }, []);
 
   // Responsive canvas scaling
   useEffect(() => {
@@ -798,52 +274,75 @@ export default function AntSim() {
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (simRef.current) simRef.current.params = { ...params };
-  }, [params]);
+  const forceRender = useCallback(() => {
+    const sim = simRef.current;
+    const ctx = canvasRef.current?.getContext("2d");
+    if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+  }, []);
 
-  useEffect(() => {
-    if (simRef.current) simRef.current.setAntCount(numAnts);
-  }, [numAnts]);
+  const download = useCallback((contents: string, filename: string, mime: string) => {
+    const blob = new Blob([contents], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
 
-  useEffect(() => {
+  const send = useCallback((cmd: Command) => {
+    if (replayRef.current) return;
     const sim = simRef.current;
     if (!sim) return;
-    if (manualControl) {
-      const all = sim.allAnts;
-      const idx = Math.floor(Math.random() * all.length);
-      setWatchedAntIdx(idx);
-      watchedAntIdxRef.current = idx;
-      all[idx].manual = true;
-    } else {
-      const all = sim.allAnts;
-      const ant = all[watchedAntIdxRef.current];
-      if (ant) ant.manual = false;
+    sim.enqueue(cmd);
+    if (!runningRef.current) {
+      sim.flushPending();
+      forceRender();
     }
-  }, [manualControl]);
+  }, [forceRender]);
+
+  useEffect(() => {
+    send({ kind: "setParam", key: "evapRate", value: params.evapRate });
+  }, [params.evapRate, send]);
+
+  useEffect(() => {
+    send({ kind: "setParam", key: "trailPower", value: params.trailPower });
+  }, [params.trailPower, send]);
+
+  useEffect(() => {
+    send({ kind: "setParam", key: "tankMax", value: params.tankMax });
+  }, [params.tankMax, send]);
+
+  useEffect(() => {
+    send({ kind: "setCautionary", value: params.cautionary });
+  }, [params.cautionary, send]);
+
+  useEffect(() => {
+    send({ kind: "setAntCount", n: numAnts });
+  }, [numAnts, send]);
 
   useEffect(() => {
     const sim = simRef.current;
     if (!sim) return;
-    const all = sim.allAnts;
-    const ant = all[watchedAntIdx];
-    if (ant) ant.manual = manualControlRef.current;
-  }, [watchedAntIdx]);
+    if (!manualControl) {
+      send({ kind: "setManualAnt", index: null });
+      return;
+    }
+    const idx = Math.floor(Math.random() * sim.allAnts.length);
+    setWatchedAntIdx(idx);
+    watchedAntIdxRef.current = idx;
+    send({ kind: "setManualAnt", index: idx });
+  }, [manualControl, send]);
+
+  useEffect(() => {
+    if (!manualControlRef.current) return;
+    send({ kind: "setManualAnt", index: watchedAntIdx });
+  }, [watchedAntIdx, send]);
 
   const moveAnt = useCallback((ddx: number, ddy: number) => {
     if (!manualControlRef.current) return;
-    const sim = simRef.current;
-    if (!sim) return;
-    const ant = sim.allAnts[watchedAntIdxRef.current];
-    if (!ant) return;
-    const nx = ant.cx + ddx, ny = ant.cy + ddy;
-    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
-    if (sim.grid[ny][nx] !== 1) return;
-    ant.prevCx = ant.cx;
-    ant.prevCy = ant.cy;
-    ant.tx = nx;
-    ant.ty = ny;
-  }, []);
+    send({ kind: "moveManualAnt", dx: ddx, dy: ddy });
+  }, [send]);
 
   useEffect(() => {
     const DIR_MAP: Record<string, [number, number]> = {
@@ -862,12 +361,6 @@ export default function AntSim() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [moveAnt]);
-
-  const forceRender = useCallback(() => {
-    const sim = simRef.current;
-    const ctx = canvasRef.current?.getContext("2d");
-    if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
-  }, []);
 
   const cellFromPointer = useCallback((e: React.PointerEvent): { x: number; y: number } | null => {
     const wrap = canvasWrapRef.current;
@@ -897,40 +390,22 @@ export default function AntSim() {
       if (dragActionRef.current === null) {
         dragActionRef.current = wasWall ? "open" : "close";
       }
-
       if (dragActionRef.current === "open" && wasWall) {
-        sim.grid[gy][gx] = 1;
+        send({ kind: "setWall", x: gx, y: gy, open: true });
       } else if (dragActionRef.current === "close" && !wasWall) {
-        sim.grid[gy][gx] = 0;
-        for (const colony of sim.colonies) {
-          for (const ant of colony.ants) {
-            if (ant.tx === gx && ant.ty === gy) {
-              ant.tx = ant.cx; ant.ty = ant.cy;
-            }
-          }
-        }
+        send({ kind: "setWall", x: gx, y: gy, open: false });
       }
     } else if (mode === "food") {
       const isWall = sim.grid[gy][gx] === 0;
       const isNest = sim.colonies.some(c => c.nestX === gx && c.nestY === gy);
       if (isWall || isNest) return;
-      const srcIdx = sim.foodSources.findIndex(s => s.x === gx && s.y === gy);
-      if (srcIdx >= 0) {
-        sim.foodSources.splice(srcIdx, 1);
-        for (const colony of sim.colonies) {
-          colony.discoveredSources.delete(srcIdx);
-          const updated = new Set<number>();
-          for (const idx of colony.discoveredSources) updated.add(idx > srcIdx ? idx - 1 : idx);
-          colony.discoveredSources = updated;
-        }
-      } else {
-        const amount = foodPerSourceRef2.current;
-        sim.foodSources.push({ x: gx, y: gy, remaining: amount, total: amount });
-      }
+      const exists = sim.foodSources.some(s => s.x === gx && s.y === gy);
+      send({ kind: "setFood", x: gx, y: gy, amount: exists ? 0 : foodPerSourceRef2.current });
     }
-  }, []);
+  }, [send]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    if (replayRef.current) return;
     if (editModeRef.current === "none" || viewModeRef.current !== "all") return;
     e.preventDefault();
     isDraggingRef.current = true;
@@ -943,6 +418,7 @@ export default function AntSim() {
   }, [cellFromPointer, applyEdit, forceRender]);
 
   const handleCanvasPointerMove = useCallback((e: React.PointerEvent) => {
+    if (replayRef.current) return;
     if (editModeRef.current === "none" || viewModeRef.current !== "all") return;
     const cell = cellFromPointer(e);
     hoverCellRef.current = cell;
@@ -969,18 +445,21 @@ export default function AntSim() {
   };
 
   const initSim = useCallback(() => {
-    simRef.current = new Simulation(
-      numAntsRef.current,
-      paramsRef.current,
-      loopRateRef.current,
-      numColoniesRef.current,
-      numFoodSourcesRef.current,
-      foodPerSourceRef.current,
-    );
+    const master = seedInputRef.current.trim() || generateMasterSeed();
+    setActiveSeed(master);
+    simRef.current = new Simulation({
+      seeds: makeSeeds(master),
+      numAnts: numAntsRef.current,
+      params: paramsRef.current,
+      loopRate: loopRateRef.current,
+      numColonies: numColoniesRef.current,
+      numFoodSources: numFoodSourcesRef.current,
+      foodPerSource: foodPerSourceRef.current,
+    });
     setColonyScores(simRef.current.colonies.map(() => 0));
     setFoodRate(0);
-    foodTimestampsRef.current = [];
-    prevTotalRef.current = 0;
+    setLatestFingerprint(null);
+    metricsRef.current.reset();
     if (viewModeRef.current === "one") {
       const total = simRef.current.allAnts.length;
       const idx = Math.floor(Math.random() * total);
@@ -991,10 +470,62 @@ export default function AntSim() {
     if (ctx && simRef.current) render(ctx, simRef.current, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
   }, []);
 
+  const enterReplay = useCallback((text: string) => {
+    const result = parseTrace(text);
+    if (!result.ok) {
+      setTraceMessage(result.error);
+      return;
+    }
+    setRunning(false);
+    setManualControl(false);
+    setEditMode("none");
+    cancelAnimationFrame(rafRef.current);
+    const r = new Replayer(result.trace);
+    replayRef.current = r;
+    simRef.current = r.sim;
+
+    // Adopt the trace's configuration. The header, the legend, and the
+    // parameter cards all read React state rather than the simulation, so a
+    // three-colony trace loaded while the interface sits at one colony would
+    // otherwise draw the single-colony layout over a replay that has three —
+    // and every control that could correct it is disabled during replay.
+    // Setting these here is safe: the reset-on-structure-change effect and
+    // send() both bail out while a replayer is present, and it is assigned
+    // above.
+    const cfg = result.trace.run.config;
+    setNumAnts(cfg.numAnts);
+    setParams(cfg.params);
+    setLoopRate(cfg.loopRate);
+    setNumColonies(cfg.numColonies);
+    setNumFoodSources(cfg.numFoodSources);
+    setFoodPerSource(cfg.foodPerSource);
+    // Leaving replay rebuilds a live run from these values, so carry the seed
+    // across too. A trace whose streams were seeded separately has no master
+    // seed to carry, and keeps whatever is in the box.
+    if (result.trace.run.seeds.master !== null) {
+      setSeedInput(result.trace.run.seeds.master);
+      seedInputRef.current = result.trace.run.seeds.master;
+    }
+
+    setTraceMessage(result.warning ?? null);
+    syncReplay();
+    forceRender();
+  }, [forceRender, syncReplay]);
+
+  const exitReplay = useCallback(() => {
+    setRunning(false);
+    cancelAnimationFrame(rafRef.current);
+    replayRef.current = null;
+    setReplayState(null);
+    setTraceMessage(null);
+    initSim();
+  }, [initSim]);
+
   useEffect(() => { initSim(); }, [initSim]);
 
   // Reset when structure-level settings change
   useEffect(() => {
+    if (replayRef.current) return;
     setRunning(false);
     cancelAnimationFrame(rafRef.current);
     frameCountRef.current = 0;
@@ -1006,31 +537,38 @@ export default function AntSim() {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
     frameCountRef.current = 0;
     const loop = () => {
-      const sim = simRef.current;
       const ctx = canvasRef.current?.getContext("2d");
-      if (!sim || !ctx) return;
+      if (!ctx) return;
       frameCountRef.current++;
+
       if (frameCountRef.current >= framesPerTickRef.current) {
         frameCountRef.current = 0;
-        sim.step();
-        setColonyScores(sim.colonies.map(c => c.foodCollected));
-        const total = sim.totalFoodCollected;
-        const now = Date.now();
-        const delta = total - prevTotalRef.current;
-        if (delta > 0) {
-          for (let i = 0; i < delta; i++) foodTimestampsRef.current.push(now);
-          prevTotalRef.current = total;
+        const replayer = replayRef.current;
+        if (replayer) {
+          const advanced = replayer.step();
+          simRef.current = replayer.sim;
+          syncReplay();
+          if (!advanced) setRunning(false);
+        } else {
+          const sim = simRef.current;
+          if (!sim) return;
+          sim.step();
+          metricsRef.current.maybeSample(sim);
+          setColonyScores(sim.colonies.map(c => c.foodCollected));
+          const fp = sim.fingerprints[sim.fingerprints.length - 1];
+          if (fp) setLatestFingerprint(fp);
+          const latest = metricsRef.current.samples[metricsRef.current.samples.length - 1];
+          if (latest) setFoodRate(latest.colonies.reduce((a, c) => a + c.ratePerKTick, 0));
         }
-        const cutoff = now - 30_000;
-        foodTimestampsRef.current = foodTimestampsRef.current.filter(t => t > cutoff);
-        setFoodRate(foodTimestampsRef.current.length * 2);
       }
-      render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
+
+      const sim = simRef.current;
+      if (sim) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [running]);
+  }, [running, syncReplay]);
 
   useEffect(() => {
     const sim = simRef.current;
@@ -1039,12 +577,19 @@ export default function AntSim() {
   }, [viewMode, watchedAntIdx]);
 
   const handleReset = () => {
+    if (replayRef.current) { exitReplay(); return; }
     setRunning(false);
     setManualControl(false);
     cancelAnimationFrame(rafRef.current);
     frameCountRef.current = 0;
     initSim();
   };
+
+  // Every control that would change the simulation is disabled while a replay
+  // is loaded. send() already refuses commands then, so this is about the
+  // interface telling the truth rather than about replay integrity: a slider
+  // that moves without changing anything is worse than one that will not move.
+  const replaying = replayState !== null;
 
   const stepsPerSec = Math.round(60 / framesPerTick);
   const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
@@ -1101,8 +646,11 @@ export default function AntSim() {
                 padding: "clamp(3px,0.4vw,5px) clamp(10px,1.5vw,14px)",
               }}>
                 <span style={{ fontSize: "clamp(0.58rem,1.5vw,0.68rem)", opacity: 0.45, letterSpacing: "0.05em", textTransform: "uppercase" }}>rate</span>
-                <span style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "6ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                  {foodRate > 0 ? `${foodRate}/min` : "—"}
+                <span
+                  title={`food collected per ${RATE_WINDOW_TICKS} ticks, trailing window`}
+                  style={{ fontSize: "clamp(0.85rem,2.2vw,1.15rem)", fontWeight: 700, color: "#f59e0b", lineHeight: 1, minWidth: "6ch", display: "inline-block", textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+                >
+                  {foodRate > 0 ? `${foodRate.toFixed(1)}/1k ticks` : "—"}
                 </span>
               </div>
             </>
@@ -1170,11 +718,10 @@ export default function AntSim() {
               key={mode}
               title={tip}
               onClick={() => {
-                const nextTool = editMode === mode ? "none" : mode;
                 setEditMode(prev => prev === mode ? "none" : mode);
                 hoverCellRef.current = null;
               }}
-              disabled={manualControl}
+              disabled={manualControl || replaying}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "7px 14px",
@@ -1183,8 +730,8 @@ export default function AntSim() {
                 background: active ? "#2a1a00" : "#0f0a04",
                 color: active ? "#f59e0b" : "#a08060",
                 fontSize: "0.78rem", fontWeight: 600,
-                cursor: manualControl ? "not-allowed" : "pointer",
-                opacity: manualControl ? 0.4 : 1,
+                cursor: (manualControl || replaying) ? "not-allowed" : "pointer",
+                opacity: (manualControl || replaying) ? 0.4 : 1,
                 transition: "border-color 0.15s, background 0.15s, color 0.15s",
                 userSelect: "none",
               }}
@@ -1361,6 +908,7 @@ export default function AntSim() {
           flex: "1 1 270px",
           minWidth: 0,
           transition: "border-color 0.2s",
+          opacity: replaying ? 0.4 : 1,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Mode</span>
@@ -1378,8 +926,10 @@ export default function AntSim() {
               <button
                 key={String(isManual)}
                 onClick={() => { setManualControl(isManual); if (isManual) { setEditMode("none"); hoverCellRef.current = null; } }}
+                disabled={replaying}
                 style={{
-                  flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                  flex: 1, padding: "7px 0", border: "none", borderRadius: 7,
+                  cursor: replaying ? "not-allowed" : "pointer",
                   fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
                   letterSpacing: "0.02em",
                   background: manualControl === isManual ? "#f59e0b" : "transparent",
@@ -1419,6 +969,7 @@ export default function AntSim() {
             min={1} max={4} step={1}
             onChange={v => { setNumColonies(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replaying}
           />
 
           <ControlCard
@@ -1429,6 +980,7 @@ export default function AntSim() {
             min={1} max={100} step={1}
             onChange={v => { setNumAnts(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replaying}
           />
 
         </div>
@@ -1446,6 +998,7 @@ export default function AntSim() {
             min={1} max={8} step={1}
             onChange={v => { setNumFoodSources(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replaying}
           />
 
           <ControlCard
@@ -1456,8 +1009,190 @@ export default function AntSim() {
             min={50} max={10000} step={50}
             onChange={v => { setFoodPerSource(v); }}
             style={{ flex: "1 1 270px" }}
+            disabled={replaying}
           />
 
+        </div>
+      </div>
+
+      <div style={{ width: "100%", maxWidth: 600 }}>
+        <p style={{ margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
+          Run
+        </p>
+        <div style={{
+          background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 10,
+          padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              value={seedInput}
+              onChange={e => setSeedInput(e.target.value)}
+              spellCheck={false}
+              aria-label="Run seed"
+              style={{
+                flex: 1, minWidth: 0, background: "#1a1208", color: "#e5d5b5",
+                border: "1px solid #3d2e18", borderRadius: 6, padding: "6px 8px",
+                fontFamily: "monospace", fontSize: "0.8rem",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setSeedInput(generateMasterSeed())}
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+              }}
+            >
+              New seed
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const csv = metricsToCsv(metricsRef.current.samples);
+                download(csv, `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`, "text/csv");
+              }}
+              disabled={replaying}
+              title={replaying ? "Exit replay to export the live run's metrics" : undefined}
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", fontSize: "0.8rem",
+                cursor: replaying ? "not-allowed" : "pointer",
+                opacity: replaying ? 0.4 : 1,
+              }}
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const sim = simRef.current;
+                if (!sim) return;
+                const trace = buildTrace(sim, metricsRef.current);
+                download(serializeTrace(trace), traceFilename(trace), "application/json");
+              }}
+              disabled={replaying}
+              title={replaying ? "Exit replay to save the live run's trace" : undefined}
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", fontSize: "0.8rem",
+                cursor: replaying ? "not-allowed" : "pointer",
+                opacity: replaying ? 0.4 : 1,
+              }}
+            >
+              Save trace
+            </button>
+            <label
+              style={{
+                background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem",
+              }}
+            >
+              Load trace
+              <input
+                type="file"
+                accept=".json,application/json"
+                style={{ display: "none" }}
+                onChange={async e => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  enterReplay(await file.text());
+                }}
+              />
+            </label>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+            {replayState
+              ? replayState.seed !== null
+                ? `Replaying a recorded run seeded "${replayState.seed}". Exit replay to run it live.`
+                : "Replaying a recorded run whose streams were seeded separately."
+              : seedInput.trim() === activeSeed
+                ? "Runs with this seed reproduce exactly."
+                : `Running as "${activeSeed}". Reset to use the new seed.`}
+          </p>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#6b5a3e", fontFamily: "monospace" }}>
+            {latestFingerprint
+              ? `tick ${latestFingerprint.t} · ${latestFingerprint.h}`
+              : "tick 0 · no checkpoint yet"}
+          </p>
+
+          {traceMessage && (
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#ff6b6b", lineHeight: 1.45 }}>
+              {traceMessage}
+            </p>
+          )}
+
+          {replayState && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: "0.75rem", color: "#a08060", fontFamily: "monospace" }}>
+                replay {replayState.tick} / {replayState.endTick}
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={replayState.endTick}
+                value={seekInput}
+                onChange={e => setSeekInput(e.target.value)}
+                aria-label="Seek to tick"
+                style={{
+                  width: 90, background: "#1a1208", color: "#e5d5b5",
+                  border: "1px solid #3d2e18", borderRadius: 6, padding: "4px 6px",
+                  fontFamily: "monospace", fontSize: "0.78rem",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const r = replayRef.current;
+                  if (!r) return;
+                  setRunning(false);
+                  r.seek(Number(seekInput) || 0);
+                  simRef.current = r.sim;
+                  syncReplay();
+                  forceRender();
+                }}
+                style={{
+                  background: "#1a1208", color: "#f59e0b", border: "1px solid #3d2e18",
+                  borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: "0.78rem",
+                }}
+              >
+                Jump
+              </button>
+              {replayState.divergedAt !== null && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    replayRef.current?.continueAfterDivergence();
+                    syncReplay();
+                  }}
+                  style={{
+                    background: "#1a1208", color: "#ff6b6b", border: "1px solid #5a2e2e",
+                    borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: "0.78rem",
+                  }}
+                >
+                  Continue anyway
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={exitReplay}
+                style={{
+                  background: "#1a1208", color: "#a08060", border: "1px solid #3d2e18",
+                  borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: "0.78rem",
+                }}
+              >
+                Exit replay
+              </button>
+            </div>
+          )}
+
+          {replayState && replayState.divergedAt !== null && (
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#ff6b6b", lineHeight: 1.45 }}>
+              This replay diverged from the recording at tick {replayState.divergedAt}. Results after
+              this point are not the run that was recorded.
+            </p>
+          )}
         </div>
       </div>
 
@@ -1475,6 +1210,7 @@ export default function AntSim() {
             displayValue={`${(params.evapRate * 1000).toFixed(0)}‰ / step`}
             min={0.001} max={0.02} step={0.001}
             onChange={v => updateParam("evapRate", v)}
+            disabled={replaying}
           />
 
           <ParamCard
@@ -1484,6 +1220,7 @@ export default function AntSim() {
             displayValue={`power ${params.trailPower}`}
             min={1} max={10} step={0.5}
             onChange={v => updateParam("trailPower", v)}
+            disabled={replaying}
           />
 
           <ParamCard
@@ -1493,6 +1230,7 @@ export default function AntSim() {
             displayValue={`~${tankCells} cells`}
             min={1600} max={16000} step={800}
             onChange={v => updateParam("tankMax", v)}
+            disabled={replaying}
           />
 
           {/* Cautionary pheromone toggle */}
@@ -1506,6 +1244,7 @@ export default function AntSim() {
             gap: 8,
             flex: "1 1 270px",
             minWidth: 0,
+            opacity: replaying ? 0.4 : 1,
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Cautionary</span>
@@ -1521,8 +1260,10 @@ export default function AntSim() {
                 <button
                   key={String(val)}
                   onClick={() => { updateParam("cautionary", val); }}
+                  disabled={replaying}
                   style={{
-                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7, cursor: "pointer",
+                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7,
+                    cursor: replaying ? "not-allowed" : "pointer",
                     fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
                     letterSpacing: "0.02em",
                     background: params.cautionary === val ? "#f59e0b" : "transparent",
@@ -1551,6 +1292,7 @@ export default function AntSim() {
           display: "flex",
           flexDirection: "column",
           gap: 8,
+          opacity: replaying ? 0.4 : 1,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Extra holes (loop rate)</span>
@@ -1565,7 +1307,8 @@ export default function AntSim() {
             type="range"
             min={0} max={0.5} step={0.01} value={loopRate}
             onChange={e => setLoopRate(Number(e.target.value))}
-            style={{ width: "100%", accentColor: "#f59e0b", cursor: "pointer", margin: "2px 0" }}
+            disabled={replaying}
+            style={{ width: "100%", accentColor: "#f59e0b", cursor: replaying ? "not-allowed" : "pointer", margin: "2px 0" }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#6b5a3e" }}>
             <span>0% — tree maze</span>
