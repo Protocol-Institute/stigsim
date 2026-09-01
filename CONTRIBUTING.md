@@ -92,6 +92,23 @@ command, or traces stop reproducing. If the change was deliberate, bump
 `SIM_VERSION` in `packages/sim-trace/src/trace.ts` and regenerate the fixture with
 `pnpm golden`.
 
+## Coverage
+
+`pnpm test` runs the package tests under coverage and fails below the
+thresholds set in `test:coverage` (lines, branches, and functions). Use
+`pnpm test:client` for a fast run without the gate while iterating.
+
+The reported line percentage understates real coverage, because TypeScript
+interface and type-alias declarations count as lines that never execute.
+`types.ts` reads around 18% for that reason alone and is not worth chasing;
+judge a change by whether the *branches* it adds are exercised.
+
+A test whose name claims an invariant should fail when that invariant is
+broken. Before trusting a new test, break the code it covers and watch it go
+red — `setFood adds and removes sources and keeps discovered indices
+consistent` passed for some time against a completely broken remap, because it
+never populated `discoveredSources` before removing a source.
+
 ## Project guidance
 
 `README.md`, this file, and `status.md` are the tool-neutral sources of truth. Client-specific files such as `CLAUDE.md` and `AGENTS.md` should point here rather than duplicate project instructions.

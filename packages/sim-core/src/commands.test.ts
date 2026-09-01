@@ -117,6 +117,67 @@ test("setFood adds and removes sources and keeps discovered indices consistent",
   assert.equal(sim.foodSources.length, 1);
 });
 
+/** What a colony believes it has found, as coordinates rather than indices. */
+function discoveredCoords(sim: Simulation, colonyIdx: number): string[] {
+  const colony = sim.colonies[colonyIdx];
+  return [...colony.discoveredSources]
+    .map(i => {
+      const src = sim.foodSources[i];
+      assert.ok(src, `discovered index ${i} is out of bounds`);
+      return `${src.x},${src.y}`;
+    })
+    .sort();
+}
+
+test("removing a food source remaps the discovered indices that outlive it", () => {
+  const sim = new Simulation(config({ numColonies: 2, numFoodSources: 4 }));
+  assert.equal(sim.foodSources.length, 4);
+
+  // Discovery is normally recorded when an ant reaches a source, which takes
+  // longer than a test wants to run. Seed it directly: colony 0 has found
+  // every source, colony 1 only the two that sit either side of the one about
+  // to be removed.
+  sim.colonies[0].discoveredSources = new Set([0, 1, 2, 3]);
+  sim.colonies[1].discoveredSources = new Set([0, 2]);
+
+  const removed = sim.foodSources[1];
+  const removedKey = `${removed.x},${removed.y}`;
+  const before = [discoveredCoords(sim, 0), discoveredCoords(sim, 1)];
+
+  sim.enqueue({ kind: "setFood", x: removed.x, y: removed.y, amount: 0 });
+  sim.step();
+
+  assert.equal(sim.foodSources.length, 3);
+  assert.ok(!sim.foodSources.some(s => s.x === removed.x && s.y === removed.y));
+
+  // Each colony still points at exactly the sources it knew, minus the removed
+  // one. An off-by-one in the remap silently reattributes a colony's knowledge
+  // to the wrong source, so compare coordinates rather than indices.
+  assert.deepEqual(discoveredCoords(sim, 0), before[0].filter(k => k !== removedKey));
+  assert.deepEqual(discoveredCoords(sim, 1), before[1].filter(k => k !== removedKey));
+
+  // Colony 0 had discovered the removed source; colony 1 had not.
+  assert.equal(sim.colonies[0].discoveredSources.size, 3);
+  assert.equal(sim.colonies[1].discoveredSources.size, 2);
+});
+
+test("setFood on an existing source replaces its amount rather than adding one", () => {
+  const sim = new Simulation(config());
+  const target = sim.foodSources[0];
+  const { x, y } = target;
+  assert.notEqual(target.remaining, 42);
+
+  sim.enqueue({ kind: "setFood", x, y, amount: 42 });
+  sim.step();
+
+  assert.equal(sim.foodSources.length, 1);
+  const after = sim.foodSources[0];
+  assert.equal(after.x, x);
+  assert.equal(after.y, y);
+  assert.equal(after.remaining, 42);
+  assert.equal(after.total, 42);
+});
+
 test("setFood refuses walls and nests", () => {
   const sim = new Simulation(config());
   const nest = sim.colonies[0];
