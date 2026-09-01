@@ -1,6 +1,5 @@
-import { COLS, ROWS, CELL, W, H, NEST_SEED } from "./sim/constants";
-import { cellCenter } from "./sim";
-import type { Simulation } from "./sim";
+import { COLS, ROWS, CELL, W, H, NEST_SEED, cellCenter } from "@stigsim/sim-core";
+import type { Simulation } from "@stigsim/sim-core";
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
 export const VIEW_HALF = CELL * 1;

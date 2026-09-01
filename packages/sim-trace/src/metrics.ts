@@ -1,6 +1,6 @@
-import { COLS, ROWS, DIRS4 } from "./constants";
-import type { CellType, Colony } from "./types";
-import type { Simulation } from "./sim";
+import { COLS, ROWS, DIRS4 } from "@stigsim/sim-core";
+import type { CellType, Colony } from "@stigsim/sim-core";
+import type { Simulation } from "@stigsim/sim-core";
 
 export const METRICS_INTERVAL = 10;
 export const METRICS_CAPACITY = 20000;

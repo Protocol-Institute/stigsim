@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  Simulation, DEFAULT_PARAMS, makeSeeds, MetricsRecorder,
-  buildTrace, Replayer, fingerprint,
-} from "./index";
-import type { RunConfig, Trace } from "./index";
+import { Simulation, DEFAULT_PARAMS, makeSeeds, fingerprint } from "@stigsim/sim-core";
+import type { RunConfig } from "@stigsim/sim-core";
+import { MetricsRecorder, buildTrace, Replayer } from "./index";
+import type { Trace } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
   return {

@@ -7,7 +7,8 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { Simulation, MetricsRecorder, DEFAULT_PARAMS, makeSeeds, buildTrace, serializeTrace } from "../index";
+import { Simulation, DEFAULT_PARAMS, makeSeeds } from "@stigsim/sim-core";
+import { MetricsRecorder, buildTrace, serializeTrace } from "../index";
 
 const sim = new Simulation({
   seeds: makeSeeds("golden-fixture"),

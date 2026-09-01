@@ -4,11 +4,14 @@ import {
   COLS, ROWS, CELL, W, H, V, DEPOSIT_RATE, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
   DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
+} from "@stigsim/sim-core";
+import type { SimParams, Command } from "@stigsim/sim-core";
+import {
   MetricsRecorder, metricsToCsv, RATE_WINDOW_TICKS,
   buildTrace, serializeTrace, traceFilename,
   Replayer, parseTrace,
-} from "./sim";
-import type { SimParams, Command, MetricsSample } from "./sim";
+} from "@stigsim/sim-trace";
+import type { MetricsSample } from "@stigsim/sim-trace";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 
