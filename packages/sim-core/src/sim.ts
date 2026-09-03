@@ -11,27 +11,6 @@ import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
-export function computeHighwayScore(sim: Simulation): number {
-  const open: number[] = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (sim.grid[y][x] === 1) {
-        const idx = y * COLS + x;
-        let total = 0;
-        for (const c of sim.colonies) total += c.foodPhero[idx] + c.homePhero[idx];
-        open.push(total);
-      }
-    }
-  }
-  if (open.length === 0) return 0;
-  const total = open.reduce((a, b) => a + b, 0);
-  if (total < 1) return 0;
-  open.sort((a, b) => b - a);
-  const topN = Math.max(1, Math.floor(open.length * 0.1));
-  const topSum = open.slice(0, topN).reduce((a, b) => a + b, 0);
-  return topSum / total;
-}
-
 export function openNeighbours(grid: CellType[][], x: number, y: number, exX?: number, exY?: number): [number, number][] {
   return DIRS4
     .map(([dx, dy]) => [x + dx, y + dy] as [number, number])
