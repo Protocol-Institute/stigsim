@@ -40,3 +40,44 @@ export class DenseGrid implements Occupancy {
     this.cells[cy][cx] = open ? 1 : 0;
   }
 }
+
+/**
+ * Occupancy that records walls instead of open ground.
+ *
+ * The Infinite Mode world is unbounded and open by default, so storing the
+ * exception — the walls — is the only representation that fits. The inverted
+ * polarity stops at isOpen; no caller sees it.
+ *
+ * Bounds are optional. Unbounded is the server's case; a bounded wall set is
+ * useful wherever a fixed world wants sparse storage, and is what lets the
+ * dense and chunked backings be run against the same world in a test.
+ */
+export class WallSet implements Occupancy {
+  readonly bounds: { cols: number; rows: number } | null;
+  private readonly walls = new Set<string>();
+
+  constructor(bounds: { cols: number; rows: number } | null = null) {
+    this.bounds = bounds;
+  }
+
+  /** Recorded walls. Cells outside a bounded world are closed but not stored. */
+  get wallCount(): number {
+    return this.walls.size;
+  }
+
+  wallKeys(): string[] {
+    return [...this.walls];
+  }
+
+  isOpen(cx: number, cy: number): boolean {
+    if (!inBounds(this, cx, cy)) return false;
+    return !this.walls.has(`${cx},${cy}`);
+  }
+
+  setOpen(cx: number, cy: number, open: boolean): void {
+    if (!inBounds(this, cx, cy)) return;
+    const key = `${cx},${cy}`;
+    if (open) this.walls.delete(key);
+    else this.walls.add(key);
+  }
+}

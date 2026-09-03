@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DenseGrid, inBounds } from "./world";
+import { DenseGrid, WallSet, inBounds } from "./world";
 import type { CellType, Occupancy } from "./types";
 
 /** A 4x3 grid (4 wide, 3 tall) with one open cell at (1, 1). */
@@ -77,4 +77,41 @@ test("inBounds respects the edges of a bounded world", () => {
   assert.equal(inBounds(world, 3, 3), false);
   assert.equal(inBounds(world, -1, 0), false);
   assert.equal(inBounds(world, 0, -1), false);
+});
+
+test("an unbounded wall set is open everywhere it holds no wall", () => {
+  const world = new WallSet();
+
+  assert.equal(world.bounds, null);
+  assert.equal(world.isOpen(0, 0), true);
+  assert.equal(world.isOpen(-99_999, 250_000), true);
+
+  world.setOpen(4, 5, false);
+  assert.equal(world.isOpen(4, 5), false);
+  assert.equal(world.wallCount, 1);
+  assert.deepEqual(world.wallKeys(), ["4,5"]);
+
+  world.setOpen(4, 5, true);
+  assert.equal(world.isOpen(4, 5), true);
+  assert.equal(world.wallCount, 0);
+});
+
+test("re-walling a cell records it once", () => {
+  const world = new WallSet();
+  world.setOpen(1, 1, false);
+  world.setOpen(1, 1, false);
+  assert.equal(world.wallCount, 1);
+});
+
+test("a bounded wall set closes everything outside its bounds", () => {
+  const world = new WallSet({ cols: 4, rows: 3 });
+
+  assert.equal(world.isOpen(3, 2), true);
+  assert.equal(world.isOpen(4, 2), false);
+  assert.equal(world.isOpen(3, 3), false);
+  assert.equal(world.isOpen(-1, 0), false);
+
+  // Out of bounds is closed by geometry, so nothing needs recording.
+  world.setOpen(9, 9, false);
+  assert.equal(world.wallCount, 0);
 });
