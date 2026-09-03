@@ -40,7 +40,7 @@ a {
 
 .simulation-index__header,
 .simulation-grid,
-.simulation-index__footer {
+.simulation-index__upcoming {
   width: min(1120px, 100%);
   margin-inline: auto;
 }
@@ -161,11 +161,47 @@ a {
   font-weight: 720;
 }
 
-.simulation-index__footer {
-  margin-top: 32px;
-  color: #6f604d;
-  font-size: 0.74rem;
-  line-height: 1.5;
+.simulation-index__upcoming {
+  margin-top: clamp(40px, 7vw, 72px);
+}
+
+.simulation-index__section-heading {
+  margin-bottom: 16px;
+}
+
+.simulation-index__section-heading p {
+  margin: 0 0 5px;
+  color: #806f58;
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.simulation-index__section-heading h2 {
+  margin: 0;
+  color: #c7b99f;
+  font-size: 1.05rem;
+}
+
+.simulation-grid--upcoming .simulation-card {
+  min-height: 190px;
+  border-color: #2d251c;
+  background: rgba(18, 14, 11, 0.72);
+}
+
+.simulation-grid--upcoming .simulation-card h2 {
+  margin-top: 26px;
+  font-size: clamp(1.15rem, 2.4vw, 1.5rem);
+}
+
+.simulation-grid--upcoming .simulation-card p {
+  color: #806f58;
+}
+
+.simulation-grid--upcoming .simulation-card__action {
+  padding-top: 20px;
+  color: #8e806c;
 }
 
 .route-message {

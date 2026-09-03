@@ -42,40 +42,45 @@ export default function SimulationIndex() {
         <SimulationCard
           eyebrow="Local · Sandbox"
           title="Maze Simulator"
-          description="Generate a bounded maze, tune colony behavior, and run reproducible experiments entirely in your browser."
+          description="Generate a maze, tune colony behavior, and run reproducible experiments in your browser."
           href="/maze"
           status="available"
           accent="#f59e0b"
         />
         <SimulationCard
-          eyebrow="Local · Two players"
-          title="War Mode"
-          description="Control two competing colonies side by side in a last-colony-standing match."
-          href="/war"
-          status="coming-soon"
-          accent="#60a5fa"
-        />
-        <SimulationCard
-          eyebrow="Online · Multiplayer"
-          title="Online War Mode"
-          description="Create or join a server-authoritative match, challenge another player, or watch as a spectator."
-          href="/multiplayer"
-          status="coming-soon"
-          accent="#fb7185"
-        />
-        <SimulationCard
           eyebrow="Online · Persistent world"
           title="Infinite World"
-          description="Shape and inhabit one continuous shared environment whose colonies and terrain persist between visits."
+          description="Shape one continuous shared environment whose colonies and terrain persist between visits."
           href="/infinite"
           status="available"
           accent="#4ade80"
         />
       </section>
 
-      <footer className="simulation-index__footer">
-        Coordination through traces in the environment—no central controller required.
-      </footer>
+      <section className="simulation-index__upcoming" aria-labelledby="upcoming-title">
+        <div className="simulation-index__section-heading">
+          <p>In development</p>
+          <h2 id="upcoming-title">War Mode</h2>
+        </div>
+        <div className="simulation-grid simulation-grid--upcoming">
+          <SimulationCard
+            eyebrow="Local · Two players"
+            title="Local War Mode"
+            description="Control two competing colonies side by side."
+            href="/war"
+            status="coming-soon"
+            accent="#60a5fa"
+          />
+          <SimulationCard
+            eyebrow="Online · Multiplayer"
+            title="Online War Mode"
+            description="Create, join, or spectate a server-authoritative match."
+            href="/multiplayer"
+            status="coming-soon"
+            accent="#fb7185"
+          />
+        </div>
+      </section>
     </main>
   );
 }
