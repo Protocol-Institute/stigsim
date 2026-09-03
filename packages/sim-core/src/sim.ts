@@ -1,14 +1,13 @@
 import {
   CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
-  COLONY_NESTS, DIRS4, TRIP_WINDOW,
+  DIRS4, TRIP_WINDOW,
 } from "./constants";
 import type {
-  Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+  Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams, WorldSpec,
 } from "./types";
 import type { RunConfig } from "./types";
-import { DenseField } from "./field";
-import { DenseGrid, inBounds } from "./world";
-import { generateMaze } from "./maze";
+import { inBounds } from "./world";
+import { mazeWorld } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
 import type { Command, TimedCommand } from "./commands";
 import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
@@ -55,6 +54,7 @@ export class Simulation {
   foodPerSource: number;
   params: SimParams;
   loopRate: number;
+  readonly world: WorldSpec;
   readonly occupancy: Occupancy;
   /** Dimensions of the world being simulated. */
   readonly bounds: { cols: number; rows: number };
@@ -70,7 +70,18 @@ export class Simulation {
   private recorded: TimedCommand[] = [];
   private schedule: Map<number, Command[]> | null = null;
 
-  constructor(config: RunConfig) {
+  /**
+   * The world defaults to a maze built from the run's seed, so every existing
+   * caller is unchanged. It stays a default rather than becoming required
+   * because a trace stores a recipe — a maze seed and a loop rate — and a
+   * caller-supplied world in general has no recipe to store. Settling how a
+   * trace names an arbitrary world belongs with the package that generates
+   * them, not with a refactor whose contract is that nothing moves.
+   */
+  constructor(
+    config: RunConfig,
+    world: WorldSpec = mazeWorld(config.loopRate, makeRng(config.seeds.maze)),
+  ) {
     this.config = config;
     this.numAnts = config.numAnts;
     this.params = { ...config.params };
@@ -79,7 +90,8 @@ export class Simulation {
     this.numFoodSources = config.numFoodSources;
     this.foodPerSource = config.foodPerSource;
     this.antsRng = makeRng(config.seeds.ants);
-    this.occupancy = new DenseGrid(generateMaze(config.loopRate, makeRng(config.seeds.maze)));
+    this.world = world;
+    this.occupancy = world.occupancy;
     const bounds = this.occupancy.bounds;
     if (bounds === null) {
       throw new RangeError("Simulation needs a bounded world: placing food and fingerprinting both walk one.");
@@ -92,9 +104,9 @@ export class Simulation {
 
   private _initColonies(): Colony[] {
     return Array.from({ length: this.numColonies }, (_, id) => {
-      const [nestX, nestY] = COLONY_NESTS[id];
+      const [nestX, nestY] = this.world.nests[id];
       this.occupancy.setOpen(nestX, nestY, true);
-      const field = new DenseField(this.bounds.cols, this.bounds.rows);
+      const field = this.world.createField();
       return {
         id,
         nestX,

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Simulation, DEFAULT_PARAMS, COLS, ROWS, DIRS4, makeSeeds } from "./index";
-import type { RunConfig } from "./index";
+import {
+  Simulation, DEFAULT_PARAMS, COLS, ROWS, DIRS4, makeSeeds, DenseField, DenseGrid,
+} from "./index";
+import type { CellType, RunConfig, WorldSpec } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
   return {
@@ -99,6 +101,49 @@ test("holding the maze and food seeds fixed while varying ants keeps the map", (
     a.allAnts.map(x => [x.cx, x.cy]),
     b.allAnts.map(x => [x.cx, x.cy]),
   );
+});
+
+test("a caller can supply a world that is not a maze", () => {
+  // A 9x9 room walled only at its border. Nothing here comes from generateMaze,
+  // which is the point: the simulation no longer builds its own world, it just
+  // defaults to one.
+  const size = 9;
+  const cells: CellType[][] = Array.from({ length: size }, (_, y) =>
+    Array.from({ length: size }, (_, x) =>
+      (x === 0 || y === 0 || x === size - 1 || y === size - 1 ? 0 : 1) as CellType));
+
+  const room: WorldSpec = {
+    occupancy: new DenseGrid(cells),
+    nests: [[1, 1], [7, 7], [7, 1], [1, 7]],
+    createField: () => new DenseField(size, size),
+  };
+
+  const sim = new Simulation(config({ numAnts: 12, foodPerSource: 200 }), room);
+
+  assert.deepEqual(sim.bounds, { cols: size, rows: size });
+  assert.equal(sim.colonies[0].nestX, 1);
+  assert.equal(sim.colonies[0].nestY, 1);
+  assert.equal(sim.foodSources.length, 1);
+  assert.equal(sim.occupancy.isOpen(0, 0), false, "the border stays walled");
+
+  for (let i = 0; i < 2000; i++) sim.step();
+  assert.ok(
+    sim.totalFoodCollected > 0,
+    `expected foraging in the open room, got ${sim.totalFoodCollected}`,
+  );
+});
+
+test("an unbounded world is refused", () => {
+  const unbounded: WorldSpec = {
+    occupancy: { bounds: null, isOpen: () => true, setOpen: () => {} },
+    nests: [[0, 0]],
+    createField: () => new DenseField(4, 4),
+  };
+
+  // Placing food walks the whole world and the fingerprint hashes it, and
+  // neither has a meaning over unbounded space. The chunked backing settles
+  // that; until then this is refused rather than silently wrong.
+  assert.throws(() => new Simulation(config(), unbounded), RangeError);
 });
 
 test("an ant sealed into its cell does not crash the simulation", () => {
