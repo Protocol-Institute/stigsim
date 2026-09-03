@@ -2,8 +2,9 @@ import {
   COLS, ROWS, CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
   COLONY_NESTS, DIRS4, TRIP_WINDOW,
 } from "./constants";
-import type { Ant, AntState, CellType, Colony, FoodSource, SimParams } from "./types";
+import type { Ant, AntState, CellType, Colony, FoodSource, Occupancy, SimParams } from "./types";
 import type { RunConfig } from "./types";
+import { DenseGrid, inBounds } from "./world";
 import { generateMaze } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
 import type { Command, TimedCommand } from "./commands";
@@ -11,13 +12,12 @@ import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
-export function openNeighbours(grid: CellType[][], x: number, y: number, exX?: number, exY?: number): [number, number][] {
+export function openNeighbours(occ: Occupancy, x: number, y: number, exX?: number, exY?: number): [number, number][] {
+  // isOpen reports out-of-bounds cells as closed, so the explicit bounds test
+  // this used to carry is folded into the lookup.
   return DIRS4
     .map(([dx, dy]) => [x + dx, y + dy] as [number, number])
-    .filter(([nx, ny]) =>
-      nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
-      grid[ny][nx] === 1 && !(nx === exX && ny === exY)
-    );
+    .filter(([nx, ny]) => occ.isOpen(nx, ny) && !(nx === exX && ny === exY));
 }
 
 export function powerChoice(
@@ -48,7 +48,9 @@ export class Simulation {
   foodPerSource: number;
   params: SimParams;
   loopRate: number;
-  grid: CellType[][];
+  readonly occupancy: Occupancy;
+  /** Dimensions of the world being simulated. */
+  readonly bounds: { cols: number; rows: number };
   colonies: Colony[];
   foodSources: FoodSource[];
   private antsRng: Rng;
@@ -70,7 +72,12 @@ export class Simulation {
     this.numFoodSources = config.numFoodSources;
     this.foodPerSource = config.foodPerSource;
     this.antsRng = makeRng(config.seeds.ants);
-    this.grid = generateMaze(config.loopRate, makeRng(config.seeds.maze));
+    this.occupancy = new DenseGrid(generateMaze(config.loopRate, makeRng(config.seeds.maze)));
+    const bounds = this.occupancy.bounds;
+    if (bounds === null) {
+      throw new RangeError("Simulation needs a bounded world: placing food and fingerprinting both walk one.");
+    }
+    this.bounds = bounds;
     this.colonies = this._initColonies();
     this.foodSources = this._placeFoodSources(makeRng(config.seeds.food));
     for (const colony of this.colonies) this._seedNest(colony);
@@ -79,7 +86,7 @@ export class Simulation {
   private _initColonies(): Colony[] {
     return Array.from({ length: this.numColonies }, (_, id) => {
       const [nestX, nestY] = COLONY_NESTS[id];
-      this.grid[nestY][nestX] = 1;
+      this.occupancy.setOpen(nestX, nestY, true);
       return {
         id,
         nestX,
@@ -102,7 +109,7 @@ export class Simulation {
     const open: [number, number][] = [];
     for (let y = 2; y < ROWS - 2; y++) {
       for (let x = 2; x < COLS - 2; x++) {
-        if (this.grid[y][x] !== 1) continue;
+        if (!this.occupancy.isOpen(x, y)) continue;
         if (nestSet.has(y * COLS + x)) continue;
         const farEnough = this.colonies.every(
           c => Math.abs(c.nestX - x) + Math.abs(c.nestY - y) >= minDist
@@ -124,7 +131,7 @@ export class Simulation {
     colony.homePhero[nestY * COLS + nestX] = NEST_SEED;
     for (const [dx, dy] of DIRS4) {
       const nx = nestX + dx, ny = nestY + dy;
-      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && this.grid[ny][nx]) {
+      if (this.occupancy.isOpen(nx, ny)) {
         const idx = ny * COLS + nx;
         colony.homePhero[idx] = Math.max(colony.homePhero[idx], NEST_SEED * 0.85);
       }
@@ -146,6 +153,17 @@ export class Simulation {
       lastSourceX: null,
       lastSourceY: null,
     }));
+  }
+
+  /**
+   * The raw cell grid.
+   *
+   * Temporary. The fingerprint, the metrics and the renderer still walk this
+   * array directly; they move onto Occupancy in the commit that drops the dense
+   * compatibility views, and this goes with them.
+   */
+  get grid(): CellType[][] {
+    return (this.occupancy as DenseGrid).cells;
   }
 
   get allAnts(): Ant[] {
@@ -251,10 +269,10 @@ export class Simulation {
   }
 
   private _applySetWall(gx: number, gy: number, open: boolean) {
-    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return;
+    if (!inBounds(this.occupancy, gx, gy)) return;
     if (this.colonies.some(c => c.nestX === gx && c.nestY === gy)) return;
     if (this.foodSources.some(s => s.x === gx && s.y === gy)) return;
-    this.grid[gy][gx] = open ? 1 : 0;
+    this.occupancy.setOpen(gx, gy, open);
     this.gridVersion++;
     if (!open) {
       for (const colony of this.colonies) {
@@ -266,8 +284,8 @@ export class Simulation {
   }
 
   private _applySetFood(gx: number, gy: number, amount: number) {
-    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return;
-    if (this.grid[gy][gx] === 0) return;
+    if (!inBounds(this.occupancy, gx, gy)) return;
+    if (!this.occupancy.isOpen(gx, gy)) return;
     if (this.colonies.some(c => c.nestX === gx && c.nestY === gy)) return;
 
     const srcIdx = this.foodSources.findIndex(s => s.x === gx && s.y === gy);
@@ -308,8 +326,7 @@ export class Simulation {
     const ant = this.allAnts[this.manualAntIndex];
     if (!ant) return;
     const nx = ant.cx + dx, ny = ant.cy + dy;
-    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
-    if (this.grid[ny][nx] !== 1) return;
+    if (!this.occupancy.isOpen(nx, ny)) return;
     ant.prevCx = ant.cx;
     ant.prevCy = ant.cy;
     ant.tx = nx;
@@ -419,8 +436,8 @@ export class Simulation {
       return;
     }
 
-    const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
-    const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
+    const noBack = openNeighbours(this.occupancy, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
+    const candidates = noBack.length > 0 ? noBack : openNeighbours(this.occupancy, ant.cx, ant.cy);
     // An edit can seal every exit from a cell an ant is standing in, which
     // applySetWall permits: it refuses only nest and food cells. The ant waits
     // where it is until something opens up. The server simulation has always
