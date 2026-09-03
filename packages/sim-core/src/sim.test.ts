@@ -57,6 +57,35 @@ test("setAntCount grows and shrinks every colony", () => {
   assert.equal(sim.allAnts.length, 10);
 });
 
+test("spawnAnt adds one ant to only the requested colony", () => {
+  const sim = new Simulation(config({ numAnts: 2, numColonies: 2 }));
+  const ant = sim.spawnAnt(1);
+  assert.ok(ant);
+  assert.equal(ant.colonyId, 1);
+  assert.equal(sim.colonies[0].ants.length, 2);
+  assert.equal(sim.colonies[1].ants.length, 3);
+  assert.equal(sim.spawnAnt(99), null);
+});
+
+test("mode policies can resolve doctrine per ant without changing defaults", () => {
+  let paramsResolved = 0;
+  let evaporationResolved = 0;
+  const sim = new Simulation(config({ numAnts: 1 }), {
+    paramsForAnt: (_ant, _colony, defaults) => {
+      paramsResolved++;
+      return { ...defaults, trailPower: 1 };
+    },
+    evapRateForColony: (_colony, defaultRate) => {
+      evaporationResolved++;
+      return defaultRate;
+    },
+  });
+  sim.step();
+  assert.equal(paramsResolved, 1);
+  assert.equal(evaporationResolved, 1);
+  assert.deepEqual(sim.params, DEFAULT_PARAMS);
+});
+
 test("the same seeds produce an identical run", () => {
   const c = config();
   const a = new Simulation(c);

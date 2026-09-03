@@ -70,3 +70,13 @@ export interface RunConfig {
   numFoodSources: number;
   foodPerSource: number;
 }
+
+/**
+ * Optional policy hooks for modes which share the core physics but vary a
+ * colony's live parameters. The ordinary simulator omits these hooks and
+ * retains its existing single-doctrine behaviour.
+ */
+export interface SimulationPolicy {
+  paramsForAnt?: (ant: Ant, colony: Colony, defaults: SimParams) => SimParams;
+  evapRateForColony?: (colony: Colony, defaultRate: number) => number;
+}
