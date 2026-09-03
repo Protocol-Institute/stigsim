@@ -2,7 +2,7 @@ import {
   COLS, ROWS, CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
   COLONY_NESTS, DIRS4, TRIP_WINDOW,
 } from "./constants";
-import type { Ant, AntState, CellType, Colony, FoodSource, SimParams } from "./types";
+import type { Ant, AntState, CellType, Colony, FoodSource, SimParams, SimulationPolicy } from "./types";
 import type { RunConfig } from "./types";
 import { generateMaze } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
@@ -81,8 +81,9 @@ export class Simulation {
   private pending: Command[] = [];
   private recorded: TimedCommand[] = [];
   private schedule: Map<number, Command[]> | null = null;
+  private readonly policy: SimulationPolicy;
 
-  constructor(config: RunConfig) {
+  constructor(config: RunConfig, policy: SimulationPolicy = {}) {
     this.config = config;
     this.numAnts = config.numAnts;
     this.params = { ...config.params };
@@ -90,6 +91,7 @@ export class Simulation {
     this.numColonies = config.numColonies;
     this.numFoodSources = config.numFoodSources;
     this.foodPerSource = config.foodPerSource;
+    this.policy = policy;
     this.antsRng = makeRng(config.seeds.ants);
     this.grid = generateMaze(config.loopRate, makeRng(config.seeds.maze));
     this.colonies = this._initColonies();
@@ -153,8 +155,12 @@ export class Simulation {
   }
 
   private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
+    return Array.from({ length: this.numAnts }, () => this._createAnt(colonyId, nestX, nestY));
+  }
+
+  private _createAnt(colonyId: number, nestX: number, nestY: number): Ant {
     const { px, py } = cellCenter(nestX, nestY);
-    return Array.from({ length: this.numAnts }, () => ({
+    return {
       x: px, y: py,
       cx: nestX, cy: nestY,
       tx: nestX, ty: nestY,
@@ -166,7 +172,16 @@ export class Simulation {
       stepsSinceNest: 0,
       lastSourceX: null,
       lastSourceY: null,
-    }));
+    };
+  }
+
+  /** Adds one ant at a colony nest. Intended for mode-level population rules. */
+  spawnAnt(colonyId: number): Ant | null {
+    const colony = this.colonies[colonyId];
+    if (!colony) return null;
+    const ant = this._createAnt(colonyId, colony.nestX, colony.nestY);
+    colony.ants.push(ant);
+    return ant;
   }
 
   get allAnts(): Ant[] {
@@ -341,8 +356,8 @@ export class Simulation {
     this.tick++;
     this._runCommandsFor(this.tick);
 
-    const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
+      const decay = 1 - (this.policy.evapRateForColony?.(colony, this.params.evapRate) ?? this.params.evapRate);
       for (let i = 0; i < colony.homePhero.length; i++) {
         colony.homePhero[i] *= decay;
         colony.foodPhero[i] *= decay;
@@ -365,7 +380,8 @@ export class Simulation {
   }
 
   private _moveAnt(ant: Ant, colony: Colony) {
-    const { tankMax, trailPower } = this.params;
+    const params = this.policy.paramsForAnt?.(ant, colony, this.params) ?? this.params;
+    const { tankMax, trailPower } = params;
     const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
     const dx = tpx - ant.x, dy = tpy - ant.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -376,11 +392,11 @@ export class Simulation {
         const deposit = Math.min(ant.tank, DEPOSIT_RATE);
         if (ant.state === "searching") {
           colony.homePhero[idx] += deposit;
-        } else {
+        } else if (ant.hasFood) {
           colony.foodPhero[idx] += deposit;
         }
         ant.tank -= deposit;
-      } else if (this.params.cautionary) {
+      } else if (params.cautionary) {
         colony.cautPhero[idx] += DEPOSIT_RATE;
       }
       const scale = V / dist;
@@ -418,11 +434,12 @@ export class Simulation {
 
     // Check nest
     if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
+      const delivered = ant.hasFood;
       ant.state = "searching";
       ant.hasFood = false;
       ant.tank = tankMax;
-      colony.foodCollected++;
-      if (ant.lastSourceX !== null && ant.lastSourceY !== null) {
+      if (delivered) colony.foodCollected++;
+      if (delivered && ant.lastSourceX !== null && ant.lastSourceY !== null) {
         colony.recentTrips.push({ steps: ant.stepsSinceNest, sx: ant.lastSourceX, sy: ant.lastSourceY });
         if (colony.recentTrips.length > TRIP_WINDOW) colony.recentTrips.shift();
       }
@@ -452,7 +469,7 @@ export class Simulation {
     const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
     const next = powerChoice(
       candidates, phero, trailPower, this.antsRng,
-      this.params.cautionary ? colony.cautPhero : undefined, trailPower,
+      params.cautionary ? colony.cautPhero : undefined, trailPower,
     );
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;

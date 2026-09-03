@@ -3,13 +3,14 @@ import ComingSoon from "./components/ComingSoon";
 import InfiniteSim from "./components/InfiniteSim";
 import NotFound from "./components/NotFound";
 import SimulationIndex from "./components/SimulationIndex";
+import LocalWarMode from "./modes/war/LocalWarMode";
 import { resolveAppRoute } from "./routes";
 
 export default function App() {
   const route = resolveAppRoute(window.location.pathname);
 
   if (route === "index") return <SimulationIndex />;
-  if (route === "war") return <ComingSoon mode="Local War Mode" />;
+  if (route === "war") return <LocalWarMode />;
   if (route === "multiplayer") return <ComingSoon mode="Online War Mode" />;
   if (route === "not-found") return <NotFound />;
 
