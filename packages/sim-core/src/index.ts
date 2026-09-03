@@ -1,6 +1,7 @@
 export * from "./constants";
 export * from "./types";
 export * from "./field";
+export * from "./chunked-field";
 export * from "./world";
 export * from "./maze";
 export * from "./sim";
