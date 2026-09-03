@@ -4,7 +4,7 @@ import {
 } from "./constants";
 import type {
   Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
-  SimulationOptions, WorldSpec,
+  SimulationOptions, SimulationPolicy, WorldSpec,
 } from "./types";
 import type { RunConfig } from "./types";
 import { inBounds } from "./world";
@@ -70,6 +70,7 @@ export class Simulation {
   private pending: Command[] = [];
   private recorded: TimedCommand[] = [];
   private schedule: Map<number, Command[]> | null = null;
+  private readonly policy: SimulationPolicy;
 
   constructor(config: RunConfig, options: SimulationOptions = {}) {
     const world = options.world ?? mazeWorld(config.loopRate, makeRng(config.seeds.maze));
@@ -80,6 +81,7 @@ export class Simulation {
     this.numColonies = config.numColonies;
     this.numFoodSources = config.numFoodSources;
     this.foodPerSource = config.foodPerSource;
+    this.policy = options.policy ?? {};
     this.antsRng = makeRng(config.seeds.ants);
     this.world = world;
     this.occupancy = world.occupancy;
@@ -148,8 +150,12 @@ export class Simulation {
   }
 
   private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
+    return Array.from({ length: this.numAnts }, () => this._createAnt(colonyId, nestX, nestY));
+  }
+
+  private _createAnt(colonyId: number, nestX: number, nestY: number): Ant {
     const { px, py } = cellCenter(nestX, nestY);
-    return Array.from({ length: this.numAnts }, () => ({
+    return {
       x: px, y: py,
       cx: nestX, cy: nestY,
       tx: nestX, ty: nestY,
@@ -161,7 +167,16 @@ export class Simulation {
       stepsSinceNest: 0,
       lastSourceX: null,
       lastSourceY: null,
-    }));
+    };
+  }
+
+  /** Adds one ant at a colony nest. Intended for mode-level population rules. */
+  spawnAnt(colonyId: number): Ant | null {
+    const colony = this.colonies[colonyId];
+    if (!colony) return null;
+    const ant = this._createAnt(colonyId, colony.nestX, colony.nestY);
+    colony.ants.push(ant);
+    return ant;
   }
 
   get allAnts(): Ant[] {
@@ -351,8 +366,9 @@ export class Simulation {
     this.tick++;
     this._runCommandsFor(this.tick);
 
-    const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
+      const evapRate = this.policy.evapRateForColony?.(colony, this.params.evapRate) ?? this.params.evapRate;
+      const decay = 1 - evapRate;
       colony.field.decay(decay);
       this._seedNest(colony);
       // Re-seed discovered food sources that still have food
@@ -371,7 +387,8 @@ export class Simulation {
   }
 
   private _moveAnt(ant: Ant, colony: Colony) {
-    const { tankMax, trailPower } = this.params;
+    const params = this.policy.paramsForAnt?.(ant, colony, this.params) ?? this.params;
+    const { tankMax, trailPower } = params;
     const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
     const dx = tpx - ant.x, dy = tpy - ant.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -382,7 +399,7 @@ export class Simulation {
         const deposit = Math.min(ant.tank, DEPOSIT_RATE);
         colony.field.add(ant.state === "searching" ? "home" : "food", ant.cx, ant.cy, deposit);
         ant.tank -= deposit;
-      } else if (this.params.cautionary) {
+      } else if (params.cautionary) {
         colony.field.add("caut", ant.cx, ant.cy, DEPOSIT_RATE);
       }
       const scale = V / dist;
@@ -454,7 +471,7 @@ export class Simulation {
     const ch: Channel = ant.state === "searching" ? "food" : "home";
     const next = powerChoice(
       candidates, colony.field, ch, trailPower, this.antsRng,
-      this.params.cautionary ? "caut" : null, trailPower,
+      params.cautionary ? "caut" : null, trailPower,
     );
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;

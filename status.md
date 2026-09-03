@@ -2,6 +2,7 @@
 
 ## Active
 
+- Port local two-player War Mode onto `@stigsim/sim-core`, preserving the prototype's survival behavior in a separately tested mode layer.
 - Point `stigsim.protocol-institute.org` (Cloudflare DNS) at GitHub Pages — repo side done, needs a CNAME DNS record added in Cloudflare.
 - Integrate and deploy Infinite Mode using one Railway simulation server and Neon Postgres.
 
