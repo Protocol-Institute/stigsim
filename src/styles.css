@@ -265,24 +265,6 @@ a {
   text-decoration: none;
 }
 
-.mode-home-link {
-  position: fixed;
-  z-index: 250;
-  left: 12px;
-  bottom: 12px;
-  padding: 7px 10px;
-  border: 1px solid rgba(160, 128, 96, 0.32);
-  border-radius: 8px;
-  color: #c7b99f;
-  background: rgba(15, 10, 4, 0.85);
-  backdrop-filter: blur(8px);
-  font-size: 0.7rem;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.mode-home-link:hover,
-.mode-home-link:focus-visible,
 .route-message__back:hover,
 .route-message__back:focus-visible {
   color: #f59e0b;
