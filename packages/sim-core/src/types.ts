@@ -94,9 +94,18 @@ export interface Colony {
   id: number;
   nestX: number;
   nestY: number;
-  homePhero: Float32Array;
-  foodPhero: Float32Array;
-  cautPhero: Float32Array;
+  field: FieldSet;
+  /**
+   * Dense views of the three channels.
+   *
+   * Temporary. The fingerprint, the metrics and the renderer still index these
+   * arrays directly; they move onto FieldSet in the commit that drops the dense
+   * compatibility views, and these go with them. Read-only because they are
+   * backed by the field rather than owned.
+   */
+  readonly homePhero: Float32Array;
+  readonly foodPhero: Float32Array;
+  readonly cautPhero: Float32Array;
   ants: Ant[];
   foodCollected: number;
   discoveredSources: Set<number>;

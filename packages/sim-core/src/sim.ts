@@ -2,8 +2,11 @@ import {
   COLS, ROWS, CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
   COLONY_NESTS, DIRS4, TRIP_WINDOW,
 } from "./constants";
-import type { Ant, AntState, CellType, Colony, FoodSource, Occupancy, SimParams } from "./types";
+import type {
+  Ant, AntState, CellType, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+} from "./types";
 import type { RunConfig } from "./types";
+import { DenseField } from "./field";
 import { DenseGrid, inBounds } from "./world";
 import { generateMaze } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
@@ -22,16 +25,20 @@ export function openNeighbours(occ: Occupancy, x: number, y: number, exX?: numbe
 
 export function powerChoice(
   cells: [number, number][],
-  phero: Float32Array,
+  field: FieldSet,
+  ch: Channel,
   power: number,
   rng: Rng,
-  cautPhero?: Float32Array,
-  cautPower?: number,
+  cautCh: Channel | null,
+  cautPower: number,
 ): [number, number] {
   const scores = cells.map(([cx, cy]) => {
-    const idx = cy * COLS + cx;
-    const trail = deterministicPow(phero[idx] + 1, power);
-    const caution = (cautPhero && cautPower) ? deterministicPow(cautPhero[idx] + 1, cautPower) : 1;
+    const trail = deterministicPow(field.get(ch, cx, cy) + 1, power);
+    // The truthiness test on cautPower is deliberate and preserved: an exponent
+    // of zero means no caution rather than a caution factor of one.
+    const caution = (cautCh !== null && cautPower)
+      ? deterministicPow(field.get(cautCh, cx, cy) + 1, cautPower)
+      : 1;
     return trail / caution;
   });
   const total = scores.reduce((a, b) => a + b, 0);
@@ -87,13 +94,17 @@ export class Simulation {
     return Array.from({ length: this.numColonies }, (_, id) => {
       const [nestX, nestY] = COLONY_NESTS[id];
       this.occupancy.setOpen(nestX, nestY, true);
+      const field = new DenseField(COLS, ROWS);
       return {
         id,
         nestX,
         nestY,
-        homePhero: new Float32Array(COLS * ROWS),
-        foodPhero: new Float32Array(COLS * ROWS),
-        cautPhero: new Float32Array(COLS * ROWS),
+        field,
+        // Views onto the field, not copies, so the readers still walking these
+        // arrays see live data until they move onto FieldSet.
+        get homePhero() { return field.layer("home"); },
+        get foodPhero() { return field.layer("food"); },
+        get cautPhero() { return field.layer("caut"); },
         ants: this._spawnAnts(id, nestX, nestY),
         foodCollected: 0,
         discoveredSources: new Set<number>(),
@@ -128,12 +139,11 @@ export class Simulation {
 
   private _seedNest(colony: Colony) {
     const { nestX, nestY } = colony;
-    colony.homePhero[nestY * COLS + nestX] = NEST_SEED;
+    colony.field.set("home", nestX, nestY, NEST_SEED);
     for (const [dx, dy] of DIRS4) {
       const nx = nestX + dx, ny = nestY + dy;
       if (this.occupancy.isOpen(nx, ny)) {
-        const idx = ny * COLS + nx;
-        colony.homePhero[idx] = Math.max(colony.homePhero[idx], NEST_SEED * 0.85);
+        colony.field.max("home", nx, ny, NEST_SEED * 0.85);
       }
     }
   }
@@ -339,17 +349,13 @@ export class Simulation {
 
     const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
-      for (let i = 0; i < colony.homePhero.length; i++) {
-        colony.homePhero[i] *= decay;
-        colony.foodPhero[i] *= decay;
-        colony.cautPhero[i] *= decay;
-      }
+      colony.field.decay(decay);
       this._seedNest(colony);
       // Re-seed discovered food sources that still have food
       for (const srcIdx of colony.discoveredSources) {
         const src = this.foodSources[srcIdx];
         if (src.remaining > 0) {
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
+          colony.field.set("food", src.x, src.y, NEST_SEED);
         }
       }
       for (const ant of colony.ants) this._moveAnt(ant, colony);
@@ -367,17 +373,13 @@ export class Simulation {
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > ARRIVE_THRESH) {
-      const idx = ant.cy * COLS + ant.cx;
+      // Deposit lands in the cell being left, not the one being approached.
       if (ant.tank > 0) {
         const deposit = Math.min(ant.tank, DEPOSIT_RATE);
-        if (ant.state === "searching") {
-          colony.homePhero[idx] += deposit;
-        } else {
-          colony.foodPhero[idx] += deposit;
-        }
+        colony.field.add(ant.state === "searching" ? "home" : "food", ant.cx, ant.cy, deposit);
         ant.tank -= deposit;
       } else if (this.params.cautionary) {
-        colony.cautPhero[idx] += DEPOSIT_RATE;
+        colony.field.add("caut", ant.cx, ant.cy, DEPOSIT_RATE);
       }
       const scale = V / dist;
       ant.x += dx * scale;
@@ -397,7 +399,7 @@ export class Simulation {
         colony.discoveredSources.add(srcIdx);
         if (src.remaining > 0) {
           src.remaining--;
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
+          colony.field.set("food", src.x, src.y, NEST_SEED);
           ant.state = "returning";
           ant.hasFood = true;
           ant.tank = tankMax;
@@ -445,10 +447,10 @@ export class Simulation {
     // an empty list.
     if (candidates.length === 0) return;
 
-    const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
+    const ch: Channel = ant.state === "searching" ? "food" : "home";
     const next = powerChoice(
-      candidates, phero, trailPower, this.antsRng,
-      this.params.cautionary ? colony.cautPhero : undefined, trailPower,
+      candidates, colony.field, ch, trailPower, this.antsRng,
+      this.params.cautionary ? "caut" : null, trailPower,
     );
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;
