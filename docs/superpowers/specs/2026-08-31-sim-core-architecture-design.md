@@ -1,6 +1,10 @@
 # `@stigsim/sim-core` — architecture
 
-**Status:** proposal
+**Status:** partly landed — steps 1 and 2 are on `main`, the storage seam is on
+`refactor/6-finish-extracting-the-simulation-core`. See
+[Amendments](#amendments-from-building-the-storage-seam) for where the built
+interfaces differ from what is proposed below; the proposal text is left as
+written so the changes are legible.
 **Date:** 2026-08-31
 
 ## Why
@@ -374,3 +378,98 @@ Ordering matters more than usual: three branches currently rewrite
 - No `Math.random` or bare `Math.pow` remains under `packages/`.
 - Each drift item is either reconciled or carries a comment saying why it is a
   deliberate mode-specific difference.
+
+## Amendments from building the storage seam
+
+**Date:** 2026-09-03 · Issue #6, step 3
+
+Eight things came out differently once the interfaces above were built against
+the golden trace. The proposal is left unedited; this section is the diff.
+
+### `FieldSet` needs `layers()`
+
+The six proposed methods give no canonical walk of a field, and `fingerprint`
+reinterprets each layer as `Uint32Array` and hashes every word. With
+`get/add/set/max/decay/drainEvicted` alone it has no source, and the golden
+trace cannot survive the refactor. The interface gained a seventh method:
+
+```ts
+/** Every stored word, in the backing's canonical order. */
+layers(): readonly Float32Array[];
+```
+
+`DenseField` returns home, food, caut — exactly the order `fingerprint` has
+always hashed. A chunked backing's order will be canonical for itself and
+deliberately not comparable to dense, since an evicted zero chunk does not hash
+like a dense run of zeros. That is why the dense-vs-chunked equivalence test has
+to compare trajectories rather than fingerprints.
+
+### `decay` does not name a threshold
+
+The proposal wrote `ChunkedField`'s 0.05 rule into the `FieldSet` comment. That
+is one backing's eviction policy, not the contract. The interface says only that
+every stored cell is multiplied and that a backing may drop regions, reporting
+them through `drainEvicted`.
+
+### Files stay flat, not in `field/` `world/` `movement/`
+
+`test:client` and `test:coverage` in the root `package.json` glob
+`packages/*/src/*.test.ts` — a single `*`. A test at
+`packages/sim-core/src/field/dense.test.ts` would never run, and coverage would
+still pass, because Node only reports on files it loaded. Either keep one file
+per interface at `src/` or change both globs in the same commit. The former was
+chosen while there is one implementation of each.
+
+### `Movement`, `EngineHooks` and `engine.ts` are deferred
+
+They are behaviour abstractions, not storage ones. Landing them alongside the
+storage seam doubles the diff against the same single golden test, introduces
+generics with one implementation to justify them, and adds hook call sites with
+no caller — which the 97% functions gate rejects. They land with `ChunkedField`
+and the server port, where `onCellsEvicted` finally has a consumer and
+`continuous.ts` makes `Movement` a real choice.
+
+### The world is a defaulted parameter, not a required one
+
+"The caller supplies the world" does not by itself unblock `sim-worlds`: a
+default still leaves the `sim.ts` → `maze.ts` edge. More importantly, making it
+required forces a decision the proposal does not make. A trace stores a
+*recipe* — `seeds.maze` plus `loopRate`, validated by `CONFIG_CHECKS` and
+rebuilt by `traceToRunConfig`. A recipe exists only for generated worlds;
+Infinite Mode has none. So a caller-supplied world in general means a trace must
+carry either a generator id, adding a `sim-trace` → `sim-worlds` edge, or a
+world snapshot, which is a format bump. That belongs to the commit that creates
+`sim-worlds`.
+
+### An unbounded world is refused, for now
+
+`Occupancy.bounds: null` is in the interface, but `Simulation` throws on it.
+Placing food iterates the whole world and `fingerprint` hashes it; neither has a
+defined meaning over unbounded space, and the proposal never says what they
+should do. That gets settled with `ChunkedField`, not before.
+
+### Three different answers on accessors, by call frequency
+
+- **`fingerprint`** walks `layers()` — raw arrays, no accessors.
+- **`metrics`** goes fully through `FieldSet.get`. It samples every ten ticks,
+  so the cost is under a millisecond and chunked compatibility comes free.
+- **The renderer stays on raw dense access**, hoisting `DenseField.layer` once
+  per colony per frame. It reads every cell of every channel each frame, and
+  `field.get` there goes megamorphic the moment a second backing exists —
+  typically 5–10× on a tight indexed loop. The cast lives in `src/render.ts`,
+  outside the package, with a comment that maze mode is dense by construction.
+
+Pretending one rule fits all three would have regressed the only loop that runs
+sixty times a second.
+
+### `computeHighwayScore` is gone
+
+It had no callers; `colonyHighwayScore` in `sim-trace/metrics.ts` is the live
+implementation and scores one colony rather than summing across all of them.
+
+### Still open, unchanged from the proposal
+
+Per-colony params, `discoveredSources` keying, the ant-position rename to
+`wx`/`wy`, and the third copy of `DEFAULT_PARAMS` remain drift items for the
+port. Two of them change `fingerprint` output, so they should land in one PR
+with a single `SIM_VERSION` bump.
