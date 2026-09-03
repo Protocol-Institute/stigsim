@@ -203,6 +203,22 @@ export class Simulation {
       }
     }
     this.numAnts = n;
+    this._reindexManualAnt();
+  }
+
+  /**
+   * Re-derives `manualAntIndex` from the `manual` flag.
+   *
+   * `manualAntIndex` addresses `allAnts`, which is every colony's ants
+   * concatenated, so resizing colony 0 shifts every index after it. The flag
+   * rides on the ant object and survives the move, which makes it — not the
+   * index — the durable record of which ant the caller chose. A shrink that
+   * drops the flagged ant leaves no flag to find, and control clears with it.
+   */
+  private _reindexManualAnt() {
+    if (this.manualAntIndex === null) return;
+    const idx = this.allAnts.findIndex(ant => ant.manual);
+    this.manualAntIndex = idx < 0 ? null : idx;
   }
 
   get totalFoodCollected(): number {
