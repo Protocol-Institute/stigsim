@@ -20,10 +20,19 @@ function build() {
   return new Simulation(config());
 }
 
+/** Every cell's openness, row-major, for comparing two worlds. */
+function openness(sim: Simulation): boolean[] {
+  const out: boolean[] = [];
+  for (let y = 0; y < sim.bounds.rows; y++) {
+    for (let x = 0; x < sim.bounds.cols; x++) out.push(sim.occupancy.isOpen(x, y));
+  }
+  return out;
+}
+
 test("a fresh simulation has a maze, one colony, and one food source", () => {
   const sim = build();
-  assert.equal(sim.grid.length, ROWS);
-  assert.equal(sim.grid[0].length, COLS);
+  assert.equal(sim.bounds.rows, ROWS);
+  assert.equal(sim.bounds.cols, COLS);
   assert.equal(sim.colonies.length, 1);
   assert.equal(sim.foodSources.length, 1);
   assert.equal(sim.allAnts.length, 20);
@@ -33,9 +42,9 @@ test("a fresh simulation has a maze, one colony, and one food source", () => {
 test("the nest cell and every food source sit on open ground", () => {
   const sim = build();
   const nest = sim.colonies[0];
-  assert.equal(sim.grid[nest.nestY][nest.nestX], 1);
+  assert.equal(sim.occupancy.isOpen(nest.nestX, nest.nestY), true);
   for (const src of sim.foodSources) {
-    assert.equal(sim.grid[src.y][src.x], 1);
+    assert.equal(sim.occupancy.isOpen(src.x, src.y), true);
   }
 });
 
@@ -63,7 +72,7 @@ test("the same seeds produce an identical run", () => {
   const b = new Simulation(c);
   for (let i = 0; i < 500; i++) { a.step(); b.step(); }
   assert.equal(a.totalFoodCollected, b.totalFoodCollected);
-  assert.deepEqual(a.grid, b.grid);
+  assert.deepEqual(openness(a), openness(b));
   assert.deepEqual(
     a.allAnts.map(x => [x.cx, x.cy]),
     b.allAnts.map(x => [x.cx, x.cy]),
@@ -79,7 +88,7 @@ test("holding the maze and food seeds fixed while varying ants keeps the map", (
   const a = new Simulation(base);
   const b = new Simulation(varied);
 
-  assert.deepEqual(a.grid, b.grid);
+  assert.deepEqual(openness(a), openness(b));
   assert.deepEqual(
     a.foodSources.map(s => [s.x, s.y]),
     b.foodSources.map(s => [s.x, s.y]),

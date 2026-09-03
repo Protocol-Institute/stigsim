@@ -1,4 +1,3 @@
-import { COLS, ROWS } from "./constants";
 import type { Simulation } from "./sim";
 
 export const FINGERPRINT_INTERVAL = 500;
@@ -52,8 +51,9 @@ export function fingerprint(sim: Simulation): string {
   h = mixF64(h, sim.params.tankMax);
   h = mixU32(h, sim.params.cautionary ? 1 : 0);
 
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) h = mixU32(h, sim.grid[y][x]);
+  const { cols, rows } = sim.bounds;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) h = mixU32(h, sim.occupancy.isOpen(x, y) ? 1 : 0);
   }
 
   for (const src of sim.foodSources) {
@@ -68,9 +68,9 @@ export function fingerprint(sim: Simulation): string {
     h = mixU32(h, colony.nestX);
     h = mixU32(h, colony.nestY);
     h = mixU32(h, colony.foodCollected);
-    h = mixLayer(h, colony.homePhero);
-    h = mixLayer(h, colony.foodPhero);
-    h = mixLayer(h, colony.cautPhero);
+    // Canonical order for the backing, which for a dense field is home, food,
+    // caut — the order this has always hashed.
+    for (const layer of colony.field.layers()) h = mixLayer(h, layer);
     for (const idx of [...colony.discoveredSources].sort((a, b) => a - b)) {
       h = mixU32(h, idx);
     }

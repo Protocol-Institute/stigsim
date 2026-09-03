@@ -20,7 +20,7 @@ function config(overrides: Partial<RunConfig> = {}): RunConfig {
 function editableCell(sim: Simulation): [number, number] {
   for (let y = 2; y < 28; y++) {
     for (let x = 2; x < 28; x++) {
-      if (sim.grid[y][x] !== 1) continue;
+      if (!sim.occupancy.isOpen(x, y)) continue;
       if (sim.colonies.some(c => c.nestX === x && c.nestY === y)) continue;
       if (sim.foodSources.some(s => s.x === x && s.y === y)) continue;
       return [x, y];
@@ -43,10 +43,10 @@ test("an enqueued command applies on the next step and is recorded at that tick"
   const [x, y] = editableCell(sim);
 
   sim.enqueue({ kind: "setWall", x, y, open: false });
-  assert.equal(sim.grid[y][x], 1, "not applied before the step");
+  assert.equal(sim.occupancy.isOpen(x, y), true, "not applied before the step");
 
   sim.step();
-  assert.equal(sim.grid[y][x], 0, "applied during the step");
+  assert.equal(sim.occupancy.isOpen(x, y), false, "applied during the step");
   assert.deepEqual(sim.commandLog, [{ t: 1, cmd: { kind: "setWall", x, y, open: false } }]);
 });
 
@@ -65,7 +65,7 @@ test("flushPending applies immediately but records one tick ahead", () => {
   sim.enqueue({ kind: "setWall", x, y, open: false });
   sim.flushPending();
   assert.equal(sim.tick, 0, "does not advance time");
-  assert.equal(sim.grid[y][x], 0, "applied immediately");
+  assert.equal(sim.occupancy.isOpen(x, y), false, "applied immediately");
   // Stamped t: 1, not t: 0: replay applies a t: 1 command at the top of tick
   // 1, before tick 1's physics runs, which is where a pre-start edit belongs.
   assert.deepEqual(sim.commandLog, [{ t: 1, cmd: { kind: "setWall", x, y, open: false } }]);
@@ -80,8 +80,8 @@ test("walls refuse to close over a nest or a food source", () => {
   sim.enqueue({ kind: "setWall", x: food.x, y: food.y, open: false });
   sim.step();
 
-  assert.equal(sim.grid[nest.nestY][nest.nestX], 1);
-  assert.equal(sim.grid[food.y][food.x], 1);
+  assert.equal(sim.occupancy.isOpen(nest.nestX, nest.nestY), true);
+  assert.equal(sim.occupancy.isOpen(food.x, food.y), true);
 });
 
 test("closing a wall clears any ant targeting that cell", () => {
@@ -184,7 +184,7 @@ test("setFood refuses walls and nests", () => {
   let wall: [number, number] | null = null;
   for (let y = 1; y < 30 && !wall; y++)
     for (let x = 1; x < 30 && !wall; x++)
-      if (sim.grid[y][x] === 0) wall = [x, y];
+      if (!sim.occupancy.isOpen(x, y)) wall = [x, y];
   assert.ok(wall);
 
   const before = sim.foodSources.length;
@@ -225,7 +225,7 @@ test("moveManualAnt retargets the controlled ant and refuses walls", () => {
 
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
     const nx = ant.cx + dx, ny = ant.cy + dy;
-    const open = nx >= 0 && nx < 31 && ny >= 0 && ny < 31 && sim.grid[ny][nx] === 1;
+    const open = sim.occupancy.isOpen(nx, ny);
     const before: [number, number] = [ant.tx, ant.ty];
     sim.enqueue({ kind: "moveManualAnt", dx, dy });
     sim.flushPending();
@@ -250,7 +250,7 @@ test("a loaded schedule replays commands at the recorded ticks", () => {
   for (let i = 0; i < 60; i++) replay.step();
 
   assert.deepEqual(replay.commandLog, live.commandLog);
-  assert.equal(replay.grid[y][x], 0);
+  assert.equal(replay.occupancy.isOpen(x, y), false);
   assert.equal(replay.params.evapRate, 0.01);
   assert.equal(replay.totalFoodCollected, live.totalFoodCollected);
 });
@@ -261,7 +261,7 @@ test("a schedule entry at tick 0 applies when the schedule loads", () => {
   const [x, y] = editableCell(sim);
   sim.loadSchedule([{ t: 0, cmd: { kind: "setWall", x, y, open: false } }]);
   assert.equal(sim.tick, 0);
-  assert.equal(sim.grid[y][x], 0);
+  assert.equal(sim.occupancy.isOpen(x, y), false);
 });
 
 test("isCommand accepts valid commands and rejects malformed input", () => {

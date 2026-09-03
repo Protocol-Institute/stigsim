@@ -26,7 +26,7 @@ function recordRun(): { trace: Trace; sim: Simulation } {
   const editable = (() => {
     for (let y = 2; y < 28; y++) {
       for (let x = 2; x < 28; x++) {
-        if (sim.grid[y][x] !== 1) continue;
+        if (!sim.occupancy.isOpen(x, y)) continue;
         if (sim.colonies.some(c => c.nestX === x && c.nestY === y)) continue;
         if (sim.foodSources.some(s => s.x === x && s.y === y)) continue;
         return [x, y] as [number, number];

@@ -1,5 +1,5 @@
-import { COLS, ROWS, DIRS4 } from "@stigsim/sim-core";
-import type { CellType, Colony } from "@stigsim/sim-core";
+import { DIRS4 } from "@stigsim/sim-core";
+import type { Channel, Colony, FieldSet, Occupancy } from "@stigsim/sim-core";
 import type { Simulation } from "@stigsim/sim-core";
 
 export const METRICS_INTERVAL = 10;
@@ -28,24 +28,29 @@ export interface MetricsSample {
 }
 
 /** Breadth-first distance in cells from the nest. -1 means unreachable. */
-export function shortestFromNest(grid: CellType[][], nestX: number, nestY: number): Int32Array {
-  const dist = new Int32Array(COLS * ROWS).fill(-1);
-  if (grid[nestY][nestX] !== 1) return dist;
+export function shortestFromNest(
+  occ: Occupancy,
+  bounds: { cols: number; rows: number },
+  nestX: number,
+  nestY: number,
+): Int32Array {
+  const { cols, rows } = bounds;
+  const dist = new Int32Array(cols * rows).fill(-1);
+  if (!occ.isOpen(nestX, nestY)) return dist;
 
-  const queue = new Int32Array(COLS * ROWS);
+  const queue = new Int32Array(cols * rows);
   let head = 0, tail = 0;
-  dist[nestY * COLS + nestX] = 0;
-  queue[tail++] = nestY * COLS + nestX;
+  dist[nestY * cols + nestX] = 0;
+  queue[tail++] = nestY * cols + nestX;
 
   while (head < tail) {
     const idx = queue[head++];
-    const x = idx % COLS;
-    const y = (idx - x) / COLS;
+    const x = idx % cols;
+    const y = (idx - x) / cols;
     for (const [dx, dy] of DIRS4) {
       const nx = x + dx, ny = y + dy;
-      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
-      if (grid[ny][nx] !== 1) continue;
-      const nIdx = ny * COLS + nx;
+      if (!occ.isOpen(nx, ny)) continue;
+      const nIdx = ny * cols + nx;
       if (dist[nIdx] !== -1) continue;
       dist[nIdx] = dist[idx] + 1;
       queue[tail++] = nIdx;
@@ -56,12 +61,12 @@ export function shortestFromNest(grid: CellType[][], nestX: number, nestY: numbe
 
 /** The share of a colony's pheromone mass carried by its busiest tenth of cells. */
 export function colonyHighwayScore(sim: Simulation, colony: Colony): number {
+  const { cols, rows } = sim.bounds;
   const open: number[] = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (sim.grid[y][x] !== 1) continue;
-      const idx = y * COLS + x;
-      open.push(colony.foodPhero[idx] + colony.homePhero[idx]);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!sim.occupancy.isOpen(x, y)) continue;
+      open.push(colony.field.get("food", x, y) + colony.field.get("home", x, y));
     }
   }
   if (open.length === 0) return 0;
@@ -73,22 +78,28 @@ export function colonyHighwayScore(sim: Simulation, colony: Colony): number {
   return topSum / total;
 }
 
-function layerStats(layer: Float32Array, openIdx: Int32Array): { mass: number; entropy: number } {
+function layerStats(
+  field: FieldSet,
+  ch: Channel,
+  openCells: Int32Array,
+): { mass: number; entropy: number } {
   let mass = 0;
-  for (let i = 0; i < openIdx.length; i++) mass += layer[openIdx[i]];
+  for (let i = 0; i < openCells.length; i += 2) mass += field.get(ch, openCells[i], openCells[i + 1]);
   if (mass <= 0) return { mass: 0, entropy: 0 };
   let entropy = 0;
-  for (let i = 0; i < openIdx.length; i++) {
-    const p = layer[openIdx[i]] / mass;
+  for (let i = 0; i < openCells.length; i += 2) {
+    const p = field.get(ch, openCells[i], openCells[i + 1]) / mass;
     if (p > 0) entropy -= p * Math.log(p);
   }
   return { mass, entropy };
 }
 
-function openCellIndices(sim: Simulation): Int32Array {
+/** Open cells as packed pairs: x at even offsets, y at odd. */
+function openCells(sim: Simulation): Int32Array {
+  const { cols, rows } = sim.bounds;
   const out: number[] = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) if (sim.grid[y][x] === 1) out.push(y * COLS + x);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) if (sim.occupancy.isOpen(x, y)) out.push(x, y);
   }
   return Int32Array.from(out);
 }
@@ -133,19 +144,22 @@ export class MetricsRecorder {
 
   private distances(sim: Simulation): Int32Array[] {
     if (this.distCache && this.distCacheVersion === sim.gridVersion) return this.distCache;
-    this.distCache = sim.colonies.map(c => shortestFromNest(sim.grid, c.nestX, c.nestY));
+    this.distCache = sim.colonies.map(
+      c => shortestFromNest(sim.occupancy, sim.bounds, c.nestX, c.nestY),
+    );
     this.distCacheVersion = sim.gridVersion;
     return this.distCache;
   }
 
   private sample(sim: Simulation): MetricsSample {
-    const openIdx = openCellIndices(sim);
+    const cells = openCells(sim);
     const dists = this.distances(sim);
+    const { cols } = sim.bounds;
 
     const colonies: ColonySample[] = sim.colonies.map((colony, i) => {
-      const home = layerStats(colony.homePhero, openIdx);
-      const food = layerStats(colony.foodPhero, openIdx);
-      const caut = layerStats(colony.cautPhero, openIdx);
+      const home = layerStats(colony.field, "home", cells);
+      const food = layerStats(colony.field, "food", cells);
+      const caut = layerStats(colony.field, "caut", cells);
 
       if (!this.rateHistory[i]) this.rateHistory[i] = [];
       const history = this.rateHistory[i];
@@ -160,7 +174,7 @@ export class MetricsRecorder {
       const dist = dists[i];
       const ratios: number[] = [];
       for (const trip of colony.recentTrips) {
-        const shortest = dist[trip.sy * COLS + trip.sx];
+        const shortest = dist[trip.sy * cols + trip.sx];
         if (shortest > 0) ratios.push(trip.steps / (2 * shortest));
       }
       const meanTripRatio = ratios.length > 0

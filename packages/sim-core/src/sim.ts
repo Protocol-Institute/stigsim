@@ -1,9 +1,9 @@
 import {
-  COLS, ROWS, CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
+  CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
   COLONY_NESTS, DIRS4, TRIP_WINDOW,
 } from "./constants";
 import type {
-  Ant, AntState, CellType, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+  Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
 } from "./types";
 import type { RunConfig } from "./types";
 import { DenseField } from "./field";
@@ -94,17 +94,12 @@ export class Simulation {
     return Array.from({ length: this.numColonies }, (_, id) => {
       const [nestX, nestY] = COLONY_NESTS[id];
       this.occupancy.setOpen(nestX, nestY, true);
-      const field = new DenseField(COLS, ROWS);
+      const field = new DenseField(this.bounds.cols, this.bounds.rows);
       return {
         id,
         nestX,
         nestY,
         field,
-        // Views onto the field, not copies, so the readers still walking these
-        // arrays see live data until they move onto FieldSet.
-        get homePhero() { return field.layer("home"); },
-        get foodPhero() { return field.layer("food"); },
-        get cautPhero() { return field.layer("caut"); },
         ants: this._spawnAnts(id, nestX, nestY),
         foodCollected: 0,
         discoveredSources: new Set<number>(),
@@ -114,14 +109,15 @@ export class Simulation {
   }
 
   private _placeFoodSources(rng: Rng): FoodSource[] {
-    const nestSet = new Set(this.colonies.map(c => c.nestY * COLS + c.nestX));
+    const { cols, rows } = this.bounds;
+    const nestSet = new Set(this.colonies.map(c => c.nestY * cols + c.nestX));
     // Minimum Manhattan distance from any nest
-    const minDist = Math.floor(Math.min(COLS, ROWS) / 4);
+    const minDist = Math.floor(Math.min(cols, rows) / 4);
     const open: [number, number][] = [];
-    for (let y = 2; y < ROWS - 2; y++) {
-      for (let x = 2; x < COLS - 2; x++) {
+    for (let y = 2; y < rows - 2; y++) {
+      for (let x = 2; x < cols - 2; x++) {
         if (!this.occupancy.isOpen(x, y)) continue;
-        if (nestSet.has(y * COLS + x)) continue;
+        if (nestSet.has(y * cols + x)) continue;
         const farEnough = this.colonies.every(
           c => Math.abs(c.nestX - x) + Math.abs(c.nestY - y) >= minDist
         );
@@ -163,17 +159,6 @@ export class Simulation {
       lastSourceX: null,
       lastSourceY: null,
     }));
-  }
-
-  /**
-   * The raw cell grid.
-   *
-   * Temporary. The fingerprint, the metrics and the renderer still walk this
-   * array directly; they move onto Occupancy in the commit that drops the dense
-   * compatibility views, and this goes with them.
-   */
-  get grid(): CellType[][] {
-    return (this.occupancy as DenseGrid).cells;
   }
 
   get allAnts(): Ant[] {
