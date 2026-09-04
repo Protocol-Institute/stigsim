@@ -169,7 +169,7 @@ test("a caller can supply a world that is not a maze", () => {
     createField: () => new DenseField(size, size),
   };
 
-  const sim = new Simulation(config({ numAnts: 12, foodPerSource: 200 }), room);
+  const sim = new Simulation(config({ numAnts: 12, foodPerSource: 200 }), { world: room });
 
   assert.deepEqual(sim.bounds, { cols: size, rows: size });
   assert.equal(sim.colonies[0].nestX, 1);
@@ -194,7 +194,7 @@ test("an unbounded world is refused", () => {
   // Placing food walks the whole world and the fingerprint hashes it, and
   // neither has a meaning over unbounded space. The chunked backing settles
   // that; until then this is refused rather than silently wrong.
-  assert.throws(() => new Simulation(config(), unbounded), RangeError);
+  assert.throws(() => new Simulation(config(), { world: unbounded }), RangeError);
 });
 
 test("an ant sealed into its cell does not crash the simulation", () => {

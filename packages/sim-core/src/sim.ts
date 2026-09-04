@@ -3,7 +3,8 @@ import {
   DIRS4, TRIP_WINDOW,
 } from "./constants";
 import type {
-  Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams, WorldSpec,
+  Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+  SimulationOptions, WorldSpec,
 } from "./types";
 import type { RunConfig } from "./types";
 import { inBounds } from "./world";
@@ -70,18 +71,8 @@ export class Simulation {
   private recorded: TimedCommand[] = [];
   private schedule: Map<number, Command[]> | null = null;
 
-  /**
-   * The world defaults to a maze built from the run's seed, so every existing
-   * caller is unchanged. It stays a default rather than becoming required
-   * because a trace stores a recipe — a maze seed and a loop rate — and a
-   * caller-supplied world in general has no recipe to store. Settling how a
-   * trace names an arbitrary world belongs with the package that generates
-   * them, not with a refactor whose contract is that nothing moves.
-   */
-  constructor(
-    config: RunConfig,
-    world: WorldSpec = mazeWorld(config.loopRate, makeRng(config.seeds.maze)),
-  ) {
+  constructor(config: RunConfig, options: SimulationOptions = {}) {
+    const world = options.world ?? mazeWorld(config.loopRate, makeRng(config.seeds.maze));
     this.config = config;
     this.numAnts = config.numAnts;
     this.params = { ...config.params };
