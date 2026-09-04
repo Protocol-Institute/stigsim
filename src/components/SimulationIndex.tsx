@@ -9,9 +9,7 @@ type SimulationCardProps = {
 function SimulationCard({ eyebrow, title, description, href, accent }: SimulationCardProps) {
   return (
     <a className="simulation-card" href={href} style={{ "--card-accent": accent } as React.CSSProperties}>
-      <div className="simulation-card__topline">
-        <span className="simulation-card__eyebrow">{eyebrow}</span>
-      </div>
+      <span className="simulation-card__eyebrow">{eyebrow}</span>
       <h2>{title}</h2>
       <p>{description}</p>
       <span className="simulation-card__action">
@@ -22,7 +20,7 @@ function SimulationCard({ eyebrow, title, description, href, accent }: Simulatio
   );
 }
 
-export default function SimulationIndex() {
+export default function SimulationIndex({ href }: { href: (pathname: string) => string }) {
   return (
     <main className="simulation-index">
       <header className="simulation-index__header">
@@ -39,28 +37,28 @@ export default function SimulationIndex() {
           eyebrow="Local · Sandbox"
           title="Maze Simulator"
           description="Generate a maze, tune colony behavior, and run reproducible experiments in your browser."
-          href="/maze"
+          href={href("/maze")}
           accent="#f59e0b"
         />
         <SimulationCard
           eyebrow="Online · Persistent world"
           title="Infinite World"
           description="Shape one continuous shared environment whose colonies and terrain persist between visits."
-          href="/infinite"
+          href={href("/infinite")}
           accent="#4ade80"
         />
         <SimulationCard
           eyebrow="Local · Two players"
           title="Local War Mode"
           description="Control two competing colonies side by side."
-          href="/war"
+          href={href("/war")}
           accent="#60a5fa"
         />
         <SimulationCard
           eyebrow="Online · Multiplayer"
           title="Online War Mode"
           description="Create, join, or spectate a server-authoritative match."
-          href="/multiplayer"
+          href={href("/multiplayer")}
           accent="#fb7185"
         />
       </section>

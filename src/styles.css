@@ -98,14 +98,11 @@ a {
   transform: translateY(-3px);
   border-color: color-mix(in srgb, var(--card-accent) 55%, #382c1e);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.26), inset 3px 0 0 var(--card-accent);
-  outline: none;
 }
 
-.simulation-card__topline {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
+.simulation-card:focus-visible {
+  outline: 2px solid var(--card-accent);
+  outline-offset: 3px;
 }
 
 .simulation-card__eyebrow {
@@ -204,7 +201,42 @@ a {
 .route-message__back:hover,
 .route-message__back:focus-visible {
   color: #f59e0b;
-  outline: none;
+}
+
+.route-message__back:focus-visible,
+.route-message__primary:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 3px;
+}
+
+.simulation-backlink {
+  position: fixed;
+  z-index: 100;
+  bottom: 16px;
+  left: 16px;
+  padding: 7px 11px;
+  border: 1px solid rgba(185, 166, 135, 0.28);
+  border-radius: 999px;
+  color: #b9a687;
+  background: rgba(15, 10, 4, 0.82);
+  backdrop-filter: blur(8px);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-decoration: none;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.2);
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.simulation-backlink:hover,
+.simulation-backlink:focus-visible {
+  color: #f4ead7;
+  border-color: rgba(245, 158, 11, 0.7);
+  background: rgba(31, 23, 15, 0.95);
+}
+
+.simulation-backlink:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 3px;
 }
 
 @media (max-width: 720px) {

@@ -1,7 +1,12 @@
-export default function ComingSoon({ mode }: { mode: "Local War Mode" | "Online War Mode" }) {
+type ComingSoonProps = {
+  mode: string;
+  href: (pathname: string) => string;
+};
+
+export default function ComingSoon({ mode, href }: ComingSoonProps) {
   return (
     <main className="route-message">
-      <a className="route-message__back" href="/">← All simulations</a>
+      <a className="route-message__back" href={href("/")}>← All simulations</a>
       <div className="route-message__panel">
         <span className="route-message__status">Coming soon</span>
         <h1>{mode}</h1>
@@ -9,7 +14,7 @@ export default function ComingSoon({ mode }: { mode: "Local War Mode" | "Online 
           This route is reserved for the War Mode integration. The existing prototype is being
           brought into the shared simulation architecture in focused, reviewable steps.
         </p>
-        <a className="route-message__primary" href="/maze">Play the Maze Simulator</a>
+        <a className="route-message__primary" href={href("/maze")}>Play the Maze Simulator</a>
       </div>
     </main>
   );

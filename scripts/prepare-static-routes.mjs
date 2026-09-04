@@ -13,6 +13,11 @@ const entryHtml = await readFile(entryPage, "utf8");
 // resolve client-side instead of showing the hosting provider's 404 page.
 await copyFile(entryPage, fallbackPage);
 
+const fallbackHtml = await readFile(fallbackPage, "utf8");
+if (fallbackHtml !== entryHtml) {
+  throw new Error("Static route verification failed for /404.html");
+}
+
 for (const route of staticRoutes) {
   const routeDir = resolve(outputDir, route);
   const routePage = resolve(routeDir, "index.html");
