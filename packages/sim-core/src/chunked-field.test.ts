@@ -63,7 +63,22 @@ test("decay drops a spent chunk and reports its key once", () => {
 
   // chunkCoord(100) is 12 at a chunk size of 8.
   assert.deepEqual(field.drainEvicted(), ["12,12"]);
-  assert.deepEqual(field.drainEvicted(), [], "a drain empties the list");
+  assert.deepEqual(field.drainEvicted(), [], "a drain empties the pending keys");
+});
+
+test("repeated eviction of one chunk does not accumulate", () => {
+  const field = new ChunkedField({ chunkSize: 8 });
+
+  // Allocate, evict, repeat, without draining in between. The consumer erases
+  // by key, so what matters is the set of chunks to erase, not how many times
+  // each was evicted. A list here would grow one entry per cycle for as long
+  // as the world runs undrained.
+  for (let i = 0; i < 5_000; i++) {
+    field.set("home", 100, 100, 10);
+    field.decay(0);
+  }
+
+  assert.deepEqual(field.drainEvicted(), ["12,12"]);
 });
 
 test("a chunk survives while home or food stays above the threshold", () => {
