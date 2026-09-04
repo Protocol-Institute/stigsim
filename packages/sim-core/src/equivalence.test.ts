@@ -75,8 +75,8 @@ test("dense and chunked backings run identically from one seed", () => {
   const { dense, chunked } = worlds(0);
   const config = runConfig();
 
-  const a = new Simulation(config, dense);
-  const b = new Simulation(config, chunked);
+  const a = new Simulation(config, { world: dense });
+  const b = new Simulation(config, { world: chunked });
 
   assert.deepEqual(
     b.foodSources, a.foodSources,
