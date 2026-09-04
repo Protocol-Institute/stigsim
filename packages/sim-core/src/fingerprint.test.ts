@@ -49,7 +49,7 @@ test("a single differing wall changes the fingerprint", () => {
   let target: [number, number] | null = null;
   for (let y = 2; y < 28 && !target; y++) {
     for (let x = 2; x < 28 && !target; x++) {
-      if (b.grid[y][x] !== 1) continue;
+      if (!b.occupancy.isOpen(x, y)) continue;
       if (b.colonies.some(k => k.nestX === x && k.nestY === y)) continue;
       if (b.foodSources.some(s => s.x === x && s.y === y)) continue;
       target = [x, y];
@@ -67,7 +67,9 @@ test("a differing pheromone value changes the fingerprint", () => {
   const b = new Simulation(c);
   for (let i = 0; i < 50; i++) { a.step(); b.step(); }
   assert.equal(fingerprint(a), fingerprint(b));
-  b.colonies[0].foodPhero[400] += 1e-6;
+  // One cell, one channel, the smallest perturbation that survives a float32
+  // round trip. (28, 12) was flat index 400 when the field was one flat array.
+  b.colonies[0].field.add("food", 28, 12, 1e-6);
   assert.notEqual(fingerprint(a), fingerprint(b));
 });
 

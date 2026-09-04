@@ -76,7 +76,11 @@ class InfiniteColony implements ColonyInfo {
   bornAtTick: number;
   discoveredSources: Set<string> = new Set(); // "x,y" coordinate keys
   pheroChunks: Map<string, PheroChunk> = new Map();
-  recentlyClearedChunks: string[] = []; // chunks deleted since last phero broadcast
+  // Chunks deleted since the last phero broadcast, for clients to erase. A set,
+  // not a list: a chunk can be allocated, evicted, re-allocated and evicted
+  // again many times between broadcasts, and the client erases by key, so
+  // repeats are pure waste.
+  recentlyClearedChunks: Set<string> = new Set();
   ants: Ant[] = [];
 
   constructor(id: number, nestX: number, nestY: number, params: ColonyParams, bornAtTick: number) {
@@ -134,8 +138,15 @@ class InfiniteColony implements ColonyInfo {
     }
     for (const k of toDelete) {
       this.pheroChunks.delete(k);
-      this.recentlyClearedChunks.push(k); // tell clients to erase this chunk
+      this.recentlyClearedChunks.add(k); // tell clients to erase this chunk
     }
+  }
+
+  /** Drain the cleared-chunk keys accumulated since the last call. */
+  takeClearedChunks(): string[] {
+    const keys = [...this.recentlyClearedChunks];
+    this.recentlyClearedChunks.clear();
+    return keys;
   }
 
   info(): ColonyInfo {
@@ -484,10 +495,21 @@ export class InfiniteSimulation {
     };
   }
 
+  /**
+   * Discard cleared-chunk bookkeeping without building a broadcast.
+   *
+   * serializePhero is the only other drain, and the host skips it when nobody
+   * is connected. Without this the set grows for as long as the world runs
+   * unattended, which on a persistent server is indefinitely.
+   */
+  dropPheroBookkeeping() {
+    for (const colony of this.colonies) colony.recentlyClearedChunks.clear();
+  }
+
   serializePhero() {
     return this.colonies.map(colony => {
       // Drain cleared list — client must erase these chunks
-      const cleared = colony.recentlyClearedChunks.splice(0);
+      const cleared = colony.takeClearedChunks();
 
       const chunks: { key: string; home: number[]; food: number[] }[] = [];
       for (const [key, chunk] of colony.pheroChunks) {
