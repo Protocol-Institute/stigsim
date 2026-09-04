@@ -6,7 +6,6 @@ type ComingSoonProps = {
 export default function ComingSoon({ mode, href }: ComingSoonProps) {
   return (
     <main className="route-message">
-      <a className="route-message__back" href={href("/")}>← All simulations</a>
       <div className="route-message__panel">
         <span className="route-message__status">Coming soon</span>
         <h1>{mode}</h1>

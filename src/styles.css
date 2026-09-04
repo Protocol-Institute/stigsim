@@ -146,15 +146,6 @@ a {
   background: radial-gradient(circle at 50% 20%, #24180c, #100d0b 45%);
 }
 
-.route-message__back {
-  position: absolute;
-  top: 24px;
-  left: 24px;
-  color: #b9a687;
-  font-size: 0.78rem;
-  text-decoration: none;
-}
-
 .route-message__panel {
   width: min(580px, 100%);
   padding: clamp(28px, 6vw, 52px);
@@ -198,12 +189,6 @@ a {
   text-decoration: none;
 }
 
-.route-message__back:hover,
-.route-message__back:focus-visible {
-  color: #f59e0b;
-}
-
-.route-message__back:focus-visible,
 .route-message__primary:focus-visible {
   outline: 2px solid #f59e0b;
   outline-offset: 3px;

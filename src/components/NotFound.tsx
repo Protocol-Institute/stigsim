@@ -1,7 +1,6 @@
 export default function NotFound({ href }: { href: (pathname: string) => string }) {
   return (
     <main className="route-message">
-      <a className="route-message__back" href={href("/")}>← All simulations</a>
       <div className="route-message__panel">
         <span className="route-message__status">404</span>
         <h1>That route does not exist</h1>

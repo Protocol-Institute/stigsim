@@ -11,13 +11,16 @@ export default function App() {
   const href = (pathname: string) => appHref(pathname, basePath);
 
   if (route === "index") return <SimulationIndex href={href} />;
-  if (route === "war") return <ComingSoon mode="Local War Mode" href={href} />;
-  if (route === "multiplayer") return <ComingSoon mode="Online War Mode" href={href} />;
-  if (route === "not-found") return <NotFound href={href} />;
+
+  let content;
+  if (route === "war") content = <ComingSoon mode="Local War Mode" href={href} />;
+  else if (route === "multiplayer") content = <ComingSoon mode="Online War Mode" href={href} />;
+  else if (route === "not-found") content = <NotFound href={href} />;
+  else content = route === "maze" ? <AntSim /> : <InfiniteSim />;
 
   return (
     <>
-      {route === "maze" ? <AntSim /> : <InfiniteSim />}
+      {content}
       <a className="simulation-backlink" href={href("/")}>← All simulations</a>
     </>
   );
