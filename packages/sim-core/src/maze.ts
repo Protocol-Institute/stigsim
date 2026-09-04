@@ -1,5 +1,7 @@
 import { COLS, ROWS, COLONY_NESTS } from "./constants";
-import type { CellType } from "./types";
+import type { CellType, WorldSpec } from "./types";
+import { DenseField } from "./field";
+import { DenseGrid } from "./world";
 import { shuffleInPlace, type Rng } from "./rng";
 
 export function generateMaze(loopRate: number, rng: Rng): CellType[][] {
@@ -27,4 +29,19 @@ export function generateMaze(loopRate: number, rng: Rng): CellType[][] {
   // Ensure all colony nest corners are open
   for (const [nx, ny] of COLONY_NESTS) grid[ny][nx] = 1;
   return grid;
+}
+
+/**
+ * The maze sandbox as a world a Simulation can be handed.
+ *
+ * This is what a Simulation builds for itself by default, so it is also the
+ * shape any other world has to take: somewhere open, nests, and a way to
+ * allocate a colony's field.
+ */
+export function mazeWorld(loopRate: number, rng: Rng): WorldSpec {
+  return {
+    occupancy: new DenseGrid(generateMaze(loopRate, rng)),
+    nests: COLONY_NESTS,
+    createField: () => new DenseField(COLS, ROWS),
+  };
 }

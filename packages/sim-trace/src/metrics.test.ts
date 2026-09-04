@@ -23,16 +23,16 @@ function config(overrides: Partial<RunConfig> = {}): RunConfig {
 test("shortestFromNest measures reachable cells and marks the rest -1", () => {
   const sim = new Simulation(config());
   const nest = sim.colonies[0];
-  const dist = shortestFromNest(sim.grid, nest.nestX, nest.nestY);
+  const dist = shortestFromNest(sim.occupancy, sim.bounds, nest.nestX, nest.nestY);
 
-  assert.equal(dist.length, COLS * sim.grid.length);
+  assert.equal(dist.length, COLS * sim.bounds.rows);
   assert.equal(dist[nest.nestY * COLS + nest.nestX], 0);
   for (const src of sim.foodSources) {
     assert.ok(dist[src.y * COLS + src.x] > 0, "food should be reachable from the nest");
   }
-  for (let y = 0; y < sim.grid.length; y++) {
+  for (let y = 0; y < sim.bounds.rows; y++) {
     for (let x = 0; x < COLS; x++) {
-      if (sim.grid[y][x] === 0) assert.equal(dist[y * COLS + x], -1);
+      if (!sim.occupancy.isOpen(x, y)) assert.equal(dist[y * COLS + x], -1);
     }
   }
 });

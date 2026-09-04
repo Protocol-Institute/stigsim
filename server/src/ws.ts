@@ -204,7 +204,12 @@ const tickInterval = setInterval(() => {
 
 // Broadcast pheromones at ~2 fps
 const pheroInterval = setInterval(() => {
-  if (clients.size === 0) return;
+  if (clients.size === 0) {
+    // Nobody to tell, but the sim keeps evicting chunks. Drop the bookkeeping
+    // rather than letting it accumulate until someone connects.
+    sim.dropPheroBookkeeping();
+    return;
+  }
   const pheroData = sim.serializePhero();
   if (!pheroData.some(c => c.chunks.length > 0)) return;
   const msg = JSON.stringify({ type: "phero", colonies: pheroData });

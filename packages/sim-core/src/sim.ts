@@ -1,58 +1,44 @@
 import {
-  COLS, ROWS, CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
-  COLONY_NESTS, DIRS4, TRIP_WINDOW,
+  CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
+  DIRS4, TRIP_WINDOW,
 } from "./constants";
-import type { Ant, AntState, CellType, Colony, FoodSource, SimParams } from "./types";
+import type {
+  Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+  SimulationOptions, WorldSpec,
+} from "./types";
 import type { RunConfig } from "./types";
-import { generateMaze } from "./maze";
+import { inBounds } from "./world";
+import { mazeWorld } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
 import type { Command, TimedCommand } from "./commands";
 import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
-export function computeHighwayScore(sim: Simulation): number {
-  const open: number[] = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (sim.grid[y][x] === 1) {
-        const idx = y * COLS + x;
-        let total = 0;
-        for (const c of sim.colonies) total += c.foodPhero[idx] + c.homePhero[idx];
-        open.push(total);
-      }
-    }
-  }
-  if (open.length === 0) return 0;
-  const total = open.reduce((a, b) => a + b, 0);
-  if (total < 1) return 0;
-  open.sort((a, b) => b - a);
-  const topN = Math.max(1, Math.floor(open.length * 0.1));
-  const topSum = open.slice(0, topN).reduce((a, b) => a + b, 0);
-  return topSum / total;
-}
-
-export function openNeighbours(grid: CellType[][], x: number, y: number, exX?: number, exY?: number): [number, number][] {
+export function openNeighbours(occ: Occupancy, x: number, y: number, exX?: number, exY?: number): [number, number][] {
+  // isOpen reports out-of-bounds cells as closed, so the explicit bounds test
+  // this used to carry is folded into the lookup.
   return DIRS4
     .map(([dx, dy]) => [x + dx, y + dy] as [number, number])
-    .filter(([nx, ny]) =>
-      nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
-      grid[ny][nx] === 1 && !(nx === exX && ny === exY)
-    );
+    .filter(([nx, ny]) => occ.isOpen(nx, ny) && !(nx === exX && ny === exY));
 }
 
 export function powerChoice(
   cells: [number, number][],
-  phero: Float32Array,
+  field: FieldSet,
+  ch: Channel,
   power: number,
   rng: Rng,
-  cautPhero?: Float32Array,
-  cautPower?: number,
+  cautCh: Channel | null,
+  cautPower: number,
 ): [number, number] {
   const scores = cells.map(([cx, cy]) => {
-    const idx = cy * COLS + cx;
-    const trail = deterministicPow(phero[idx] + 1, power);
-    const caution = (cautPhero && cautPower) ? deterministicPow(cautPhero[idx] + 1, cautPower) : 1;
+    const trail = deterministicPow(field.get(ch, cx, cy) + 1, power);
+    // The truthiness test on cautPower is deliberate and preserved: an exponent
+    // of zero means no caution rather than a caution factor of one.
+    const caution = (cautCh !== null && cautPower)
+      ? deterministicPow(field.get(cautCh, cx, cy) + 1, cautPower)
+      : 1;
     return trail / caution;
   });
   const total = scores.reduce((a, b) => a + b, 0);
@@ -69,7 +55,10 @@ export class Simulation {
   foodPerSource: number;
   params: SimParams;
   loopRate: number;
-  grid: CellType[][];
+  readonly world: WorldSpec;
+  readonly occupancy: Occupancy;
+  /** Dimensions of the world being simulated. */
+  readonly bounds: { cols: number; rows: number };
   colonies: Colony[];
   foodSources: FoodSource[];
   private antsRng: Rng;
@@ -82,7 +71,8 @@ export class Simulation {
   private recorded: TimedCommand[] = [];
   private schedule: Map<number, Command[]> | null = null;
 
-  constructor(config: RunConfig) {
+  constructor(config: RunConfig, options: SimulationOptions = {}) {
+    const world = options.world ?? mazeWorld(config.loopRate, makeRng(config.seeds.maze));
     this.config = config;
     this.numAnts = config.numAnts;
     this.params = { ...config.params };
@@ -91,7 +81,13 @@ export class Simulation {
     this.numFoodSources = config.numFoodSources;
     this.foodPerSource = config.foodPerSource;
     this.antsRng = makeRng(config.seeds.ants);
-    this.grid = generateMaze(config.loopRate, makeRng(config.seeds.maze));
+    this.world = world;
+    this.occupancy = world.occupancy;
+    const bounds = this.occupancy.bounds;
+    if (bounds === null) {
+      throw new RangeError("Simulation needs a bounded world: placing food and fingerprinting both walk one.");
+    }
+    this.bounds = bounds;
     this.colonies = this._initColonies();
     this.foodSources = this._placeFoodSources(makeRng(config.seeds.food));
     for (const colony of this.colonies) this._seedNest(colony);
@@ -99,15 +95,14 @@ export class Simulation {
 
   private _initColonies(): Colony[] {
     return Array.from({ length: this.numColonies }, (_, id) => {
-      const [nestX, nestY] = COLONY_NESTS[id];
-      this.grid[nestY][nestX] = 1;
+      const [nestX, nestY] = this.world.nests[id];
+      this.occupancy.setOpen(nestX, nestY, true);
+      const field = this.world.createField();
       return {
         id,
         nestX,
         nestY,
-        homePhero: new Float32Array(COLS * ROWS),
-        foodPhero: new Float32Array(COLS * ROWS),
-        cautPhero: new Float32Array(COLS * ROWS),
+        field,
         ants: this._spawnAnts(id, nestX, nestY),
         foodCollected: 0,
         discoveredSources: new Set<number>(),
@@ -117,14 +112,15 @@ export class Simulation {
   }
 
   private _placeFoodSources(rng: Rng): FoodSource[] {
-    const nestSet = new Set(this.colonies.map(c => c.nestY * COLS + c.nestX));
+    const { cols, rows } = this.bounds;
+    const nestSet = new Set(this.colonies.map(c => c.nestY * cols + c.nestX));
     // Minimum Manhattan distance from any nest
-    const minDist = Math.floor(Math.min(COLS, ROWS) / 4);
+    const minDist = Math.floor(Math.min(cols, rows) / 4);
     const open: [number, number][] = [];
-    for (let y = 2; y < ROWS - 2; y++) {
-      for (let x = 2; x < COLS - 2; x++) {
-        if (this.grid[y][x] !== 1) continue;
-        if (nestSet.has(y * COLS + x)) continue;
+    for (let y = 2; y < rows - 2; y++) {
+      for (let x = 2; x < cols - 2; x++) {
+        if (!this.occupancy.isOpen(x, y)) continue;
+        if (nestSet.has(y * cols + x)) continue;
         const farEnough = this.colonies.every(
           c => Math.abs(c.nestX - x) + Math.abs(c.nestY - y) >= minDist
         );
@@ -142,12 +138,11 @@ export class Simulation {
 
   private _seedNest(colony: Colony) {
     const { nestX, nestY } = colony;
-    colony.homePhero[nestY * COLS + nestX] = NEST_SEED;
+    colony.field.set("home", nestX, nestY, NEST_SEED);
     for (const [dx, dy] of DIRS4) {
       const nx = nestX + dx, ny = nestY + dy;
-      if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && this.grid[ny][nx]) {
-        const idx = ny * COLS + nx;
-        colony.homePhero[idx] = Math.max(colony.homePhero[idx], NEST_SEED * 0.85);
+      if (this.occupancy.isOpen(nx, ny)) {
+        colony.field.max("home", nx, ny, NEST_SEED * 0.85);
       }
     }
   }
@@ -199,6 +194,22 @@ export class Simulation {
       }
     }
     this.numAnts = n;
+    this._reindexManualAnt();
+  }
+
+  /**
+   * Re-derives `manualAntIndex` from the `manual` flag.
+   *
+   * `manualAntIndex` addresses `allAnts`, which is every colony's ants
+   * concatenated, so resizing colony 0 shifts every index after it. The flag
+   * rides on the ant object and survives the move, which makes it — not the
+   * index — the durable record of which ant the caller chose. A shrink that
+   * drops the flagged ant leaves no flag to find, and control clears with it.
+   */
+  private _reindexManualAnt() {
+    if (this.manualAntIndex === null) return;
+    const idx = this.allAnts.findIndex(ant => ant.manual);
+    this.manualAntIndex = idx < 0 ? null : idx;
   }
 
   get totalFoodCollected(): number {
@@ -272,10 +283,10 @@ export class Simulation {
   }
 
   private _applySetWall(gx: number, gy: number, open: boolean) {
-    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return;
+    if (!inBounds(this.occupancy, gx, gy)) return;
     if (this.colonies.some(c => c.nestX === gx && c.nestY === gy)) return;
     if (this.foodSources.some(s => s.x === gx && s.y === gy)) return;
-    this.grid[gy][gx] = open ? 1 : 0;
+    this.occupancy.setOpen(gx, gy, open);
     this.gridVersion++;
     if (!open) {
       for (const colony of this.colonies) {
@@ -287,8 +298,8 @@ export class Simulation {
   }
 
   private _applySetFood(gx: number, gy: number, amount: number) {
-    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return;
-    if (this.grid[gy][gx] === 0) return;
+    if (!inBounds(this.occupancy, gx, gy)) return;
+    if (!this.occupancy.isOpen(gx, gy)) return;
     if (this.colonies.some(c => c.nestX === gx && c.nestY === gy)) return;
 
     const srcIdx = this.foodSources.findIndex(s => s.x === gx && s.y === gy);
@@ -329,8 +340,7 @@ export class Simulation {
     const ant = this.allAnts[this.manualAntIndex];
     if (!ant) return;
     const nx = ant.cx + dx, ny = ant.cy + dy;
-    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
-    if (this.grid[ny][nx] !== 1) return;
+    if (!this.occupancy.isOpen(nx, ny)) return;
     ant.prevCx = ant.cx;
     ant.prevCy = ant.cy;
     ant.tx = nx;
@@ -343,17 +353,13 @@ export class Simulation {
 
     const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
-      for (let i = 0; i < colony.homePhero.length; i++) {
-        colony.homePhero[i] *= decay;
-        colony.foodPhero[i] *= decay;
-        colony.cautPhero[i] *= decay;
-      }
+      colony.field.decay(decay);
       this._seedNest(colony);
       // Re-seed discovered food sources that still have food
       for (const srcIdx of colony.discoveredSources) {
         const src = this.foodSources[srcIdx];
         if (src.remaining > 0) {
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
+          colony.field.set("food", src.x, src.y, NEST_SEED);
         }
       }
       for (const ant of colony.ants) this._moveAnt(ant, colony);
@@ -371,17 +377,13 @@ export class Simulation {
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > ARRIVE_THRESH) {
-      const idx = ant.cy * COLS + ant.cx;
+      // Deposit lands in the cell being left, not the one being approached.
       if (ant.tank > 0) {
         const deposit = Math.min(ant.tank, DEPOSIT_RATE);
-        if (ant.state === "searching") {
-          colony.homePhero[idx] += deposit;
-        } else {
-          colony.foodPhero[idx] += deposit;
-        }
+        colony.field.add(ant.state === "searching" ? "home" : "food", ant.cx, ant.cy, deposit);
         ant.tank -= deposit;
       } else if (this.params.cautionary) {
-        colony.cautPhero[idx] += DEPOSIT_RATE;
+        colony.field.add("caut", ant.cx, ant.cy, DEPOSIT_RATE);
       }
       const scale = V / dist;
       ant.x += dx * scale;
@@ -401,7 +403,7 @@ export class Simulation {
         colony.discoveredSources.add(srcIdx);
         if (src.remaining > 0) {
           src.remaining--;
-          colony.foodPhero[src.y * COLS + src.x] = NEST_SEED;
+          colony.field.set("food", src.x, src.y, NEST_SEED);
           ant.state = "returning";
           ant.hasFood = true;
           ant.tank = tankMax;
@@ -440,8 +442,8 @@ export class Simulation {
       return;
     }
 
-    const noBack = openNeighbours(this.grid, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
-    const candidates = noBack.length > 0 ? noBack : openNeighbours(this.grid, ant.cx, ant.cy);
+    const noBack = openNeighbours(this.occupancy, ant.cx, ant.cy, ant.prevCx, ant.prevCy);
+    const candidates = noBack.length > 0 ? noBack : openNeighbours(this.occupancy, ant.cx, ant.cy);
     // An edit can seal every exit from a cell an ant is standing in, which
     // applySetWall permits: it refuses only nest and food cells. The ant waits
     // where it is until something opens up. The server simulation has always
@@ -449,10 +451,10 @@ export class Simulation {
     // an empty list.
     if (candidates.length === 0) return;
 
-    const phero = ant.state === "searching" ? colony.foodPhero : colony.homePhero;
+    const ch: Channel = ant.state === "searching" ? "food" : "home";
     const next = powerChoice(
-      candidates, phero, trailPower, this.antsRng,
-      this.params.cautionary ? colony.cautPhero : undefined, trailPower,
+      candidates, colony.field, ch, trailPower, this.antsRng,
+      this.params.cautionary ? "caut" : null, trailPower,
     );
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;

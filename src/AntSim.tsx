@@ -388,7 +388,7 @@ export default function AntSim() {
       if (isNest) return;
       const isFoodHere = sim.foodSources.some(s => s.x === gx && s.y === gy);
       if (isFoodHere) return;
-      const wasWall = sim.grid[gy][gx] === 0;
+      const wasWall = !sim.occupancy.isOpen(gx, gy);
 
       if (dragActionRef.current === null) {
         dragActionRef.current = wasWall ? "open" : "close";
@@ -399,7 +399,7 @@ export default function AntSim() {
         send({ kind: "setWall", x: gx, y: gy, open: false });
       }
     } else if (mode === "food") {
-      const isWall = sim.grid[gy][gx] === 0;
+      const isWall = !sim.occupancy.isOpen(gx, gy);
       const isNest = sim.colonies.some(c => c.nestX === gx && c.nestY === gy);
       if (isWall || isNest) return;
       const exists = sim.foodSources.some(s => s.x === gx && s.y === gy);

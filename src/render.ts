@@ -1,5 +1,23 @@
-import { COLS, ROWS, CELL, W, H, NEST_SEED, cellCenter } from "@stigsim/sim-core";
-import type { Simulation } from "@stigsim/sim-core";
+import { COLS, ROWS, CELL, W, H, NEST_SEED, cellCenter, DenseField } from "@stigsim/sim-core";
+import type { Colony, Simulation } from "@stigsim/sim-core";
+
+/**
+ * The raw channel arrays of one colony.
+ *
+ * The renderer reads every cell of every channel each frame, so it takes the
+ * dense arrays directly rather than going through FieldSet.get: once a second
+ * backing exists that call site would go megamorphic and stop being inlined,
+ * costing the hottest loop in the app for no benefit here. Maze mode is dense
+ * by construction, which is what makes the cast safe.
+ */
+function layersOf(colony: Colony) {
+  const field = colony.field as DenseField;
+  return {
+    home: field.layer("home"),
+    food: field.layer("food"),
+    caut: field.layer("caut"),
+  };
+}
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
 export const VIEW_HALF = CELL * 1;
@@ -41,19 +59,20 @@ export function render(
   }
 
   // Compute per-colony phero maxima for normalization
-  const maxH = sim.colonies.map(c => {
+  const layers = sim.colonies.map(layersOf);
+  const maxH = layers.map(l => {
     let m = NEST_SEED;
-    for (let i = 0; i < c.homePhero.length; i++) if (c.homePhero[i] > m) m = c.homePhero[i];
+    for (let i = 0; i < l.home.length; i++) if (l.home[i] > m) m = l.home[i];
     return m;
   });
-  const maxF = sim.colonies.map(c => {
+  const maxF = layers.map(l => {
     let m = NEST_SEED;
-    for (let i = 0; i < c.foodPhero.length; i++) if (c.foodPhero[i] > m) m = c.foodPhero[i];
+    for (let i = 0; i < l.food.length; i++) if (l.food[i] > m) m = l.food[i];
     return m;
   });
-  const maxCH = sim.colonies.map(c => {
+  const maxCH = layers.map(l => {
     let m = 1;
-    for (let i = 0; i < c.cautPhero.length; i++) if (c.cautPhero[i] > m) m = c.cautPhero[i];
+    for (let i = 0; i < l.caut.length; i++) if (l.caut[i] > m) m = l.caut[i];
     return m;
   });
 
@@ -64,7 +83,7 @@ export function render(
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       const px = x * CELL, py = y * CELL;
-      if (sim.grid[y][x] === 0) {
+      if (!sim.occupancy.isOpen(x, y)) {
         ctx.fillStyle = "#0d0a06";
         ctx.fillRect(px, py, CELL, CELL);
         continue;
@@ -76,23 +95,23 @@ export function render(
 
       // Layer pheromones for each colony
       for (let ci = 0; ci < sim.colonies.length; ci++) {
-        const colony = sim.colonies[ci];
         const colors = COLONY_COLORS[ci];
+        const layer = layers[ci];
 
-        const hi = colony.homePhero[idx];
+        const hi = layer.home[idx];
         if (hi > 0.5) {
           const alpha = Math.min(0.55, (hi / maxH[ci]) * 0.55);
           ctx.fillStyle = `rgba(${colors.homeRGB},${alpha.toFixed(3)})`;
           ctx.fillRect(px, py, CELL, CELL);
         }
-        const fi = colony.foodPhero[idx];
+        const fi = layer.food[idx];
         if (fi > 0.5) {
           const alpha = Math.min(0.6, (fi / maxF[ci]) * 0.6);
           ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
           ctx.fillRect(px, py, CELL, CELL);
         }
         if (sim.params.cautionary) {
-          const ci2 = colony.cautPhero[idx];
+          const ci2 = layer.caut[idx];
           if (ci2 > 0.5) {
             const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
             ctx.fillStyle = `rgba(220,60,40,${alpha.toFixed(3)})`;
@@ -180,7 +199,7 @@ export function render(
   if (editMode !== "none" && hoverCell && viewMode === "all") {
     const { x: hx, y: hy } = hoverCell;
     const hpx = hx * CELL, hpy = hy * CELL;
-    const isWall = sim.grid[hy][hx] === 0;
+    const isWall = !sim.occupancy.isOpen(hx, hy);
     const isNest = sim.colonies.some(c => c.nestX === hx && c.nestY === hy);
     const isFoodHere = sim.foodSources.some(s => s.x === hx && s.y === hy);
     if (editMode === "wall" && !isNest) {

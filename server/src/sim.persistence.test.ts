@@ -6,7 +6,6 @@ test("structural world state survives a persistence round trip", () => {
   const original = new InfiniteSimulation();
   original.setWall(4, 5, true);
   const food = original.addFood(8, 9, 321);
-  food.remaining = 111;
 
   const removedLow = original.addColony(0, 0, { name: "Removed low" });
   const colony = original.addColony(2, 3, { name: "Durable", numAnts: 3 });
@@ -15,6 +14,11 @@ test("structural world state survives a persistence round trip", () => {
   original.removeColony(removedHigh.id);
 
   for (let i = 0; i < 125; i++) original.step();
+
+  // Set after the loop: ants from the surviving colony reach (8,9) well within
+  // 125 ticks and eat from the source, so a value set beforehand is not the one
+  // that round-trips.
+  food.remaining = 111;
   colony.foodCollected = 47;
   colony.setAt("food", 50, 50, 500);
 
