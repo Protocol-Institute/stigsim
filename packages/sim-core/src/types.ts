@@ -83,6 +83,25 @@ export interface WorldSpec {
   createField(): FieldSet;
 }
 
+/**
+ * Optional construction inputs for a Simulation, each independently defaulted.
+ * A named bag rather than positional parameters: modes extend the simulation
+ * along separate axes, and those axes should not have to compete for a
+ * parameter slot as more of them arrive.
+ */
+export interface SimulationOptions {
+  /**
+   * The world the run takes place in. Defaults to a maze built from the run's
+   * seed, so every existing caller is unchanged. It stays a default rather
+   * than becoming required because a trace stores a recipe — a maze seed and
+   * a loop rate — and a caller-supplied world in general has no recipe to
+   * store. Settling how a trace names an arbitrary world belongs with the
+   * package that generates them, not with a refactor whose contract is that
+   * nothing moves.
+   */
+  world?: WorldSpec;
+}
+
 export interface FoodSource {
   x: number;
   y: number;
