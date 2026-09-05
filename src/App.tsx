@@ -16,12 +16,14 @@ export default function App() {
   if (route === "war") content = <ComingSoon mode="Local War Mode" href={href} />;
   else if (route === "multiplayer") content = <ComingSoon mode="Online War Mode" href={href} />;
   else if (route === "not-found") content = <NotFound href={href} />;
-  else content = route === "maze" ? <AntSim /> : <InfiniteSim />;
+  else content = route === "maze" ? <AntSim /> : <InfiniteSim simulationsHref={href("/")} />;
 
   return (
     <>
       {content}
-      <a className="simulation-backlink" href={href("/")}>← All simulations</a>
+      {route !== "infinite" && (
+        <a className="simulation-backlink" href={href("/")}>← All simulations</a>
+      )}
     </>
   );
 }
