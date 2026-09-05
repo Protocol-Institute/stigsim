@@ -264,7 +264,7 @@ function ToolBtn({ label, icon, active, onClick, compact }: {
 
 function Toolbar({
   tool, setTool, connected, colonies, leaderboard, onGoTo, onCenter,
-  mode, setMode, surviveColonyPlaced,
+  mode, setMode, surviveColonyPlaced, simulationsHref,
 }: {
   tool: Tool; setTool: (t: Tool) => void;
   connected: boolean; colonies: ColonyInfo[];
@@ -274,6 +274,7 @@ function Toolbar({
   mode: AppMode;
   setMode: (m: AppMode) => void;
   surviveColonyPlaced: boolean;
+  simulationsHref: string;
 }) {
   const [open, setOpen] = useState(false);
   const deadEntries = leaderboard.filter(e => !e.alive);
@@ -293,6 +294,21 @@ function Toolbar({
       padding: isMobile ? "5px 8px" : "6px 10px", zIndex: 100,
       boxShadow: "0 4px 24px rgba(0,0,0,0.6)", userSelect: "none",
     }}>
+      <a href={simulationsHref} title="All simulations" aria-label="All simulations" style={{
+        padding: isMobile ? "6px 8px" : "6px 10px",
+        borderRadius: 8,
+        color: "#a08060",
+        fontSize: isMobile ? "1rem" : "0.7rem",
+        fontWeight: 600,
+        lineHeight: 1,
+        textDecoration: "none",
+        whiteSpace: "nowrap",
+      }}>
+        {isMobile ? "←" : "← All simulations"}
+      </a>
+
+      <div style={{ width: 1, height: 28, background: "#3d2e18", margin: isMobile ? "0 2px" : "0 4px" }} />
+
       <div style={{
         width: 8, height: 8, borderRadius: "50%", marginRight: isMobile ? 4 : 6, flexShrink: 0,
         background: connected ? "#4ade80" : "#f87171",
@@ -910,7 +926,7 @@ function SurviveGameOver({
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function InfiniteSim() {
+export default function InfiniteSim({ simulationsHref }: { simulationsHref: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const worldRef = useRef<WorldState>({
@@ -1326,6 +1342,7 @@ export default function InfiniteSim() {
         onGoTo={goTo} onCenter={reCenter}
         mode={mode} setMode={setMode}
         surviveColonyPlaced={surviveColonyId !== null}
+        simulationsHref={simulationsHref}
       />
 
       {mode === "survive" && surviveColonyId === null && !surviveNameDlg && (

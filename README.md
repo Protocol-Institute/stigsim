@@ -12,7 +12,7 @@ idea: a self-contained maze sandbox and a persistent multiplayer world.
 
 ## Play online
 
-### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/)
+### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/maze)
 
 Create a maze, configure competing colonies, and experiment privately in your
 browser. This is the original, self-contained Stigsim experience.
@@ -122,7 +122,8 @@ pnpm install
 PORT=3000 BASE_PATH=/ pnpm dev
 ```
 
-Open the local [Maze Simulator](http://localhost:3000/) in your browser.
+Open the local [simulation index](http://localhost:3000/) or go directly to the
+[Maze Simulator](http://localhost:3000/maze).
 
 ### Run Infinite World locally
 
