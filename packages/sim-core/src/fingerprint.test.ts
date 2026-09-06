@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Simulation, DEFAULT_PARAMS, makeSeeds, fingerprint, FINGERPRINT_INTERVAL } from "./index";
+import {
+  Simulation, DEFAULT_PARAMS, makeSeeds, fingerprint, FINGERPRINT_INTERVAL,
+  DEFAULT_DOCTRINE, TOPOLOGY_PRIVATE, cloneDoctrine,
+} from "./index";
 import type { RunConfig } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
@@ -126,5 +129,50 @@ test("a burned draw is caught at the next checkpoint rather than hundreds of tic
   (a as unknown as { antsRng: () => number }).antsRng();
   a.step();
   b.step();
+  assert.notEqual(fingerprint(a), fingerprint(b));
+});
+
+test("one differing doctrine atom changes the fingerprint before anything moves", () => {
+  const c = config();
+  const a = new Simulation(c);
+  const b = new Simulation(c);
+  const d = cloneDoctrine(DEFAULT_DOCTRINE);
+  d.evapRate = 0.006;
+  b.enqueue({ kind: "setDoctrine", colony: 0, doctrine: d });
+  b.flushPending();
+  assert.notEqual(fingerprint(a), fingerprint(b));
+});
+
+test("a differing role, adoption mode, or topology changes the fingerprint", () => {
+  const c = config();
+  const base = fingerprint(new Simulation(c));
+
+  const role = new Simulation(c);
+  role.colonies[0].ants[0].role = "spoiler";
+  assert.notEqual(fingerprint(role), base);
+
+  const adoption = new Simulation(c);
+  adoption.enqueue({ kind: "setAdoption", mode: "nest" });
+  adoption.flushPending();
+  assert.notEqual(fingerprint(adoption), base);
+
+  const topology = new Simulation(c);
+  topology.topology = { ...TOPOLOGY_PRIVATE, visible: { home: false, food: false }, maxMimicRate: 0.5 };
+  assert.notEqual(fingerprint(topology), base);
+});
+
+test("under nest adoption the fingerprint sees every version ants still hold", () => {
+  const c = config();
+  const a = new Simulation(c);
+  const b = new Simulation(c);
+  for (const s of [a, b]) { s.enqueue({ kind: "setAdoption", mode: "nest" }); s.flushPending(); }
+  assert.equal(fingerprint(a), fingerprint(b));
+  const d = cloneDoctrine(DEFAULT_DOCTRINE);
+  d.forager.follow.searching.food.own = 6;
+  b.enqueue({ kind: "setDoctrine", colony: 0, doctrine: d });
+  b.flushPending();
+  // No ant has adopted, every ant still runs version 0, yet the pending
+  // doctrine is state the run's future depends on.
+  assert.ok(b.colonies[0].ants.every(x => x.doctrineVersion === 0));
   assert.notEqual(fingerprint(a), fingerprint(b));
 });
