@@ -186,14 +186,7 @@ test("the mimic rate is colony-level: spoilers already out use a new rate at onc
   sim.enqueue({ kind: "setAdoption", mode: "nest" });
   sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: allSpoilers(0.25) });
   sim.step(); sim.step();
-  // start()'s own setDoctrine already bumped the colony (and, under the
-  // default instant adoption, the ant) to version 1 before this test's second
-  // setDoctrine (to version 2) ever ran. "Not adopted" means the ant is still
-  // on that pre-existing version 1, not on the fresh version 2 — not on 0,
-  // which nothing here ever holds. See the final-fix report for this branch's
-  // discussion with the review lead: the brief's literal expected value of 0
-  // undercounts start()'s own bump.
-  assert.equal(a.ants[0].doctrineVersion, 1, "not adopted: still mid-trip, holding the version from before this setDoctrine");
+  assert.equal(a.ants[0].doctrineVersion, a.doctrineVersion - 1, "not adopted: still on the version from before the change");
   assert.equal(b.field.get("food", a.nestX, a.nestY), (0.5 + 0.25 + 0.25) * DEPOSIT_RATE);
 });
 
