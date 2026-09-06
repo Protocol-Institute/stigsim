@@ -43,16 +43,6 @@ export const TOPOLOGY_OPEN: Topology = frozen({
 
 export const DEFAULT_TOPOLOGY: Topology = TOPOLOGY_PRIVATE;
 
-/**
- * What the engine implements today. A trace must never be able to claim a
- * read mode the engine does not run, so the validator is widened in the same
- * change that lands the cross-colony read.
- */
-const IMPLEMENTED: { reads: readonly ReadMode[]; mimic: readonly boolean[] } = {
-  reads: ["private"],
-  mimic: [false],
-};
-
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
@@ -64,8 +54,8 @@ function hasExactKeys(v: Record<string, unknown>, keys: readonly string[]): bool
 
 export function isTopology(v: unknown): v is Topology {
   if (!isObj(v) || !hasExactKeys(v, ["read", "mimicEnemy", "visible", "maxMimicRate", "provenance"])) return false;
-  if (!IMPLEMENTED.reads.includes(v.read as ReadMode)) return false;
-  if (!isBool(v.mimicEnemy) || !IMPLEMENTED.mimic.includes(v.mimicEnemy)) return false;
+  if (!READ_MODES.includes(v.read as ReadMode)) return false;
+  if (!isBool(v.mimicEnemy)) return false;
   const vis = v.visible;
   if (!isObj(vis) || !hasExactKeys(vis, ["home", "food"]) || !isBool(vis.home) || !isBool(vis.food)) return false;
   if (!isNum(v.maxMimicRate) || v.maxMimicRate < 0 || v.maxMimicRate > 1) return false;

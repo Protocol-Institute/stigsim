@@ -322,5 +322,6 @@ test("isCommand accepts the doctrine, adoption, and topology commands", () => {
   assert.equal(isCommand({ kind: "setAdoption", mode: "nest" }), true);
   assert.equal(isCommand({ kind: "setAdoption", mode: "later" }), false);
   assert.equal(isCommand({ kind: "setTopology", topology: DEFAULT_TOPOLOGY }), true);
-  assert.equal(isCommand({ kind: "setTopology", topology: { ...DEFAULT_TOPOLOGY, read: "shared" } }), false);
+  assert.equal(isCommand({ kind: "setTopology", topology: { ...DEFAULT_TOPOLOGY, read: "shared" } }), true);
+  assert.equal(isCommand({ kind: "setTopology", topology: { ...DEFAULT_TOPOLOGY, read: "sideways" } }), false);
 });

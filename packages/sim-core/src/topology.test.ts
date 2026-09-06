@@ -13,11 +13,10 @@ test("the private topology is the default and validates", () => {
   });
 });
 
-test("the cross-colony options are not accepted until the engine implements them", () => {
-  // Widened in the task that lands the shared and separable reads.
-  assert.equal(isTopology(TOPOLOGY_SENSING), false);
-  assert.equal(isTopology(TOPOLOGY_MIMICRY), false);
-  assert.equal(isTopology(TOPOLOGY_OPEN), false);
+test("all four named options validate", () => {
+  for (const t of [TOPOLOGY_PRIVATE, TOPOLOGY_SENSING, TOPOLOGY_MIMICRY, TOPOLOGY_OPEN]) {
+    assert.equal(isTopology(t), true, t.read);
+  }
 });
 
 test("isTopology rejects malformed input", () => {
