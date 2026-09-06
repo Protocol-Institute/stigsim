@@ -12,7 +12,10 @@ import { mazeWorld } from "./maze";
 import { makeRng, shuffleInPlace, type Rng } from "./rng";
 import type { Command, TimedCommand } from "./commands";
 import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
-import { DEFAULT_DOCTRINE, cloneDoctrine, type AdoptionMode, type Doctrine } from "./doctrine";
+import {
+  DEFAULT_DOCTRINE, DOCTRINE_CHANNELS, cloneDoctrine,
+  type AdoptionMode, type Doctrine, type DoctrineChannel, type Role,
+} from "./doctrine";
 import { DEFAULT_TOPOLOGY, cloneTopology, type Topology } from "./topology";
 import { chooseNext } from "./score";
 
@@ -94,13 +97,13 @@ export class Simulation {
         doctrines: new Map([[0, doctrine]]),
         doctrineRefs: new Map([[0, 0]]),
       };
-      colony.ants = Array.from({ length: this.numAnts }, () => this._newAnt(colony));
+      colony.ants = Array.from({ length: this.numAnts }, (_, i) => this._newAnt(colony, i, this.numAnts));
       return colony;
     });
   }
 
-  /** A fresh ant at the nest, holding the colony's current doctrine. */
-  private _newAnt(colony: Colony): Ant {
+  /** A fresh ant at the nest, holding the colony's current doctrine, roled by index. */
+  private _newAnt(colony: Colony, index: number, total: number): Ant {
     const { px, py } = cellCenter(colony.nestX, colony.nestY);
     this._ref(colony, colony.doctrineVersion, +1);
     return {
@@ -115,9 +118,63 @@ export class Simulation {
       stepsSinceNest: 0,
       lastSourceX: null,
       lastSourceY: null,
-      role: "forager",
+      role: this._roleFor(colony, index, total),
       doctrineVersion: colony.doctrineVersion,
     };
+  }
+
+  /** Spoilers are the first floor(fraction * total) ants by index. No draw is spent. */
+  private _roleFor(colony: Colony, index: number, total: number): Role {
+    return index < Math.floor(colony.doctrine.spoilerFraction * total) ? "spoiler" : "forager";
+  }
+
+  /** The nest event: adopt the current doctrine and take the role the index implies. */
+  private _nestEvent(ant: Ant, colony: Colony, index: number) {
+    this._adopt(ant, colony);
+    ant.role = this._roleFor(colony, index, colony.ants.length);
+  }
+
+  /**
+   * Deposits into the cell being left, once per transit frame. Channels go in
+   * a fixed order — home then food, own then mimic — so the tank drains the
+   * same way on every engine. Mimicry costs foraging deposition: both draw
+   * on one tank and both stop when it is empty.
+   */
+  private _lay(ant: Ant, colony: Colony) {
+    if (ant.tank <= 0) return;
+    const doctrine = this.doctrineFor(ant, colony);
+    const row = doctrine[ant.role].lay[ant.state];
+    const mimicRate = Math.min(doctrine.mimicRate, this.topology.maxMimicRate);
+    for (const ch of DOCTRINE_CHANNELS) {
+      const entry = row[ch];
+      if (entry.own > 0 && ant.tank > 0) {
+        const amount = Math.min(ant.tank, entry.own * DEPOSIT_RATE);
+        colony.field.add(ch, ant.cx, ant.cy, amount);
+        ant.tank -= amount;
+      }
+      if (entry.mimic === 1 && ant.tank > 0) {
+        const amount = Math.min(ant.tank, mimicRate * DEPOSIT_RATE);
+        if (amount > 0) {
+          this._depositMimic(colony, ch, ant.cx, ant.cy, amount);
+          ant.tank -= amount;
+        }
+      }
+    }
+  }
+
+  /**
+   * Where a mimic deposit lands is the topology's call; the tank is charged
+   * either way. Under `shared` there is one chemical, so mimicking it is laying
+   * it. With more than two colonies the amount is split equally.
+   */
+  private _depositMimic(colony: Colony, ch: DoctrineChannel, cx: number, cy: number, amount: number) {
+    const { read, mimicEnemy } = this.topology;
+    if (!mimicEnemy || read === "private") return;
+    if (read === "shared") { colony.field.add(ch, cx, cy, amount); return; }
+    const others = this.colonies.filter(c => c !== colony);
+    if (others.length === 0) return;
+    const share = amount / others.length;
+    for (const other of others) other.field.add(ch, cx, cy, share);
   }
 
   /**
@@ -179,8 +236,7 @@ export class Simulation {
   setAntCount(n: number) {
     for (const colony of this.colonies) {
       if (n > colony.ants.length) {
-        const toAdd = n - colony.ants.length;
-        for (let i = 0; i < toAdd; i++) colony.ants.push(this._newAnt(colony));
+        for (let i = colony.ants.length; i < n; i++) colony.ants.push(this._newAnt(colony, i, n));
       } else if (n < colony.ants.length) {
         const removed = colony.ants.splice(n);
         for (const ant of removed) this._ref(colony, ant.doctrineVersion, -1);
@@ -331,7 +387,10 @@ export class Simulation {
     colony.doctrine = copy;
     colony.doctrineVersion = version;
     if (this.adoption === "instant") {
-      for (const ant of colony.ants) this._adopt(ant, colony);
+      colony.ants.forEach((ant, i) => {
+        this._adopt(ant, colony);
+        ant.role = this._roleFor(colony, i, colony.ants.length);
+      });
     }
     // A colony with no ants, or one whose ants all re-stamped, has no holder
     // of the previous version left; _adopt drops it as the last holder leaves,
@@ -371,7 +430,7 @@ export class Simulation {
 
     for (const colony of this.colonies) {
       colony.field.decay(1 - colony.doctrine.evapRate);
-      for (const ant of colony.ants) this._moveAnt(ant, colony);
+      for (let i = 0; i < colony.ants.length; i++) this._moveAnt(colony.ants[i], colony, i);
     }
 
     if (this.tick % FINGERPRINT_INTERVAL === 0) {
@@ -379,21 +438,14 @@ export class Simulation {
     }
   }
 
-  private _moveAnt(ant: Ant, colony: Colony) {
+  private _moveAnt(ant: Ant, colony: Colony, index: number) {
     const { tankMax } = this.params;
     const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
     const dx = tpx - ant.x, dy = tpy - ant.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > ARRIVE_THRESH) {
-      // Deposit lands in the cell being left, not the one being approached.
-      if (ant.tank > 0) {
-        const deposit = Math.min(ant.tank, DEPOSIT_RATE);
-        colony.field.add(ant.state === "searching" ? "home" : "food", ant.cx, ant.cy, deposit);
-        ant.tank -= deposit;
-      } else if (this.params.cautionary) {
-        colony.field.add("caut", ant.cx, ant.cy, DEPOSIT_RATE);
-      }
+      this._lay(ant, colony);
       const scale = V / dist;
       ant.x += dx * scale;
       ant.y += dy * scale;
@@ -429,7 +481,7 @@ export class Simulation {
     // Check nest
     if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
       ant.state = "searching";
-      this._adopt(ant, colony);
+      this._nestEvent(ant, colony, index);
       ant.hasFood = false;
       ant.tank = tankMax;
       colony.foodCollected++;

@@ -12,6 +12,13 @@ export const NEST_SEED = 1000;
 export const DEFAULT_NUM_ANTS = 20;
 export const DEPOSIT_RATE = 20;
 
+/**
+ * Transit frames that deposit per cell: distances 16, 12, 8 deposit and 4 is
+ * within ARRIVE_THRESH. The old gland label used CELL / V = 4 and overstated
+ * trail reach by a third.
+ */
+export const DEPOSITS_PER_CELL = 3;
+
 // ─── Odor (computed at read time, never stored) ─────────────────────────────
 /** What a returning ant reads on its own nest cell, and a searching ant on a live food cell. */
 export const ODOR_LEVEL = 1000;
