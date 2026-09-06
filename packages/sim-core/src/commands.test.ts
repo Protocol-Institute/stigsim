@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Simulation, DEFAULT_PARAMS, makeSeeds, isCommand, MAX_ANTS_PER_COLONY } from "./index";
+import {
+  Simulation, DEFAULT_PARAMS, makeSeeds, isCommand, MAX_ANTS_PER_COLONY, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY,
+} from "./index";
 import type { RunConfig, Command } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
@@ -330,4 +332,18 @@ test("setParam rejects an out-of-range tank and an unknown key", () => {
 test("setFood rejects an amount beyond the supported range", () => {
   assert.equal(isCommand({ kind: "setFood", x: 3, y: 3, amount: 500 }), true);
   assert.equal(isCommand({ kind: "setFood", x: 3, y: 3, amount: 1e12 }), false);
+});
+
+test("isCommand accepts the doctrine, adoption, and topology commands", () => {
+  assert.equal(isCommand({ kind: "setDoctrine", colony: 0, doctrine: DEFAULT_DOCTRINE }), true);
+  assert.equal(isCommand({ kind: "setDoctrine", colony: 3, doctrine: DEFAULT_DOCTRINE }), true);
+  assert.equal(isCommand({ kind: "setDoctrine", colony: 4, doctrine: DEFAULT_DOCTRINE }), false);
+  assert.equal(isCommand({ kind: "setDoctrine", colony: -1, doctrine: DEFAULT_DOCTRINE }), false);
+  assert.equal(isCommand({ kind: "setDoctrine", colony: 0.5, doctrine: DEFAULT_DOCTRINE }), false);
+  assert.equal(isCommand({ kind: "setDoctrine", colony: 0, doctrine: { ...DEFAULT_DOCTRINE, evapRate: 9 } }), false);
+  assert.equal(isCommand({ kind: "setAdoption", mode: "instant" }), true);
+  assert.equal(isCommand({ kind: "setAdoption", mode: "nest" }), true);
+  assert.equal(isCommand({ kind: "setAdoption", mode: "later" }), false);
+  assert.equal(isCommand({ kind: "setTopology", topology: DEFAULT_TOPOLOGY }), true);
+  assert.equal(isCommand({ kind: "setTopology", topology: { ...DEFAULT_TOPOLOGY, read: "shared" } }), false);
 });

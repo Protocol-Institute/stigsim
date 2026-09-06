@@ -3,7 +3,7 @@ import {
   DIRS4, TRIP_WINDOW,
 } from "./constants";
 import type {
-  Ant, AntState, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+  Ant, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
   SimulationOptions, WorldSpec,
 } from "./types";
 import type { RunConfig } from "./types";
@@ -12,6 +12,8 @@ import { mazeWorld } from "./maze";
 import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
 import type { Command, TimedCommand } from "./commands";
 import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
+import { DEFAULT_DOCTRINE, cloneDoctrine, type AdoptionMode, type Doctrine } from "./doctrine";
+import { DEFAULT_TOPOLOGY, cloneTopology, type Topology } from "./topology";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
@@ -66,6 +68,10 @@ export class Simulation {
   manualAntIndex: number | null = null;
   /** Incremented whenever a wall opens or closes, so caches can invalidate. */
   gridVersion = 0;
+  /** When a doctrine change reaches the ants. Set by the setAdoption command. */
+  adoption: AdoptionMode = "instant";
+  /** How layers are read and written across colonies. Set by the setTopology command. */
+  topology: Topology = DEFAULT_TOPOLOGY;
   readonly fingerprints: { t: number; h: string }[] = [];
   private pending: Command[] = [];
   private recorded: TimedCommand[] = [];
@@ -97,18 +103,72 @@ export class Simulation {
     return Array.from({ length: this.numColonies }, (_, id) => {
       const [nestX, nestY] = this.world.nests[id];
       this.occupancy.setOpen(nestX, nestY, true);
-      const field = this.world.createField();
-      return {
+      const doctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+      const colony: Colony = {
         id,
         nestX,
         nestY,
-        field,
-        ants: this._spawnAnts(id, nestX, nestY),
+        field: this.world.createField(),
+        ants: [],
         foodCollected: 0,
         discoveredSources: new Set<number>(),
         recentTrips: [],
+        doctrine,
+        doctrineVersion: 0,
+        doctrines: new Map([[0, doctrine]]),
+        doctrineRefs: new Map([[0, 0]]),
       };
+      colony.ants = Array.from({ length: this.numAnts }, () => this._newAnt(colony));
+      return colony;
     });
+  }
+
+  /** A fresh ant at the nest, holding the colony's current doctrine. */
+  private _newAnt(colony: Colony): Ant {
+    const { px, py } = cellCenter(colony.nestX, colony.nestY);
+    this._ref(colony, colony.doctrineVersion, +1);
+    return {
+      x: px, y: py,
+      cx: colony.nestX, cy: colony.nestY,
+      tx: colony.nestX, ty: colony.nestY,
+      prevCx: colony.nestX, prevCy: colony.nestY,
+      state: "searching",
+      hasFood: false,
+      tank: this.params.tankMax,
+      colonyId: colony.id,
+      stepsSinceNest: 0,
+      lastSourceX: null,
+      lastSourceY: null,
+      role: "forager",
+      doctrineVersion: colony.doctrineVersion,
+    };
+  }
+
+  /**
+   * Adjusts the holder count of one doctrine version. A version nobody holds
+   * is dropped unless it is the current one, which the next arrival adopts.
+   */
+  private _ref(colony: Colony, version: number, delta: number) {
+    const next = (colony.doctrineRefs.get(version) ?? 0) + delta;
+    if (next <= 0 && version !== colony.doctrineVersion) {
+      colony.doctrineRefs.delete(version);
+      colony.doctrines.delete(version);
+    } else {
+      colony.doctrineRefs.set(version, next);
+    }
+  }
+
+  /** Re-stamps an ant with the colony's current doctrine. The nest event. */
+  private _adopt(ant: Ant, colony: Colony) {
+    if (ant.doctrineVersion === colony.doctrineVersion) return;
+    this._ref(colony, ant.doctrineVersion, -1);
+    ant.doctrineVersion = colony.doctrineVersion;
+    this._ref(colony, ant.doctrineVersion, +1);
+  }
+
+  /** The doctrine an ant is running, which under nest adoption need not be the colony's current one. */
+  doctrineFor(ant: Ant, colony: Colony): Doctrine {
+    return colony.doctrines.get(ant.doctrineVersion)!;
   }
 
   private _placeFoodSources(rng: Rng): FoodSource[] {
@@ -147,50 +207,18 @@ export class Simulation {
     }
   }
 
-  private _spawnAnts(colonyId: number, nestX: number, nestY: number): Ant[] {
-    const { px, py } = cellCenter(nestX, nestY);
-    return Array.from({ length: this.numAnts }, () => ({
-      x: px, y: py,
-      cx: nestX, cy: nestY,
-      tx: nestX, ty: nestY,
-      prevCx: nestX, prevCy: nestY,
-      state: "searching" as AntState,
-      hasFood: false,
-      tank: this.params.tankMax,
-      colonyId,
-      stepsSinceNest: 0,
-      lastSourceX: null,
-      lastSourceY: null,
-    }));
-  }
-
   get allAnts(): Ant[] {
     return this.colonies.flatMap(c => c.ants);
   }
 
   setAntCount(n: number) {
     for (const colony of this.colonies) {
-      const { nestX, nestY } = colony;
-      const { px, py } = cellCenter(nestX, nestY);
       if (n > colony.ants.length) {
         const toAdd = n - colony.ants.length;
-        for (let i = 0; i < toAdd; i++) {
-          colony.ants.push({
-            x: px, y: py,
-            cx: nestX, cy: nestY,
-            tx: nestX, ty: nestY,
-            prevCx: nestX, prevCy: nestY,
-            state: "searching",
-            hasFood: false,
-            tank: this.params.tankMax,
-            colonyId: colony.id,
-            stepsSinceNest: 0,
-            lastSourceX: null,
-            lastSourceY: null,
-          });
-        }
+        for (let i = 0; i < toAdd; i++) colony.ants.push(this._newAnt(colony));
       } else if (n < colony.ants.length) {
-        colony.ants.splice(n);
+        const removed = colony.ants.splice(n);
+        for (const ant of removed) this._ref(colony, ant.doctrineVersion, -1);
       }
     }
     this.numAnts = n;
@@ -279,6 +307,9 @@ export class Simulation {
       case "setAntCount":   this.setAntCount(cmd.n); break;
       case "setManualAnt":  this._applySetManualAnt(cmd.index); break;
       case "moveManualAnt": this._applyMoveManualAnt(cmd.dx, cmd.dy); break;
+      case "setDoctrine":   this._applySetDoctrine(cmd.colony, cmd.doctrine); break;
+      case "setAdoption":   this.adoption = cmd.mode; break;
+      case "setTopology":   this.topology = cloneTopology(cmd.topology); break;
     }
   }
 
@@ -322,6 +353,28 @@ export class Simulation {
       return;
     }
     this.foodSources.push({ x: gx, y: gy, remaining: amount, total: amount });
+  }
+
+  private _applySetDoctrine(index: number, doctrine: Doctrine) {
+    const colony = this.colonies[index];
+    if (!colony) return;
+    const previous = colony.doctrineVersion;
+    const version = previous + 1;
+    const copy = cloneDoctrine(doctrine);
+    colony.doctrines.set(version, copy);
+    colony.doctrineRefs.set(version, 0);
+    colony.doctrine = copy;
+    colony.doctrineVersion = version;
+    if (this.adoption === "instant") {
+      for (const ant of colony.ants) this._adopt(ant, colony);
+    }
+    // A colony with no ants, or one whose ants all re-stamped, has no holder
+    // of the previous version left; _adopt drops it as the last holder leaves,
+    // and this covers the case where there was no holder to begin with.
+    if ((colony.doctrineRefs.get(previous) ?? 0) <= 0) {
+      colony.doctrineRefs.delete(previous);
+      colony.doctrines.delete(previous);
+    }
   }
 
   private _applySetManualAnt(index: number | null) {
@@ -421,6 +474,7 @@ export class Simulation {
     // Check nest
     if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
       ant.state = "searching";
+      this._adopt(ant, colony);
       ant.hasFood = false;
       ant.tank = tankMax;
       colony.foodCollected++;

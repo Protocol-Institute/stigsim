@@ -1,3 +1,5 @@
+import type { Doctrine, Role } from "./doctrine";
+
 export interface SimParams {
   evapRate: number;
   trailPower: number;
@@ -119,6 +121,14 @@ export interface Colony {
   discoveredSources: Set<number>;
   /** A trailing window of completed round trips, newest last. */
   recentTrips: { steps: number; sx: number; sy: number }[];
+  /** The doctrine new arrivals adopt. Colony-level atoms take effect from here. */
+  doctrine: Doctrine;
+  /** Monotonic; incremented by every setDoctrine. */
+  doctrineVersion: number;
+  /** Every version some ant still holds, plus the current one. */
+  doctrines: Map<number, Doctrine>;
+  /** Ants holding each version. A version with no holders that is not current is dropped. */
+  doctrineRefs: Map<number, number>;
 }
 
 export interface Ant {
@@ -130,6 +140,9 @@ export interface Ant {
   hasFood: boolean;
   tank: number;
   colonyId: number;
+  role: Role;
+  /** Which of the colony's doctrines this ant runs. Re-stamped at the nest event. */
+  doctrineVersion: number;
   manual?: boolean;
   /** Cells traversed since the ant last left the nest. Observation only. */
   stepsSinceNest: number;

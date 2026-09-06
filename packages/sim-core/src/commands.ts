@@ -4,9 +4,11 @@
  * run follow the same code path.
  */
 import {
-  MAX_ANTS_PER_COLONY, MAX_EVAP_RATE, MAX_FOOD_AMOUNT, MAX_TANK, MAX_TRAIL_POWER,
+  MAX_ANTS_PER_COLONY, MAX_COLONIES, MAX_EVAP_RATE, MAX_FOOD_AMOUNT, MAX_TANK, MAX_TRAIL_POWER,
 } from "./constants";
 import { isHalfStep } from "./rng";
+import { isDoctrine, type Doctrine, type AdoptionMode } from "./doctrine";
+import { isTopology, type Topology } from "./topology";
 import type { SimParams } from "./types";
 
 export type NumericParamKey = "evapRate" | "trailPower" | "tankMax";
@@ -18,7 +20,10 @@ export type Command =
   | { kind: "setCautionary"; value: boolean }
   | { kind: "setAntCount"; n: number }
   | { kind: "setManualAnt"; index: number | null }
-  | { kind: "moveManualAnt"; dx: number; dy: number };
+  | { kind: "moveManualAnt"; dx: number; dy: number }
+  | { kind: "setDoctrine"; colony: number; doctrine: Doctrine }
+  | { kind: "setAdoption"; mode: AdoptionMode }
+  | { kind: "setTopology"; topology: Topology };
 
 export interface TimedCommand {
   t: number;
@@ -87,6 +92,12 @@ export function isCommand(value: unknown): value is Command {
       return c.index === null || isInt(c.index);
     case "moveManualAnt":
       return isInt(c.dx) && isInt(c.dy);
+    case "setDoctrine":
+      return isInt(c.colony) && c.colony >= 0 && c.colony < MAX_COLONIES && isDoctrine(c.doctrine);
+    case "setAdoption":
+      return c.mode === "instant" || c.mode === "nest";
+    case "setTopology":
+      return isTopology(c.topology);
     default:
       return false;
   }
