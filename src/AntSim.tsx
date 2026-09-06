@@ -17,7 +17,7 @@ import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 import { ParamCard } from "./ParamCard";
 import { DoctrinePanel } from "./DoctrinePanel";
-import { TOPOLOGY_CHOICES, choiceFor } from "./topology-choices";
+import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "./topology-choices";
 import type { TopologyChoice } from "./topology-choices";
 
 // ─── Simple control row ───────────────────────────────────────────────────────
@@ -985,7 +985,10 @@ export default function AntSim() {
               {TOPOLOGY_CHOICES.map(c => (
                 <button
                   key={c.name}
-                  onClick={() => setTopologyChoice(c)}
+                  onClick={() => {
+                    setDoctrines(prev => prev.map(d => conformDoctrine(d, c.topology)));
+                    setTopologyChoice(c);
+                  }}
                   disabled={replaying || numColonies < 2}
                   style={{
                     padding: "5px 10px", borderRadius: 8, fontSize: "0.72rem", cursor: replaying ? "not-allowed" : "pointer",
