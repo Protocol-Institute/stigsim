@@ -135,10 +135,10 @@ export function DoctrinePanel({
         {showMimic && (
           <ParamCard
             label="Mimic rate"
-            description="How much of the opponent's chemical a spoiler lays per step, as a fraction of a normal deposit. Draws on the same gland as foraging."
-            value={draft.mimicRate}
+            description={`How much of the opponent's chemical a spoiler lays per step, as a fraction of a normal deposit. Draws on the same gland as foraging. Capped at ${Math.round(topology.maxMimicRate * 100)}% under this topology.`}
+            value={Math.min(draft.mimicRate, topology.maxMimicRate)}
             displayValue={`${Math.round(draft.mimicRate * 100)}%`}
-            min={0} max={1} step={0.05}
+            min={0} max={topology.maxMimicRate} step={0.05}
             onChange={v => edit(d => { d.mimicRate = v; })}
             disabled={disabled}
           />
