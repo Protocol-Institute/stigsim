@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Simulation, DEFAULT_PARAMS, makeSeeds, fingerprint } from "@stigsim/sim-core";
+import { Simulation, DEFAULT_PARAMS, DEFAULT_DOCTRINE, cloneDoctrine, makeSeeds, fingerprint } from "@stigsim/sim-core";
 import type { RunConfig } from "@stigsim/sim-core";
 import { MetricsRecorder, buildTrace, Replayer } from "./index";
 import type { Trace } from "./index";
@@ -16,6 +16,13 @@ function config(overrides: Partial<RunConfig> = {}): RunConfig {
     foodPerSource: 400,
     ...overrides,
   };
+}
+
+/** The default doctrine with one evaporation rate, the slider change the run records. */
+function evaporating(rate: number) {
+  const d = cloneDoctrine(DEFAULT_DOCTRINE);
+  d.evapRate = rate;
+  return d;
 }
 
 /** A 1200-tick run containing a wall edit, a food drop, and a slider change. */
@@ -38,8 +45,8 @@ function recordRun(): { trace: Trace; sim: Simulation } {
   for (let i = 0; i < 400; i++) { sim.step(); rec.maybeSample(sim); }
   sim.enqueue({ kind: "setWall", x: editable[0], y: editable[1], open: false });
   for (let i = 0; i < 400; i++) { sim.step(); rec.maybeSample(sim); }
-  sim.enqueue({ kind: "setParam", key: "evapRate", value: 0.012 });
-  sim.enqueue({ kind: "setCautionary", value: true });
+  sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: evaporating(0.012) });
+  sim.enqueue({ kind: "setAdoption", mode: "nest" });
   for (let i = 0; i < 400; i++) { sim.step(); rec.maybeSample(sim); }
 
   return { trace: buildTrace(sim, rec), sim };
@@ -175,7 +182,7 @@ test("a paused edit replays at the same point as the live run", () => {
   // flushPending path, not enqueue. The run crosses the tick-500 fingerprint
   // boundary so a divergence is caught even before the final-checkpoint fix.
   for (let i = 0; i < 100; i++) { sim.step(); rec.maybeSample(sim); }
-  sim.enqueue({ kind: "setParam", key: "evapRate", value: 0.02 });
+  sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: evaporating(0.02) });
   sim.flushPending();
   for (let i = 0; i < 900; i++) { sim.step(); rec.maybeSample(sim); }
 
@@ -205,7 +212,7 @@ test("a trace saved during a pause, without resuming, does not falsely report di
   // interval checkpoint has just fired and buildTrace's tail-append logic is
   // exercised.
   for (let i = 0; i < 137; i++) { sim.step(); rec.maybeSample(sim); }
-  sim.enqueue({ kind: "setParam", key: "evapRate", value: 0.02 });
+  sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: evaporating(0.02) });
   sim.flushPending();
 
   // Save the trace right here, without stepping any further.

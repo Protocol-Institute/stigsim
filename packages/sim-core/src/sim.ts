@@ -323,8 +323,6 @@ export class Simulation {
     switch (cmd.kind) {
       case "setWall":       this._applySetWall(cmd.x, cmd.y, cmd.open); break;
       case "setFood":       this._applySetFood(cmd.x, cmd.y, cmd.amount); break;
-      case "setParam":      this.params = { ...this.params, [cmd.key]: cmd.value }; break;
-      case "setCautionary": this.params = { ...this.params, cautionary: cmd.value }; break;
       case "setAntCount":   this.setAntCount(cmd.n); break;
       case "setManualAnt":  this._applySetManualAnt(cmd.index); break;
       case "moveManualAnt": this._applyMoveManualAnt(cmd.dx, cmd.dy); break;

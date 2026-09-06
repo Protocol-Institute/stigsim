@@ -8,7 +8,6 @@ export const H = ROWS * CELL;
 // ─── Movement (fixed) ──────────────────────────────────────────────────────
 export const V = 4;
 export const ARRIVE_THRESH = V + 1;
-export const NEST_SEED = 1000;
 export const DEFAULT_NUM_ANTS = 20;
 export const DEPOSIT_RATE = 20;
 

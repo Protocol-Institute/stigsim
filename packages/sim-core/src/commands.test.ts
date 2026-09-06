@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  Simulation, DEFAULT_PARAMS, makeSeeds, isCommand, MAX_ANTS_PER_COLONY, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY,
+  Simulation, DEFAULT_PARAMS, makeSeeds, isCommand, validParams, MAX_ANTS_PER_COLONY, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY,
 } from "./index";
 import type { RunConfig, Command } from "./index";
 
@@ -196,15 +196,6 @@ test("setFood refuses walls and nests", () => {
   assert.equal(sim.foodSources.length, before);
 });
 
-test("setParam and setCautionary reach the running simulation", () => {
-  const sim = new Simulation(config());
-  sim.enqueue({ kind: "setParam", key: "trailPower", value: 8 });
-  sim.enqueue({ kind: "setCautionary", value: true });
-  sim.step();
-  assert.equal(sim.params.trailPower, 8);
-  assert.equal(sim.params.cautionary, true);
-});
-
 test("setManualAnt marks exactly one ant and null clears it", () => {
   const sim = new Simulation(config());
   sim.enqueue({ kind: "setManualAnt", index: 3 });
@@ -244,7 +235,7 @@ test("a loaded schedule replays commands at the recorded ticks", () => {
   for (let i = 0; i < 20; i++) live.step();
   live.enqueue({ kind: "setWall", x, y, open: false });
   for (let i = 0; i < 20; i++) live.step();
-  live.enqueue({ kind: "setParam", key: "evapRate", value: 0.01 });
+  live.enqueue({ kind: "setDoctrine", colony: 0, doctrine: DEFAULT_DOCTRINE });
   for (let i = 0; i < 20; i++) live.step();
 
   const replay = new Simulation(c);
@@ -253,7 +244,6 @@ test("a loaded schedule replays commands at the recorded ticks", () => {
 
   assert.deepEqual(replay.commandLog, live.commandLog);
   assert.equal(replay.occupancy.isOpen(x, y), false);
-  assert.equal(replay.params.evapRate, 0.01);
   assert.equal(replay.totalFoodCollected, live.totalFoodCollected);
 });
 
@@ -270,8 +260,7 @@ test("isCommand accepts valid commands and rejects malformed input", () => {
   const good: Command[] = [
     { kind: "setWall", x: 1, y: 2, open: true },
     { kind: "setFood", x: 1, y: 2, amount: 0 },
-    { kind: "setParam", key: "tankMax", value: 3200 },
-    { kind: "setCautionary", value: false },
+    { kind: "setAdoption", mode: "nest" },
     { kind: "setAntCount", n: 12 },
     { kind: "setManualAnt", index: null },
     { kind: "moveManualAnt", dx: 0, dy: -1 },
@@ -283,8 +272,8 @@ test("isCommand accepts valid commands and rejects malformed input", () => {
     { kind: "nope" },
     { kind: "setWall", x: 1, y: 2 },
     { kind: "setWall", x: "1", y: 2, open: true },
-    { kind: "setParam", key: "cautionary", value: true },
-    { kind: "setParam", key: "trailPower", value: "8" },
+    { kind: "setParam", key: "trailPower", value: 8 },
+    { kind: "setCautionary", value: true },
     { kind: "setManualAnt", index: "3" },
   ];
   for (const cmd of bad) assert.ok(!isCommand(cmd), `accepted ${JSON.stringify(cmd)}`);
@@ -304,29 +293,17 @@ test("setAntCount rejects counts that would exhaust memory", () => {
   assert.equal(isCommand({ kind: "setAntCount", n: -1 }), false);
 });
 
-test("setParam rejects an evaporation rate that amplifies pheromone", () => {
-  // decay is 1 - evapRate, so a negative rate multiplies every cell upwards
-  // without bound and reaches Infinity within a few hundred ticks.
-  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: 0.005 }), true);
-  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: 0 }), true);
-  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: -1 }), false);
-  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: 1e12 }), false);
+test("validParams accepts a tank in range and rejects anything else", () => {
+  assert.equal(validParams({ tankMax: 6400 }), true);
+  assert.equal(validParams({ tankMax: 0 }), false);
+  assert.equal(validParams({ tankMax: 1e12 }), false);
+  assert.equal(validParams({ tankMax: "6400" }), false);
+  assert.equal(validParams(null), false);
 });
 
-test("setParam rejects a trail power outside the exponent domain", () => {
-  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 5 }), true);
-  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 2.5 }), true);
-  // Not a multiple of a half: deterministicPow cannot compute it exactly.
-  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 2.3 }), false);
-  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: -2 }), false);
-  assert.equal(isCommand({ kind: "setParam", key: "trailPower", value: 1e7 }), false);
-});
-
-test("setParam rejects an out-of-range tank and an unknown key", () => {
-  assert.equal(isCommand({ kind: "setParam", key: "tankMax", value: 6400 }), true);
-  assert.equal(isCommand({ kind: "setParam", key: "tankMax", value: 0 }), false);
-  assert.equal(isCommand({ kind: "setParam", key: "tankMax", value: 1e12 }), false);
-  assert.equal(isCommand({ kind: "setParam", key: "toString", value: 1 }), false);
+test("the retired parameter commands are unknown kinds", () => {
+  assert.equal(isCommand({ kind: "setParam", key: "evapRate", value: 0.005 }), false);
+  assert.equal(isCommand({ kind: "setCautionary", value: true }), false);
 });
 
 test("setFood rejects an amount beyond the supported range", () => {

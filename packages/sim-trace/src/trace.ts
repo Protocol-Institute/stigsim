@@ -8,7 +8,7 @@ import { fingerprint } from "@stigsim/sim-core";
 
 export const TRACE_FORMAT = "stigsim-trace";
 /** The file format. Bump when the shape of a trace changes. */
-export const TRACE_VERSION = 1;
+export const TRACE_VERSION = 2;
 /** Simulation behaviour. Bump whenever a change alters how the model runs. */
 export const SIM_VERSION = 3;
 
@@ -186,6 +186,12 @@ export function parseTrace(text: string): ParseResult {
     return {
       ok: false,
       error: `That trace uses a newer version of the trace format (${t.version}) than this build understands (${TRACE_VERSION}).`,
+    };
+  }
+  if (t.version < TRACE_VERSION) {
+    return {
+      ok: false,
+      error: `That trace uses an older version of the trace format (${t.version}) than this build reads (${TRACE_VERSION}). It was recorded before doctrines existed and cannot be replayed here.`,
     };
   }
   if (!isInt(t.simVersion)) {
