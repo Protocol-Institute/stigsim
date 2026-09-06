@@ -1,4 +1,4 @@
-import { COLS, ROWS, CELL, W, H, NEST_SEED, cellCenter, DenseField } from "@stigsim/sim-core";
+import { COLS, ROWS, CELL, W, H, cellCenter, DenseField } from "@stigsim/sim-core";
 import type { Colony, Simulation } from "@stigsim/sim-core";
 
 /**
@@ -12,11 +12,7 @@ import type { Colony, Simulation } from "@stigsim/sim-core";
  */
 function layersOf(colony: Colony) {
   const field = colony.field as DenseField;
-  return {
-    home: field.layer("home"),
-    food: field.layer("food"),
-    caut: field.layer("caut"),
-  };
+  return { home: field.layer("home"), food: field.layer("food") };
 }
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
@@ -59,20 +55,16 @@ export function render(
   }
 
   // Compute per-colony phero maxima for normalization
+  const TRAIL_FLOOR = 100;
   const layers = sim.colonies.map(layersOf);
   const maxH = layers.map(l => {
-    let m = NEST_SEED;
+    let m = TRAIL_FLOOR;
     for (let i = 0; i < l.home.length; i++) if (l.home[i] > m) m = l.home[i];
     return m;
   });
   const maxF = layers.map(l => {
-    let m = NEST_SEED;
+    let m = TRAIL_FLOOR;
     for (let i = 0; i < l.food.length; i++) if (l.food[i] > m) m = l.food[i];
-    return m;
-  });
-  const maxCH = layers.map(l => {
-    let m = 1;
-    for (let i = 0; i < l.caut.length; i++) if (l.caut[i] > m) m = l.caut[i];
     return m;
   });
 
@@ -109,14 +101,6 @@ export function render(
           const alpha = Math.min(0.6, (fi / maxF[ci]) * 0.6);
           ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
           ctx.fillRect(px, py, CELL, CELL);
-        }
-        if (sim.params.cautionary) {
-          const ci2 = layer.caut[idx];
-          if (ci2 > 0.5) {
-            const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
-            ctx.fillStyle = `rgba(220,60,40,${alpha.toFixed(3)})`;
-            ctx.fillRect(px, py, CELL, CELL);
-          }
         }
       }
     }
@@ -173,6 +157,12 @@ export function render(
       ctx.arc(ant.x, ant.y, r, 0, Math.PI * 2);
       ctx.fillStyle = ant.hasFood ? "#facc15" : colColor;
       ctx.fill();
+
+      if (ant.role === "spoiler") {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+      }
 
       // Direction dot
       const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
