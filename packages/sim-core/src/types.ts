@@ -124,6 +124,13 @@ export interface Colony {
   doctrines: Map<number, Doctrine>;
   /** Ants holding each version. A version with no holders that is not current is dropped. */
   doctrineRefs: Map<number, number>;
+  /**
+   * What each other colony laid into this one, by that colony's id, kept only
+   * when the topology asks for provenance. Spectator and metrics data; ants
+   * never read it, so it is not fingerprinted: it is derived from deposits
+   * the real layer already carries.
+   */
+  received: Map<number, FieldSet>;
 }
 
 export interface Ant {

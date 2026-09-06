@@ -3,7 +3,7 @@ import {
   DIRS4, TRIP_WINDOW,
 } from "./constants";
 import type {
-  Ant, Colony, FoodSource, Occupancy, SimParams,
+  Ant, Colony, FieldSet, FoodSource, Occupancy, SimParams,
   SimulationOptions, WorldSpec,
 } from "./types";
 import type { RunConfig } from "./types";
@@ -96,6 +96,7 @@ export class Simulation {
         doctrineVersion: 0,
         doctrines: new Map([[0, doctrine]]),
         doctrineRefs: new Map([[0, 0]]),
+        received: new Map(),
       };
       colony.ants = Array.from({ length: this.numAnts }, (_, i) => this._newAnt(colony, i, this.numAnts));
       return colony;
@@ -168,13 +169,26 @@ export class Simulation {
    * it. With more than two colonies the amount is split equally.
    */
   private _depositMimic(colony: Colony, ch: DoctrineChannel, cx: number, cy: number, amount: number) {
-    const { read, mimicEnemy } = this.topology;
+    const { read, mimicEnemy, provenance } = this.topology;
     if (!mimicEnemy || read === "private") return;
     if (read === "shared") { colony.field.add(ch, cx, cy, amount); return; }
     const others = this.colonies.filter(c => c !== colony);
     if (others.length === 0) return;
     const share = amount / others.length;
-    for (const other of others) other.field.add(ch, cx, cy, share);
+    for (const other of others) {
+      other.field.add(ch, cx, cy, share);
+      if (provenance) this._receivedFrom(other, colony.id).add(ch, cx, cy, share);
+    }
+  }
+
+  /** The sublayer recording what `from` laid into `target`, allocated on first use. */
+  private _receivedFrom(target: Colony, from: number): FieldSet {
+    let sub = target.received.get(from);
+    if (!sub) {
+      sub = this.world.createField();
+      target.received.set(from, sub);
+    }
+    return sub;
   }
 
   /**
@@ -428,6 +442,7 @@ export class Simulation {
 
     for (const colony of this.colonies) {
       colony.field.decay(1 - colony.doctrine.evapRate);
+      for (const sub of colony.received.values()) sub.decay(1 - colony.doctrine.evapRate);
       for (let i = 0; i < colony.ants.length; i++) this._moveAnt(colony.ants[i], colony, i);
     }
 
@@ -516,4 +531,13 @@ export class Simulation {
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;
     ant.tx = next[0]; ant.ty = next[1];
   }
+}
+
+/** Total pheromone other colonies have laid into this one, across every sublayer and channel. */
+export function mimicMassReceived(colony: Colony): number {
+  let mass = 0;
+  for (const sub of colony.received.values()) {
+    for (const layer of sub.layers()) for (let i = 0; i < layer.length; i++) mass += layer[i];
+  }
+  return mass;
 }
