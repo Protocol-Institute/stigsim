@@ -3,7 +3,7 @@ import {
   Simulation,
   COLS, ROWS, CELL, W, H, DEPOSIT_RATE, DEPOSITS_PER_CELL, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
-  DEFAULT_FOOD_PER_SOURCE, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, MAX_COLONIES,
+  DEFAULT_FOOD_PER_SOURCE, DEFAULT_DOCTRINE, MAX_COLONIES,
   cloneDoctrine, makeSeeds, generateMasterSeed,
 } from "@stigsim/sim-core";
 import type { Command, Doctrine } from "@stigsim/sim-core";
@@ -17,6 +17,8 @@ import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 import { ParamCard } from "./ParamCard";
 import { DoctrinePanel } from "./DoctrinePanel";
+import { TOPOLOGY_CHOICES, choiceFor } from "./topology-choices";
+import type { TopologyChoice } from "./topology-choices";
 
 // ─── Simple control row ───────────────────────────────────────────────────────
 function ControlCard({
@@ -149,6 +151,9 @@ export default function AntSim() {
     () => Array.from({ length: MAX_COLONIES }, () => cloneDoctrine(DEFAULT_DOCTRINE)),
   );
   const [selectedColony, setSelectedColony] = useState(0);
+  const [topologyChoice, setTopologyChoice] = useState<TopologyChoice>(TOPOLOGY_CHOICES[0]);
+  const topologyRef = useRef(topologyChoice);
+  topologyRef.current = topologyChoice;
   const [adopted, setAdopted] = useState<number[]>([1]);
   const [canvasScale, setCanvasScale] = useState(1);
   const [watchedAntIdx, setWatchedAntIdx] = useState(0);
@@ -221,6 +226,7 @@ export default function AntSim() {
     setDoctrines(prev => prev.map((d, i) => (r.sim.colonies[i] ? cloneDoctrine(r.sim.colonies[i].doctrine) : d)));
     setAdopted(r.sim.colonies.map(c => c.ants.length === 0 ? 1
       : c.ants.filter(a => a.doctrineVersion === c.doctrineVersion).length / c.ants.length));
+    setTopologyChoice(choiceFor(r.sim.topology));
     setLatestFingerprint(r.sim.fingerprints[r.sim.fingerprints.length - 1] ?? null);
 
     // The metrics recorder only runs for the live simulation, so the rate
@@ -418,7 +424,7 @@ export default function AntSim() {
     // The run's settings travel as commands, applied before the first
     // physics step and recorded at tick 1, so a trace carries them.
     sim.enqueue({ kind: "setAdoption", mode: "instant" });
-    sim.enqueue({ kind: "setTopology", topology: DEFAULT_TOPOLOGY });
+    sim.enqueue({ kind: "setTopology", topology: topologyRef.current.topology });
     sim.colonies.forEach((_, i) => sim.enqueue({ kind: "setDoctrine", colony: i, doctrine: doctrinesRef.current[i] }));
     sim.flushPending();
     simRef.current = sim;
@@ -498,7 +504,7 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource, tankMax]);
+  }, [loopRate, numColonies, numFoodSources, foodPerSource, tankMax, topologyChoice]);
 
   useEffect(() => {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
@@ -960,6 +966,37 @@ export default function AntSim() {
             disabled={replaying}
           />
 
+          <div style={{
+            background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 10, padding: "14px 16px",
+            display: "flex", flexDirection: "column", gap: 8, flex: "1 1 270px", minWidth: 0,
+            opacity: replaying ? 0.4 : 1,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Field topology</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b" }}>{topologyChoice.label}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+              {topologyChoice.description} <strong style={{ color: "#e5d5b5" }}>Changing this restarts the simulation.</strong>
+            </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {TOPOLOGY_CHOICES.map(c => (
+                <button
+                  key={c.name}
+                  onClick={() => setTopologyChoice(c)}
+                  disabled={replaying || numColonies < 2}
+                  style={{
+                    padding: "5px 10px", borderRadius: 8, fontSize: "0.72rem", cursor: replaying ? "not-allowed" : "pointer",
+                    border: "1px solid #3d2e18",
+                    background: c.name === topologyChoice.name ? "#f59e0b" : "#1a1208",
+                    color: c.name === topologyChoice.name ? "#000" : "#e5d5b5",
+                  }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
         </div>
 
         <p style={{ margin: "16px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
@@ -1180,7 +1217,7 @@ export default function AntSim() {
         onSelect={setSelectedColony}
         doctrine={doctrines[colonyIdx]}
         adopted={adopted[colonyIdx] ?? 1}
-        topology={DEFAULT_TOPOLOGY}
+        topology={topologyChoice.topology}
         disabled={replaying}
         onCommit={commitDoctrine}
       />
