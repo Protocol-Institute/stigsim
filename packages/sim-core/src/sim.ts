@@ -145,7 +145,7 @@ export class Simulation {
     if (ant.tank <= 0) return;
     const doctrine = this.doctrineFor(ant, colony);
     const row = doctrine[ant.role].lay[ant.state];
-    const mimicRate = Math.min(doctrine.mimicRate, this.topology.maxMimicRate);
+    const mimicRate = Math.min(colony.doctrine.mimicRate, this.topology.maxMimicRate);
     for (const ch of DOCTRINE_CHANNELS) {
       const entry = row[ch];
       if (entry.own > 0 && ant.tank > 0) {

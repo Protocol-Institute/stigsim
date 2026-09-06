@@ -173,6 +173,30 @@ test("a mimic deposit stops at an empty tank like any other", () => {
   assert.equal(a.ants[0].tank, 0);
 });
 
+test("the mimic rate is colony-level: spoilers already out use a new rate at once, even under nest adoption", () => {
+  const sim = new Simulation(config());
+  sim.topology = TOPOLOGY_MIMICRY;
+  start(sim, allSpoilers(0.5));
+  const [a, b] = sim.colonies;
+  // Tick 1 chooses a target; tick 2 lays the first mimic frame at 0.5 * DEPOSIT_RATE.
+  sim.step(); sim.step();
+  assert.equal(b.field.get("food", a.nestX, a.nestY), 0.5 * DEPOSIT_RATE);
+  // Switch to nest adoption and halve the rate. The ant is mid-transit and does
+  // not adopt, yet its next two frames lay at the new colony-level rate.
+  sim.enqueue({ kind: "setAdoption", mode: "nest" });
+  sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: allSpoilers(0.25) });
+  sim.step(); sim.step();
+  // start()'s own setDoctrine already bumped the colony (and, under the
+  // default instant adoption, the ant) to version 1 before this test's second
+  // setDoctrine (to version 2) ever ran. "Not adopted" means the ant is still
+  // on that pre-existing version 1, not on the fresh version 2 — not on 0,
+  // which nothing here ever holds. See the final-fix report for this branch's
+  // discussion with the review lead: the brief's literal expected value of 0
+  // undercounts start()'s own bump.
+  assert.equal(a.ants[0].doctrineVersion, 1, "not adopted: still mid-trip, holding the version from before this setDoctrine");
+  assert.equal(b.field.get("food", a.nestX, a.nestY), (0.5 + 0.25 + 0.25) * DEPOSIT_RATE);
+});
+
 test("role assignment spends no random draws", () => {
   const a = new Simulation(config({ numAnts: 8, numColonies: 1 }));
   const b = new Simulation(config({ numAnts: 8, numColonies: 1 }));
