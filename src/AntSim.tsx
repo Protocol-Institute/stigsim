@@ -573,6 +573,7 @@ export default function AntSim() {
   const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
   const tankCells = Math.round(tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL));
   const colonyIdx = Math.min(selectedColony, numColonies - 1);
+  const spoilerIdx = doctrines.slice(0, numColonies).findIndex(d => d.spoilerFraction > 0);
   const loopPct = Math.round(loopRate * 100);
   const loopLabel = loopRate === 0 ? "None (tree)" : loopRate < 0.05 ? "Very few" : loopRate < 0.15 ? "Some" : loopRate < 0.3 ? "Many" : "Lots";
 
@@ -782,16 +783,16 @@ export default function AntSim() {
               <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#facc15", flexShrink: 0 }} />
               <span>Carrying food</span>
             </div>
-            {doctrines.slice(0, numColonies).some(d => d.spoilerFraction > 0) && (
+            {spoilerIdx >= 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", opacity: 0.7 }}>
                 <div style={{ width: 9, height: 9, borderRadius: "50%", background: "transparent", border: "1.5px solid #fff", flexShrink: 0 }} />
                 <span>Spoiler</span>
               </div>
             )}
-            {doctrines.slice(0, numColonies).some(d => d.spoilerFraction > 0) && (
+            {topologyChoice.topology.provenance && spoilerIdx >= 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", opacity: 0.7 }}>
                 <div style={{ width: 12, height: 12, borderRadius: 2, background: "#2a1e0e", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ width: 5, height: 5, background: COLONY_COLORS[1].primary }} />
+                  <div style={{ width: 5, height: 5, background: COLONY_COLORS[spoilerIdx].primary }} />
                 </div>
                 <span>False trail (in the spoiler's colour)</span>
               </div>
