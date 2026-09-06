@@ -325,3 +325,14 @@ test("isCommand accepts the doctrine, adoption, and topology commands", () => {
   assert.equal(isCommand({ kind: "setTopology", topology: { ...DEFAULT_TOPOLOGY, read: "shared" } }), true);
   assert.equal(isCommand({ kind: "setTopology", topology: { ...DEFAULT_TOPOLOGY, read: "sideways" } }), false);
 });
+
+test("enqueue refuses a command that fails validation and records nothing", () => {
+  const sim = new Simulation(config());
+  const bad = { ...DEFAULT_DOCTRINE, evapRate: 9 };
+  assert.equal(sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: bad }), false);
+  assert.equal(sim.enqueue({ kind: "setAntCount", n: MAX_ANTS_PER_COLONY + 1 }), false);
+  assert.equal(sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: DEFAULT_DOCTRINE }), true);
+  sim.step();
+  assert.deepEqual(sim.commandLog.map(c => c.cmd.kind), ["setDoctrine"]);
+  assert.equal(sim.colonies[0].doctrineVersion, 1);
+});

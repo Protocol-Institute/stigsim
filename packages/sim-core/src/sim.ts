@@ -10,7 +10,7 @@ import type { RunConfig } from "./types";
 import { inBounds } from "./world";
 import { mazeWorld } from "./maze";
 import { makeRng, shuffleInPlace, type Rng } from "./rng";
-import type { Command, TimedCommand } from "./commands";
+import { isCommand, type Command, type TimedCommand } from "./commands";
 import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
 import {
   DEFAULT_DOCTRINE, DOCTRINE_CHANNELS, cloneDoctrine,
@@ -288,8 +288,11 @@ export class Simulation {
     return this.antsRng.draws;
   }
 
-  enqueue(cmd: Command) {
+  /** Queues a command for the next tick boundary. Returns false, and queues nothing, when the command fails isCommand. */
+  enqueue(cmd: Command): boolean {
+    if (!isCommand(cmd)) return false;
     this.pending.push(cmd);
+    return true;
   }
 
   /**

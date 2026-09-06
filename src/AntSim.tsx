@@ -274,7 +274,10 @@ export default function AntSim() {
     if (replayRef.current) return;
     const sim = simRef.current;
     if (!sim) return;
-    sim.enqueue(cmd);
+    if (!sim.enqueue(cmd)) {
+      setTraceMessage("That change was refused: a value was outside the range the simulation accepts.");
+      return;
+    }
     if (!runningRef.current) {
       sim.flushPending();
       forceRender();
