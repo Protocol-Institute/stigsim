@@ -73,11 +73,11 @@ test("commands are captured in the trace at their recorded ticks", () => {
   const sim = new Simulation(config());
   const rec = new MetricsRecorder();
   for (let i = 0; i < 30; i++) { sim.step(); rec.maybeSample(sim); }
-  sim.enqueue({ kind: "setParam", key: "trailPower", value: 9 });
+  sim.enqueue({ kind: "setAdoption", mode: "nest" });
   for (let i = 0; i < 30; i++) { sim.step(); rec.maybeSample(sim); }
 
   const trace = buildTrace(sim, rec);
-  assert.deepEqual(trace.commands, [{ t: 31, cmd: { kind: "setParam", key: "trailPower", value: 9 } }]);
+  assert.deepEqual(trace.commands, [{ t: 31, cmd: { kind: "setAdoption", mode: "nest" } }]);
 });
 
 test("a built trace's metrics samples do not change when the simulation advances afterwards", () => {
@@ -143,6 +143,14 @@ test("parseTrace refuses a newer format version", () => {
   const result = parseTrace(JSON.stringify(trace));
   assert.ok(!result.ok);
   assert.match(result.error, /newer version/i);
+});
+
+test("parseTrace refuses an older format version", () => {
+  const { sim, rec } = runSim(10);
+  const trace = { ...buildTrace(sim, rec), version: TRACE_VERSION - 1 };
+  const result = parseTrace(JSON.stringify(trace));
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? "" : result.error, /older version/i);
 });
 
 test("parseTrace rejects a trace with a broken command", () => {
@@ -213,11 +221,9 @@ test("the loader rejects an ant count that would exhaust memory", () => {
   assert.equal(result.ok, false);
 });
 
-test("the loader rejects params that stall a tick or amplify pheromone", () => {
-  assert.equal(parseTrace(traceWith({}, { trailPower: 1e12 })).ok, false);
-  assert.equal(parseTrace(traceWith({}, { trailPower: 2.3 })).ok, false);
-  assert.equal(parseTrace(traceWith({}, { evapRate: -1 })).ok, false);
+test("the loader rejects a tank outside its range", () => {
   assert.equal(parseTrace(traceWith({}, { tankMax: 0 })).ok, false);
+  assert.equal(parseTrace(traceWith({}, { tankMax: 1e12 })).ok, false);
 });
 
 test("the loader rejects out-of-range colony, source, and food counts", () => {
@@ -228,9 +234,9 @@ test("the loader rejects out-of-range colony, source, and food counts", () => {
 
 test("the loader still accepts everything the sliders can produce", () => {
   assert.equal(parseTrace(traceWith({ numAnts: 100, numColonies: 4, numFoodSources: 8, foodPerSource: 10000 },
-    { evapRate: 0.001, trailPower: 10, tankMax: 16000 })).ok, true);
+    { tankMax: 16000 })).ok, true);
   assert.equal(parseTrace(traceWith({ numAnts: 1, numColonies: 1, numFoodSources: 1, foodPerSource: 50 },
-    { evapRate: 0.02, trailPower: 1, tankMax: 1600 })).ok, true);
+    { tankMax: 1600 })).ok, true);
 });
 
 test("the loader checks the shape of each metrics colony entry", () => {
@@ -269,7 +275,7 @@ test("the loader rejects a trace whose ticks contradict its end tick", () => {
   assert.match(lateFingerprint.ok ? "" : lateFingerprint.error, /after its end tick/i);
 
   const lateCommand = parseTrace(JSON.stringify({
-    ...trace, commands: [{ t: 5000, cmd: { kind: "setCautionary", value: true } }],
+    ...trace, commands: [{ t: 5000, cmd: { kind: "setAdoption", mode: "nest" } }],
   }));
   assert.equal(lateCommand.ok, false);
   assert.match(lateCommand.ok ? "" : lateCommand.error, /after its end tick/i);
@@ -282,7 +288,7 @@ test("a trace saved during a paused edit still loads", () => {
   const sim = new Simulation(config());
   const rec = new MetricsRecorder();
   for (let i = 0; i < 120; i++) { sim.step(); rec.maybeSample(sim); }
-  sim.enqueue({ kind: "setCautionary", value: true });
+  sim.enqueue({ kind: "setAdoption", mode: "nest" });
   sim.flushPending();
 
   const trace = buildTrace(sim, rec);

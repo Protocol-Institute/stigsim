@@ -24,6 +24,9 @@ Stigsim has a standalone React/Vite simulator and an optional server-authoritati
 
 - `packages/sim-core/` contains the simulation core. It must not import React
   or touch the DOM, so it can run headless on the server as well as in a browser.
+  - `doctrine.ts` is the vocabulary of colony behaviour, `topology.ts` the field
+    settings, and `score.ts` the response side. `sim.ts` owns laying, roles,
+    and adoption.
 - `packages/sim-trace/` contains run metrics, the trace format, and replay. It
   depends on `sim-core`; nothing in `sim-core` may depend on it.
 - `src/render.ts` draws a simulation to a canvas.
@@ -57,8 +60,8 @@ usual causes, and none of them may be used to compute simulation state.
 
 `deterministicPow` in `packages/sim-core/src/rng.ts` replaces `Math.pow`. It is defined only
 on exponents that are multiples of a half, and throws on anything else rather
-than returning an approximation that would look like a valid run. Anything that
-can set the trail-bias exponent has to screen it with `isHalfStep` first.
+than returning an approximation that would look like a valid run. Anything that can set a follow exponent has to screen it with `isHalfStep`
+first; `isDoctrine` does, and the trace loader shares it.
 
 Fingerprints cover the position of the ant random stream as well as the visible
 state. Two simulations can agree on every ant and every cell while standing at
@@ -88,7 +91,14 @@ regression guard. If that test fails, simulation behaviour changed. The usual
 cause is a new mutation path that does not go through the command bus in
 `packages/sim-core/src/commands.ts`; every way of changing a running simulation
 must be a
-command, or traces stop reproducing. If the change was deliberate, bump
+command, or traces stop reproducing.
+
+A doctrine, an adoption mode, or a topology change is a command like any
+other: `setDoctrine` carries the whole doctrine as data, validated by
+`isDoctrine` on both the bus and the loader. Never call into a colony's
+doctrine from outside `apply`.
+
+If the change was deliberate, bump
 `SIM_VERSION` in `packages/sim-trace/src/trace.ts` and regenerate the fixture with
 `pnpm golden`.
 

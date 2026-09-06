@@ -1,15 +1,12 @@
+import type { Doctrine, Role } from "./doctrine";
+
+/** What is fixed at construction and the same for every colony. Live behaviour lives in each colony's Doctrine. */
 export interface SimParams {
-  evapRate: number;
-  trailPower: number;
   tankMax: number;
-  cautionary: boolean;
 }
 
 export const DEFAULT_PARAMS: SimParams = {
-  evapRate: 0.005,
-  trailPower: 5,
   tankMax: 6400,
-  cautionary: false,
 };
 
 export type CellType = 0 | 1;
@@ -119,6 +116,21 @@ export interface Colony {
   discoveredSources: Set<number>;
   /** A trailing window of completed round trips, newest last. */
   recentTrips: { steps: number; sx: number; sy: number }[];
+  /** The doctrine new arrivals adopt. Colony-level atoms take effect from here. */
+  doctrine: Doctrine;
+  /** Monotonic; incremented by every setDoctrine. */
+  doctrineVersion: number;
+  /** Every version some ant still holds, plus the current one. */
+  doctrines: Map<number, Doctrine>;
+  /** Ants holding each version. A version with no holders that is not current is dropped. */
+  doctrineRefs: Map<number, number>;
+  /**
+   * What each other colony laid into this one, by that colony's id, kept only
+   * when the topology asks for provenance. Spectator and metrics data; ants
+   * never read it, so it is not fingerprinted: it is derived from deposits
+   * the real layer already carries.
+   */
+  received: Map<number, FieldSet>;
 }
 
 export interface Ant {
@@ -130,6 +142,9 @@ export interface Ant {
   hasFood: boolean;
   tank: number;
   colonyId: number;
+  role: Role;
+  /** Which of the colony's doctrines this ant runs. Re-stamped at the nest event. */
+  doctrineVersion: number;
   manual?: boolean;
   /** Cells traversed since the ant last left the nest. Observation only. */
   stepsSinceNest: number;
