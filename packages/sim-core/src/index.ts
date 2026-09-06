@@ -7,4 +7,5 @@ export * from "./maze";
 export * from "./sim";
 export * from "./rng";
 export * from "./commands";
+export * from "./doctrine";
 export * from "./fingerprint";
