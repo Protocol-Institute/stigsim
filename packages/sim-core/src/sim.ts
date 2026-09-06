@@ -446,6 +446,8 @@ export class Simulation {
     for (const colony of this.colonies) {
       colony.field.decay(1 - colony.doctrine.evapRate);
       for (const sub of colony.received.values()) sub.decay(1 - colony.doctrine.evapRate);
+    }
+    for (const colony of this.colonies) {
       for (let i = 0; i < colony.ants.length; i++) this._moveAnt(colony.ants[i], colony, i);
     }
 
