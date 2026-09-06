@@ -106,6 +106,31 @@ export function render(
     }
   }
 
+  // What other colonies laid into each colony, in the spoiler's colour and
+  // inset so it reads as a mark on the trail rather than the trail itself.
+  // Players' ants see their own chemical; this is the spectator's view.
+  const INSET = 4;
+  for (const target of sim.colonies) {
+    for (const [from, sub] of target.received) {
+      const dense = sub as DenseField;
+      const food = dense.layer("food");
+      const home = dense.layer("home");
+      const rgb = COLONY_COLORS[from].primary;
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const idx = y * COLS + x;
+          const v = food[idx] + home[idx];
+          if (v <= 0.5) continue;
+          const alpha = Math.min(0.9, 0.3 + v / 100);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = rgb;
+          ctx.fillRect(x * CELL + INSET, y * CELL + INSET, CELL - 2 * INSET, CELL - 2 * INSET);
+        }
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+
   // Draw nests
   ctx.font = `${CELL - 4}px serif`;
   ctx.textAlign = "center";

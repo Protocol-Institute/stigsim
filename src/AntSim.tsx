@@ -779,6 +779,14 @@ export default function AntSim() {
                 <span>Spoiler</span>
               </div>
             )}
+            {doctrines.slice(0, numColonies).some(d => d.spoilerFraction > 0) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", opacity: 0.7 }}>
+                <div style={{ width: 12, height: 12, borderRadius: 2, background: "#2a1e0e", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 5, height: 5, background: COLONY_COLORS[1].primary }} />
+                </div>
+                <span>False trail (in the spoiler's colour)</span>
+              </div>
+            )}
           </>
         )}
       </div>
