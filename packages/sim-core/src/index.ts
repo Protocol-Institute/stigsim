@@ -8,4 +8,5 @@ export * from "./sim";
 export * from "./rng";
 export * from "./commands";
 export * from "./doctrine";
+export * from "./topology";
 export * from "./fingerprint";
