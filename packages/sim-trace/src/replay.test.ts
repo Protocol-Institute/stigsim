@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Simulation, DEFAULT_PARAMS, DEFAULT_DOCTRINE, cloneDoctrine, makeSeeds, fingerprint } from "@stigsim/sim-core";
+import { Simulation, DEFAULT_PARAMS, DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, cloneDoctrine, makeSeeds, fingerprint } from "@stigsim/sim-core";
 import type { RunConfig } from "@stigsim/sim-core";
 import { MetricsRecorder, buildTrace, Replayer } from "./index";
 import type { Trace } from "./index";
@@ -264,4 +264,25 @@ test("reset alone re-arms fingerprint checking after continueAfterDivergence", (
   r.reset();
   while (r.step());
   assert.equal(r.divergedAt, target.t);
+});
+
+test("a run that starts with the sandbox's initial commands replays exactly", () => {
+  const sim = new Simulation(config({ numColonies: 2 }));
+  const rec = new MetricsRecorder();
+  const saboteur = cloneDoctrine(DEFAULT_DOCTRINE);
+  saboteur.spoilerFraction = 0.2;
+  saboteur.mimicRate = 0.5;
+  sim.enqueue({ kind: "setAdoption", mode: "instant" });
+  sim.enqueue({ kind: "setTopology", topology: TOPOLOGY_MIMICRY });
+  sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: saboteur });
+  sim.enqueue({ kind: "setDoctrine", colony: 1, doctrine: cloneDoctrine(DEFAULT_DOCTRINE) });
+  sim.flushPending();
+  for (let i = 0; i < 700; i++) { sim.step(); rec.maybeSample(sim); }
+
+  const trace = buildTrace(sim, rec);
+  assert.deepEqual(trace.commands.map(c => c.t), [1, 1, 1, 1]);
+  const r = new Replayer(trace);
+  while (r.step());
+  assert.equal(r.divergedAt, null);
+  assert.equal(fingerprint(r.sim), fingerprint(sim));
 });

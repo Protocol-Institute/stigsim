@@ -245,6 +245,7 @@ test("a loaded schedule replays commands at the recorded ticks", () => {
   assert.deepEqual(replay.commandLog, live.commandLog);
   assert.equal(replay.occupancy.isOpen(x, y), false);
   assert.equal(replay.totalFoodCollected, live.totalFoodCollected);
+  assert.equal(replay.colonies[0].doctrineVersion, 1);
 });
 
 test("a schedule entry at tick 0 applies when the schedule loads", () => {

@@ -125,7 +125,7 @@ test("a mimic deposit charges the tank but lands nowhere under the private topol
 
 test("under separable mimicry the deposit lands in the other colony's layer", () => {
   const sim = new Simulation(config());
-  sim.topology = TOPOLOGY_MIMICRY; // maxMimicRate 0.5; the validator does not admit this yet
+  sim.topology = TOPOLOGY_MIMICRY; // maxMimicRate 0.5; set directly to keep the test independent of the command path
   start(sim, allSpoilers(0.5));
   const [a, b] = sim.colonies;
   for (let i = 0; i < 5; i++) sim.step();
@@ -160,6 +160,17 @@ test("with three colonies a mimic deposit is split between the other two", () =>
   for (let i = 0; i < 5; i++) sim.step();
   assert.equal(b.field.get("food", a.nestX, a.nestY), 3 * 0.5 * DEPOSIT_RATE / 2);
   assert.equal(c.field.get("food", a.nestX, a.nestY), 3 * 0.5 * DEPOSIT_RATE / 2);
+});
+
+test("a mimic deposit stops at an empty tank like any other", () => {
+  const sim = new Simulation(config({ params: { ...DEFAULT_PARAMS, tankMax: 25 } }));
+  sim.topology = TOPOLOGY_MIMICRY;
+  start(sim, allSpoilers(0.5));
+  const [a, b] = sim.colonies;
+  for (let i = 0; i < 5; i++) sim.step();
+  // 10, 10, then the remaining 5.
+  assert.equal(b.field.get("food", a.nestX, a.nestY), 25);
+  assert.equal(a.ants[0].tank, 0);
 });
 
 test("role assignment spends no random draws", () => {
