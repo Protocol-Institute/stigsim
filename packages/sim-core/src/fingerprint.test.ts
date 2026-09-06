@@ -166,13 +166,28 @@ test("under nest adoption the fingerprint sees every version ants still hold", (
   const a = new Simulation(c);
   const b = new Simulation(c);
   for (const s of [a, b]) { s.enqueue({ kind: "setAdoption", mode: "nest" }); s.flushPending(); }
-  assert.equal(fingerprint(a), fingerprint(b));
-  const d = cloneDoctrine(DEFAULT_DOCTRINE);
-  d.forager.follow.searching.food.own = 6;
-  b.enqueue({ kind: "setDoctrine", colony: 0, doctrine: d });
+  // Both colonies bump to version 1 with a pending doctrine no ant has
+  // adopted, and only the pending doctrines' numbers differ, so the version
+  // counter alone cannot explain a divergence: the hash must be reading the
+  // held doctrines themselves.
+  const d1 = cloneDoctrine(DEFAULT_DOCTRINE);
+  d1.evapRate = 0.006;
+  const d2 = cloneDoctrine(DEFAULT_DOCTRINE);
+  d2.forager.follow.searching.food.own = 6;
+  a.enqueue({ kind: "setDoctrine", colony: 0, doctrine: d1 });
+  b.enqueue({ kind: "setDoctrine", colony: 0, doctrine: d2 });
+  a.flushPending();
   b.flushPending();
-  // No ant has adopted, every ant still runs version 0, yet the pending
-  // doctrine is state the run's future depends on.
+  assert.equal(a.colonies[0].doctrineVersion, b.colonies[0].doctrineVersion);
+  assert.ok(a.colonies[0].ants.every(x => x.doctrineVersion === 0));
   assert.ok(b.colonies[0].ants.every(x => x.doctrineVersion === 0));
   assert.notEqual(fingerprint(a), fingerprint(b));
+
+  // The same pending doctrine on both sides hashes the same.
+  const twin = new Simulation(c);
+  twin.enqueue({ kind: "setAdoption", mode: "nest" });
+  twin.flushPending();
+  twin.enqueue({ kind: "setDoctrine", colony: 0, doctrine: d1 });
+  twin.flushPending();
+  assert.equal(fingerprint(a), fingerprint(twin));
 });
