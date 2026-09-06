@@ -10,7 +10,7 @@ export const TRACE_FORMAT = "stigsim-trace";
 /** The file format. Bump when the shape of a trace changes. */
 export const TRACE_VERSION = 1;
 /** Simulation behaviour. Bump whenever a change alters how the model runs. */
-export const SIM_VERSION = 2;
+export const SIM_VERSION = 3;
 
 export interface TraceRunConfig {
   numAnts: number;

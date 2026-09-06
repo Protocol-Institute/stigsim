@@ -12,6 +12,12 @@ export const NEST_SEED = 1000;
 export const DEFAULT_NUM_ANTS = 20;
 export const DEPOSIT_RATE = 20;
 
+// ─── Odor (computed at read time, never stored) ─────────────────────────────
+/** What a returning ant reads on its own nest cell, and a searching ant on a live food cell. */
+export const ODOR_LEVEL = 1000;
+/** Fraction of ODOR_LEVEL on the nest's four orthogonal neighbours. */
+export const NEST_HALO = 0.85;
+
 // ─── Colony nest corner positions (up to 4) ──────────────────────────────────
 export const COLONY_NESTS: [number, number][] = [
   [1, 1],
@@ -50,7 +56,7 @@ export const MAX_EVAP_RATE = 1;
 /**
  * Trail bias exponent. Pheromone saturates in the low thousands, and 5000^32
  * is around 1e118, so this leaves plenty of headroom below the point where
- * powerChoice's scores overflow to Infinity and every candidate ties.
+ * scoreCell's products overflow to Infinity and every candidate ties.
  */
 export const MAX_TRAIL_POWER = 32;
 export const MAX_TANK = 1e6;

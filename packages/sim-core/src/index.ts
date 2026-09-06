@@ -9,4 +9,5 @@ export * from "./rng";
 export * from "./commands";
 export * from "./doctrine";
 export * from "./topology";
+export * from "./score";
 export * from "./fingerprint";

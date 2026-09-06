@@ -1,19 +1,20 @@
 import {
-  CELL, V, ARRIVE_THRESH, NEST_SEED, DEPOSIT_RATE,
+  CELL, V, ARRIVE_THRESH, DEPOSIT_RATE,
   DIRS4, TRIP_WINDOW,
 } from "./constants";
 import type {
-  Ant, Channel, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+  Ant, Colony, FoodSource, Occupancy, SimParams,
   SimulationOptions, WorldSpec,
 } from "./types";
 import type { RunConfig } from "./types";
 import { inBounds } from "./world";
 import { mazeWorld } from "./maze";
-import { makeRng, deterministicPow, shuffleInPlace, type Rng } from "./rng";
+import { makeRng, shuffleInPlace, type Rng } from "./rng";
 import type { Command, TimedCommand } from "./commands";
 import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
 import { DEFAULT_DOCTRINE, cloneDoctrine, type AdoptionMode, type Doctrine } from "./doctrine";
 import { DEFAULT_TOPOLOGY, cloneTopology, type Topology } from "./topology";
+import { chooseNext } from "./score";
 
 export const cellCenter = (gx: number, gy: number) => ({ px: gx * CELL + CELL / 2, py: gy * CELL + CELL / 2 });
 
@@ -23,30 +24,6 @@ export function openNeighbours(occ: Occupancy, x: number, y: number, exX?: numbe
   return DIRS4
     .map(([dx, dy]) => [x + dx, y + dy] as [number, number])
     .filter(([nx, ny]) => occ.isOpen(nx, ny) && !(nx === exX && ny === exY));
-}
-
-export function powerChoice(
-  cells: [number, number][],
-  field: FieldSet,
-  ch: Channel,
-  power: number,
-  rng: Rng,
-  cautCh: Channel | null,
-  cautPower: number,
-): [number, number] {
-  const scores = cells.map(([cx, cy]) => {
-    const trail = deterministicPow(field.get(ch, cx, cy) + 1, power);
-    // The truthiness test on cautPower is deliberate and preserved: an exponent
-    // of zero means no caution rather than a caution factor of one.
-    const caution = (cautCh !== null && cautPower)
-      ? deterministicPow(field.get(cautCh, cx, cy) + 1, cautPower)
-      : 1;
-    return trail / caution;
-  });
-  const total = scores.reduce((a, b) => a + b, 0);
-  let r = rng() * total;
-  for (let i = 0; i < cells.length; i++) { r -= scores[i]; if (r <= 0) return cells[i]; }
-  return cells[cells.length - 1];
 }
 
 export class Simulation {
@@ -96,7 +73,6 @@ export class Simulation {
     this.bounds = bounds;
     this.colonies = this._initColonies();
     this.foodSources = this._placeFoodSources(makeRng(config.seeds.food));
-    for (const colony of this.colonies) this._seedNest(colony);
   }
 
   private _initColonies(): Colony[] {
@@ -194,17 +170,6 @@ export class Simulation {
       remaining: this.foodPerSource,
       total: this.foodPerSource,
     }));
-  }
-
-  private _seedNest(colony: Colony) {
-    const { nestX, nestY } = colony;
-    colony.field.set("home", nestX, nestY, NEST_SEED);
-    for (const [dx, dy] of DIRS4) {
-      const nx = nestX + dx, ny = nestY + dy;
-      if (this.occupancy.isOpen(nx, ny)) {
-        colony.field.max("home", nx, ny, NEST_SEED * 0.85);
-      }
-    }
   }
 
   get allAnts(): Ant[] {
@@ -404,17 +369,8 @@ export class Simulation {
     this.tick++;
     this._runCommandsFor(this.tick);
 
-    const decay = 1 - this.params.evapRate;
     for (const colony of this.colonies) {
-      colony.field.decay(decay);
-      this._seedNest(colony);
-      // Re-seed discovered food sources that still have food
-      for (const srcIdx of colony.discoveredSources) {
-        const src = this.foodSources[srcIdx];
-        if (src.remaining > 0) {
-          colony.field.set("food", src.x, src.y, NEST_SEED);
-        }
-      }
+      colony.field.decay(1 - colony.doctrine.evapRate);
       for (const ant of colony.ants) this._moveAnt(ant, colony);
     }
 
@@ -424,7 +380,7 @@ export class Simulation {
   }
 
   private _moveAnt(ant: Ant, colony: Colony) {
-    const { tankMax, trailPower } = this.params;
+    const { tankMax } = this.params;
     const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);
     const dx = tpx - ant.x, dy = tpy - ant.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -456,7 +412,6 @@ export class Simulation {
         colony.discoveredSources.add(srcIdx);
         if (src.remaining > 0) {
           src.remaining--;
-          colony.field.set("food", src.x, src.y, NEST_SEED);
           ant.state = "returning";
           ant.hasFood = true;
           ant.tank = tankMax;
@@ -501,15 +456,12 @@ export class Simulation {
     // An edit can seal every exit from a cell an ant is standing in, which
     // applySetWall permits: it refuses only nest and food cells. The ant waits
     // where it is until something opens up. The server simulation has always
-    // had this guard; the client did not, and powerChoice returns undefined on
+    // had this guard; the client did not, and chooseNext returns undefined on
     // an empty list.
     if (candidates.length === 0) return;
 
-    const ch: Channel = ant.state === "searching" ? "food" : "home";
-    const next = powerChoice(
-      candidates, colony.field, ch, trailPower, this.antsRng,
-      this.params.cautionary ? "caut" : null, trailPower,
-    );
+    const table = this.doctrineFor(ant, colony)[ant.role];
+    const next = chooseNext(this, colony, table, ant.state, candidates, this.antsRng);
 
     ant.prevCx = ant.cx; ant.prevCy = ant.cy;
     ant.tx = next[0]; ant.ty = next[1];
