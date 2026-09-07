@@ -263,8 +263,18 @@ export class WarSimulation {
           continue;
         }
         this.adoptDoctrine(ant, state, colony.id);
-        this.refuelAtNest(ant, state, colony.id, true);
+        this.refuelAtNest(ant, state, colony.id);
         continue;
+      }
+
+      if (state.phase === "searching"
+          && state.departure
+          && ant.cx === colony.nestX
+          && ant.cy === colony.nestY
+          && ant.tx === colony.nestX
+          && ant.ty === colony.nestY) {
+        [ant.tx, ant.ty] = state.departure;
+        state.departure = null;
       }
 
       const targetX = ant.tx * CELL + CELL / 2;
@@ -299,7 +309,7 @@ export class WarSimulation {
           && ant.cx === colony.nestX && ant.cy === colony.nestY) {
         state.departure = [ant.tx, ant.ty];
         this.adoptDoctrine(ant, state, colony.id);
-        this.refuelAtNest(ant, state, colony.id, false);
+        this.refuelAtNest(ant, state, colony.id);
       }
     }
   }
@@ -312,7 +322,7 @@ export class WarSimulation {
     ant.tank = Math.min(ant.tank, state.doctrine.tankMax);
   }
 
-  private refuelAtNest(ant: Ant, state: AntRuntime, colonyId: number, wasWaiting: boolean): void {
+  private refuelAtNest(ant: Ant, state: AntRuntime, colonyId: number): void {
     const colony = this.colonyRuntime[colonyId];
     const needed = Math.max(0, this.rules.maxEnergy - state.energy);
     const availableFood = Math.max(0, colony.foodReserve);
@@ -328,11 +338,6 @@ export class WarSimulation {
       state.phase = "searching";
       ant.state = "searching";
       ant.manual = false;
-      if (wasWaiting && state.departure) {
-        ant.prevCx = ant.cx;
-        ant.prevCy = ant.cy;
-        [ant.tx, ant.ty] = state.departure;
-      }
       return;
     }
 

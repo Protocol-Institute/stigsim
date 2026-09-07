@@ -97,6 +97,40 @@ test("an under-fueled ant waits at the nest and keeps consuming energy", () => {
   assert.equal(war.getAntSnapshot(ant)!.energy, before - 0.25);
 });
 
+test("a waiting ant refuels before departing on the following step", () => {
+  const war = new WarSimulation(
+    { masterSeed: "waiting-departure-test", startingAnts: 2 },
+    undefined,
+    {
+      maxEnergy: 1000,
+      retreatEnergy: 990,
+      minDepartEnergy: 1000,
+      startingReservePerAnt: 0,
+      reproductionCheckSteps: 10_000,
+    },
+  );
+  const colony = war.simulation.colonies[0];
+  for (let i = 0; i < 1000 && war.getMetrics(0).waiting === 0; i++) war.step();
+  const waitingAnt = colony.ants.find(ant => war.getAntSnapshot(ant)?.phase === "waiting");
+  assert.ok(waitingAnt);
+
+  const deliveringAnt = colony.ants.find(ant => ant !== waitingAnt);
+  assert.ok(deliveringAnt);
+  forceAtNest(deliveringAnt, colony);
+  deliveringAnt.hasFood = true;
+  war.step();
+
+  const nestPosition = [waitingAnt.x, waitingAnt.y];
+  war.step();
+  assert.equal(war.getAntSnapshot(waitingAnt)?.phase, "searching");
+  assert.deepEqual([waitingAnt.x, waitingAnt.y], nestPosition);
+
+  const energyBeforeDeparture = war.getAntSnapshot(waitingAnt)!.energy;
+  war.step();
+  assert.notDeepEqual([waitingAnt.x, waitingAnt.y], nestPosition);
+  assert.equal(war.getAntSnapshot(waitingAnt)!.energy, energyBeforeDeparture - 1);
+});
+
 test("refueling never drives a colony reserve below zero", () => {
   const war = new WarSimulation({ masterSeed: "neg-36", startingAnts: 3 });
   for (let step = 0; step < 2000 && war.result === null; step++) {
