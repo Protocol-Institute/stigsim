@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CELL, DEFAULT_PARAMS, type Ant, type Colony } from "@stigsim/sim-core";
+import { CELL, DEFAULT_PARAMS, fingerprint, type Ant, type Colony } from "@stigsim/sim-core";
 import { WarSimulation } from "./war-simulation";
 
 function forceAtNest(ant: Ant, colony: Colony) {
@@ -37,6 +37,33 @@ test("doctrine changes wait until an ant returns to its nest", () => {
   assert.equal(war.getAntSnapshot(ant)?.doctrineVersion, 1);
   assert.equal(war.getMetrics(0).doctrineAdopted, 1);
   assert.equal(war.getMetrics(0).doctrineChanged, false);
+});
+
+test("metrics account for every living ant and current doctrine adoption", () => {
+  const war = new WarSimulation({ masterSeed: "metrics-test", startingAnts: 3 });
+  const initial = war.getMetrics(0);
+
+  assert.deepEqual(initial, {
+    population: 3,
+    foodCollected: 0,
+    reserve: 18,
+    hatching: 0,
+    searching: 3,
+    carrying: 0,
+    retreating: 0,
+    waiting: 0,
+    lowEnergy: 0,
+    births: 0,
+    deaths: 0,
+    doctrineChanged: false,
+    doctrineAdopted: 3,
+  });
+
+  war.setDoctrine(0, { ...DEFAULT_PARAMS, trailPower: 7 });
+  const changed = war.getMetrics(0);
+  assert.equal(changed.doctrineChanged, true);
+  assert.equal(changed.doctrineAdopted, 0);
+  assert.equal(changed.searching + changed.carrying + changed.retreating + changed.waiting, changed.population);
 });
 
 test("movement consumes energy and low-energy ants retreat", () => {
@@ -199,6 +226,71 @@ test("the reproduction clock keeps advancing while a colony has no live ants", (
   war.step();
 
   assert.equal(runtime.colonyRuntime[0].reproductionClock, before + 1);
+});
+
+test("an empty colony uses its pending doctrine for pheromone evaporation", () => {
+  const war = new WarSimulation({ masterSeed: "empty-evaporation", startingAnts: 1 });
+  const colony = war.simulation.colonies[0];
+  colony.ants.length = 0;
+  war.setDoctrine(0, { ...DEFAULT_PARAMS, evapRate: 0.02 });
+
+  const cell = [0, 0] as const;
+  colony.field.set("home", cell[0], cell[1], 100);
+  war.step();
+
+  assert.ok(Math.abs(colony.field.get("home", cell[0], cell[1]) - 98) < 0.001);
+});
+
+test("same-seed War Mode remains deterministic through doctrine changes", () => {
+  const settings = {
+    masterSeed: "long-war-equivalence",
+    startingAnts: 8,
+    foodSources: 4,
+    foodPerSource: 2_000,
+  };
+  const first = new WarSimulation(settings);
+  const second = new WarSimulation(settings);
+  const changes = new Map([
+    [400, [0, { ...DEFAULT_PARAMS, evapRate: 0.012, trailPower: 7 }] as const],
+    [1_200, [1, { ...DEFAULT_PARAMS, tankMax: 12_000, cautionary: true }] as const],
+    [2_100, [0, { ...DEFAULT_PARAMS, evapRate: 0.003, tankMax: 8_800 }] as const],
+  ]);
+
+  for (let tick = 0; tick < 3_000; tick++) {
+    const change = changes.get(tick);
+    if (change) {
+      first.setDoctrine(change[0], change[1]);
+      second.setDoctrine(change[0], change[1]);
+    }
+    first.step();
+    second.step();
+
+    if ((tick + 1) % 100 === 0) {
+      assert.equal(fingerprint(first.simulation), fingerprint(second.simulation));
+      assert.deepEqual(first.getMetrics(0), second.getMetrics(0));
+      assert.deepEqual(first.getMetrics(1), second.getMetrics(1));
+      for (const colonyId of [0, 1]) {
+        assert.deepEqual(
+          first.simulation.colonies[colonyId].ants.map(ant => first.getAntSnapshot(ant)),
+          second.simulation.colonies[colonyId].ants.map(ant => second.getAntSnapshot(ant)),
+        );
+      }
+    }
+  }
+  assert.equal(first.result, second.result);
+});
+
+test("colony 0 can win and a decided match no longer advances", () => {
+  const war = new WarSimulation({ masterSeed: "colony-zero-wins", startingAnts: 1 });
+  war.simulation.colonies[1].ants.length = 0;
+
+  war.step();
+  assert.equal(war.result, 0);
+  const decidedAt = war.simulation.tick;
+
+  war.step();
+  assert.equal(war.simulation.tick, decidedAt);
+  assert.equal(war.result, 0);
 });
 
 test("ant death ends a match when neither colony survives", () => {
