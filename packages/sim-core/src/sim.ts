@@ -437,11 +437,12 @@ export class Simulation {
 
     // Check nest
     if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
+      const delivered = ant.hasFood;
       ant.state = "searching";
       ant.hasFood = false;
       ant.tank = tankMax;
-      colony.foodCollected++;
-      if (ant.lastSourceX !== null && ant.lastSourceY !== null) {
+      if (delivered) colony.foodCollected++;
+      if (delivered && ant.lastSourceX !== null && ant.lastSourceY !== null) {
         colony.recentTrips.push({ steps: ant.stepsSinceNest, sx: ant.lastSourceX, sy: ant.lastSourceY });
         if (colony.recentTrips.length > TRIP_WINDOW) colony.recentTrips.shift();
       }
