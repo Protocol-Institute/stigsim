@@ -196,6 +196,7 @@ export default function LocalWarMode() {
   const [settings, setSettings] = useState<WarMatchSettings>(initialSettings.current);
   const [draftSettings, setDraftSettings] = useState<WarMatchSettings>(initialSettings.current);
   const [speed, setSpeed] = useState(15);
+  const speedRef = useRef(speed);
   const [doctrines, setDoctrines] = useState<SimParams[]>([
     { ...DEFAULT_PARAMS }, { ...DEFAULT_PARAMS },
   ]);
@@ -240,7 +241,7 @@ export default function LocalWarMode() {
       previous = now;
       accumulator += elapsed;
       statsElapsed += elapsed;
-      const secondsPerStep = 1 / speed;
+      const secondsPerStep = 1 / speedRef.current;
       while (accumulator >= secondsPerStep && warRef.current.result === null) {
         warRef.current.step();
         accumulator -= secondsPerStep;
@@ -255,7 +256,12 @@ export default function LocalWarMode() {
     };
     animationFrame = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animationFrame);
-  }, [paint, refreshStats, running, speed]);
+  }, [paint, refreshStats, running]);
+
+  const updateSpeed = (value: number) => {
+    speedRef.current = value;
+    setSpeed(value);
+  };
 
   const updateDoctrine = <K extends keyof SimParams>(colonyId: number, key: K, value: SimParams[K]) => {
     setDoctrines(current => current.map((doctrine, id) => id === colonyId ? { ...doctrine, [key]: value } : doctrine));
@@ -329,7 +335,7 @@ export default function LocalWarMode() {
               {running ? "Pause" : "Play"}
             </button>
             <button className="war-button" onClick={() => createMatch(settings)}>Restart</button>
-            <Setting label="Simulation speed" value={speed} display={`${speed} steps/sec`} min={2} max={60} step={1} onChange={setSpeed} />
+            <Setting label="Simulation speed" value={speed} display={`${speed} steps/sec`} min={2} max={60} step={1} onChange={updateSpeed} />
           </div>
         </div>
       </section>
