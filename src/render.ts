@@ -33,6 +33,11 @@ export const COLONY_COLORS = [
 export type ViewMode = "all" | "one";
 export type EditMode = "none" | "wall" | "food";
 
+export interface RenderOverrides {
+  showCautionaryForColony?: (colony: Colony) => boolean;
+  antOpacity?: (ant: Colony["ants"][number], colony: Colony) => number;
+}
+
 export function render(
   ctx: CanvasRenderingContext2D,
   sim: Simulation,
@@ -40,6 +45,7 @@ export function render(
   watchedAntIdx: number = 0,
   editMode: EditMode = "none",
   hoverCell: { x: number; y: number } | null = null,
+  overrides: RenderOverrides = {},
 ) {
   const allAnts = sim.allAnts;
   const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
@@ -110,7 +116,9 @@ export function render(
           ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
           ctx.fillRect(px, py, CELL, CELL);
         }
-        if (sim.params.cautionary) {
+        const showCautionary = overrides.showCautionaryForColony?.(sim.colonies[ci])
+          ?? sim.params.cautionary;
+        if (showCautionary) {
           const ci2 = layer.caut[idx];
           if (ci2 > 0.5) {
             const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
@@ -165,8 +173,10 @@ export function render(
       const flatIdx = sim.colonies.slice(0, colony.id).reduce((s, c) => s + c.ants.length, 0) + i;
       const isWatched = viewMode === "one" && flatIdx === safeIdx;
 
-      const tankFrac = Math.min(1, ant.tank / sim.params.tankMax);
-      ctx.globalAlpha = 0.25 + 0.75 * tankFrac;
+      const defaultOpacity = 0.25 + 0.75 * Math.min(1, ant.tank / sim.params.tankMax);
+      ctx.globalAlpha = Math.max(0, Math.min(1,
+        overrides.antOpacity?.(ant, colony) ?? defaultOpacity
+      ));
 
       const r = ant.hasFood ? 4.5 : 3.5;
       ctx.beginPath();

@@ -3,6 +3,7 @@ import ComingSoon from "./components/ComingSoon";
 import InfiniteSim from "./components/InfiniteSim";
 import NotFound from "./components/NotFound";
 import SimulationIndex from "./components/SimulationIndex";
+import LocalWarMode from "./modes/war/LocalWarMode";
 import { appHref, resolveAppRoute } from "./routes";
 
 export default function App() {
@@ -13,7 +14,7 @@ export default function App() {
   if (route === "index") return <SimulationIndex href={href} />;
 
   let content;
-  if (route === "war") content = <ComingSoon mode="Local War Mode" href={href} />;
+  if (route === "war") content = <LocalWarMode />;
   else if (route === "multiplayer") content = <ComingSoon mode="Online War Mode" href={href} />;
   else if (route === "not-found") content = <NotFound href={href} />;
   else content = route === "maze" ? <AntSim /> : <InfiniteSim simulationsHref={href("/")} />;
