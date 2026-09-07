@@ -189,6 +189,7 @@ export class WarSimulation {
     const colony = this.simulation.colonies[colonyId];
     const state = this.colonyRuntime[colonyId];
     const ants = colony.ants.map(ant => this.antRuntime.get(ant)!).filter(Boolean);
+    const doctrineAdopted = ants.filter(ant => ant.doctrineVersion === state.doctrineVersion).length;
     return {
       population: colony.ants.length,
       foodCollected: colony.foodCollected,
@@ -201,8 +202,8 @@ export class WarSimulation {
       lowEnergy: ants.filter(ant => ant.energy <= this.rules.retreatEnergy).length,
       births: state.births,
       deaths: state.deaths,
-      doctrineChanged: state.doctrineChanged,
-      doctrineAdopted: ants.filter(ant => ant.doctrineVersion === state.doctrineVersion).length,
+      doctrineChanged: state.doctrineChanged && doctrineAdopted < colony.ants.length,
+      doctrineAdopted,
     };
   }
 

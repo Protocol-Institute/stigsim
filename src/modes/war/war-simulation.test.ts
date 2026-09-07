@@ -24,6 +24,7 @@ test("doctrine changes wait until an ant returns to its nest", () => {
   const changed = { ...DEFAULT_PARAMS, trailPower: 8, tankMax: 8800 };
 
   war.setDoctrine(0, changed);
+  assert.equal(war.getMetrics(0).doctrineChanged, true);
   assert.equal(war.getAntSnapshot(ant)?.doctrine.trailPower, DEFAULT_PARAMS.trailPower);
   war.step();
   war.step();
@@ -34,6 +35,8 @@ test("doctrine changes wait until an ant returns to its nest", () => {
   war.step();
   assert.equal(war.getAntSnapshot(ant)?.doctrine.trailPower, changed.trailPower);
   assert.equal(war.getAntSnapshot(ant)?.doctrineVersion, 1);
+  assert.equal(war.getMetrics(0).doctrineAdopted, 1);
+  assert.equal(war.getMetrics(0).doctrineChanged, false);
 });
 
 test("movement consumes energy and low-energy ants retreat", () => {
