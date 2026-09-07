@@ -95,6 +95,15 @@ test("an under-fueled ant waits at the nest and keeps consuming energy", () => {
   assert.equal(war.getAntSnapshot(ant)!.energy, before - 0.25);
 });
 
+test("refueling never drives a colony reserve below zero", () => {
+  const war = new WarSimulation({ masterSeed: "neg-36", startingAnts: 3 });
+  for (let step = 0; step < 2000 && war.result === null; step++) {
+    war.step();
+    assert.ok(war.getMetrics(0).reserve >= 0, `colony 0 reserve was negative at step ${step + 1}`);
+    assert.ok(war.getMetrics(1).reserve >= 0, `colony 1 reserve was negative at step ${step + 1}`);
+  }
+});
+
 test("food deliveries add to the colony reserve", () => {
   const war = new WarSimulation(
     { masterSeed: "delivery-test", startingAnts: 20 },

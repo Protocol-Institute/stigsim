@@ -311,9 +311,12 @@ export class WarSimulation {
   private refuelAtNest(ant: Ant, state: AntRuntime, colonyId: number, wasWaiting: boolean): void {
     const colony = this.colonyRuntime[colonyId];
     const needed = Math.max(0, this.rules.maxEnergy - state.energy);
-    const supplied = Math.min(needed, colony.foodReserve * this.rules.energyPerFood);
+    const availableFood = Math.max(0, colony.foodReserve);
+    const availableEnergy = availableFood === 0 ? 0 : availableFood * this.rules.energyPerFood;
+    const supplied = Math.max(0, Math.min(needed, availableEnergy));
     state.energy += supplied;
-    colony.foodReserve -= supplied / this.rules.energyPerFood;
+    const foodSpent = this.rules.energyPerFood > 0 ? supplied / this.rules.energyPerFood : 0;
+    colony.foodReserve = Math.max(0, colony.foodReserve - foodSpent);
     ant.hasFood = false;
     ant.tank = state.doctrine.tankMax;
 
