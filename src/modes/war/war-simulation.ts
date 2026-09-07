@@ -374,9 +374,8 @@ export class WarSimulation {
       }
     }
 
-    if (colony.ants.length === 0) return;
     state.reproductionClock++;
-    if (state.reproductionClock < this.rules.reproductionCheckSteps) return;
+    if (state.reproductionClock < this.rules.reproductionCheckSteps || colony.ants.length === 0) return;
     state.reproductionClock = 0;
 
     const safetyReserve = colony.ants.length * this.rules.safetyReservePerAnt;

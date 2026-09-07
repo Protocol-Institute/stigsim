@@ -183,6 +183,21 @@ test("surplus reserve develops and hatches new ants deterministically", () => {
   assert.equal(first.getMetrics(0).births, 1);
 });
 
+test("the reproduction clock keeps advancing while a colony has no live ants", () => {
+  const war = new WarSimulation({ masterSeed: "empty-colony-clock", startingAnts: 1 });
+  const colony = war.simulation.colonies[0];
+  colony.ants.length = 0;
+
+  const runtime = war as unknown as {
+    colonyRuntime: Array<{ reproductionClock: number }>;
+  };
+  const before = runtime.colonyRuntime[0].reproductionClock;
+
+  war.step();
+
+  assert.equal(runtime.colonyRuntime[0].reproductionClock, before + 1);
+});
+
 test("ant death ends a match when neither colony survives", () => {
   const war = new WarSimulation(
     { masterSeed: "extinction-test", startingAnts: 1 },
