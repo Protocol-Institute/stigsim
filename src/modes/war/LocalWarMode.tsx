@@ -165,7 +165,7 @@ function MatchSetup({
         <div className="war-setup__settings">
           <Setting label="Starting ants" value={settings.startingAnts} display={`${settings.startingAnts} per colony`} min={1} max={100} step={1} onChange={value => update("startingAnts", value)} />
           <Setting label="Food sources" value={settings.foodSources} display={`${settings.foodSources}`} min={1} max={12} step={1} onChange={value => update("foodSources", value)} />
-          <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={2000} step={50} onChange={value => update("foodPerSource", value)} />
+          <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={10000} step={50} onChange={value => update("foodPerSource", value)} />
           <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => update("loopRate", value)} />
         </div>
 

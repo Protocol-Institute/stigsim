@@ -280,7 +280,9 @@ export class WarSimulation {
 
       const targetX = ant.tx * CELL + CELL / 2;
       const targetY = ant.ty * CELL + CELL / 2;
-      const distance = Math.hypot(targetX - ant.x, targetY - ant.y);
+      const dx = targetX - ant.x;
+      const dy = targetY - ant.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
       if (distance > ARRIVE_THRESH) state.energy -= this.rules.moveEnergyCost;
       if (state.energy <= 0) {
         dead.add(ant);
@@ -320,7 +322,6 @@ export class WarSimulation {
     if (state.doctrineVersion === colony.doctrineVersion) return;
     state.doctrine = copyDoctrine(colony.pendingDoctrine);
     state.doctrineVersion = colony.doctrineVersion;
-    ant.tank = Math.min(ant.tank, state.doctrine.tankMax);
   }
 
   private refuelAtNest(ant: Ant, state: AntRuntime, colonyId: number): void {
