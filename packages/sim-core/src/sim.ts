@@ -397,7 +397,11 @@ export class Simulation {
       // Deposit lands in the cell being left, not the one being approached.
       if (ant.tank > 0) {
         const deposit = Math.min(ant.tank, DEPOSIT_RATE);
-        colony.field.add(ant.state === "searching" ? "home" : "food", ant.cx, ant.cy, deposit);
+        if (ant.state === "searching") {
+          colony.field.add("home", ant.cx, ant.cy, deposit);
+        } else if (ant.hasFood) {
+          colony.field.add("food", ant.cx, ant.cy, deposit);
+        }
         ant.tank -= deposit;
       } else if (params.cautionary) {
         colony.field.add("caut", ant.cx, ant.cy, DEPOSIT_RATE);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  Simulation, DEFAULT_PARAMS, COLS, ROWS, DIRS4, makeSeeds, DenseField, DenseGrid,
+  Simulation, DEFAULT_PARAMS, COLS, ROWS, CELL, DEPOSIT_RATE, DIRS4, makeSeeds, DenseField, DenseGrid,
 } from "./index";
 import type { CellType, RunConfig, WorldSpec } from "./index";
 
@@ -97,6 +97,34 @@ test("mode policies can resolve doctrine per ant without changing defaults", () 
   assert.equal(paramsResolved, 1);
   assert.equal(evaporationResolved, 1);
   assert.deepEqual(sim.params, DEFAULT_PARAMS);
+});
+
+test("a foodless returning ant neither lays a food trail nor records a delivery", () => {
+  const sim = new Simulation(config({ numAnts: 1 }));
+  const colony = sim.colonies[0];
+  const ant = colony.ants[0];
+  const direction = DIRS4.find(([dx, dy]) => sim.occupancy.isOpen(ant.cx + dx, ant.cy + dy));
+  assert.ok(direction, "expected an open cell beside the nest");
+
+  ant.state = "returning";
+  ant.hasFood = false;
+  ant.tx = ant.cx + direction[0];
+  ant.ty = ant.cy + direction[1];
+  const foodBefore = colony.field.get("food", ant.cx, ant.cy);
+  const tankBefore = ant.tank;
+  sim.step();
+
+  assert.equal(colony.field.get("food", ant.cx, ant.cy), foodBefore);
+  assert.equal(ant.tank, tankBefore - DEPOSIT_RATE);
+
+  ant.x = colony.nestX * CELL + CELL / 2;
+  ant.y = colony.nestY * CELL + CELL / 2;
+  ant.cx = colony.nestX;
+  ant.cy = colony.nestY;
+  ant.tx = colony.nestX;
+  ant.ty = colony.nestY;
+  sim.step();
+  assert.equal(colony.foodCollected, 0);
 });
 
 test("setAntCount keeps manual control on the ant it was given to", () => {
