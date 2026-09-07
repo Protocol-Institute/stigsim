@@ -47,6 +47,8 @@ test("movement consumes energy and low-energy ants retreat", () => {
   assert.equal(war.getAntSnapshot(ant)?.energy, 3);
   war.step();
   assert.equal(war.getAntSnapshot(ant)?.energy, 2);
+  // Retreat begins on the step that reaches the threshold, an intentional
+  // improvement over the prototype's one-step delay.
   assert.equal(war.getAntSnapshot(ant)?.phase, "retreating");
   assert.equal(ant.hasFood, false);
 });

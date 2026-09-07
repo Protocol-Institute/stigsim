@@ -275,6 +275,10 @@ export class WarSimulation {
         dead.add(ant);
         continue;
       }
+      // Intentionally react as soon as this step reaches the threshold. The
+      // prototype checked before charging movement and therefore sent the ant
+      // one extra step away from safety; that timing was incidental, not a
+      // designed survival rule.
       if (state.phase === "searching" && state.energy <= this.rules.retreatEnergy) {
         state.phase = "retreating";
         ant.state = "returning";
