@@ -119,12 +119,73 @@ function Setting({ label, value, display, min, max, step, onChange }: {
   );
 }
 
+function MatchSetup({
+  settings, hasMatch, onChange, onUseSameSeed, onGenerateSeed, onCancel, onStart,
+}: {
+  settings: WarMatchSettings;
+  hasMatch: boolean;
+  onChange: (settings: WarMatchSettings) => void;
+  onUseSameSeed: () => void;
+  onGenerateSeed: () => void;
+  onCancel: () => void;
+  onStart: () => void;
+}) {
+  const update = (key: AdjustableSetting, value: number) => onChange({ ...settings, [key]: value });
+  return (
+    <section className={`war-setup${hasMatch ? " war-setup--modal" : ""}`} aria-label="Create local match">
+      <div className="war-setup__panel">
+        <div className="war-setup__heading">
+          <div>
+            <p>{hasMatch ? "New local match" : "Local · Two players"}</p>
+            <h1>{hasMatch ? "Configure the next match" : "Create a War Mode match"}</h1>
+            <span>Choose the starting conditions. These settings lock when the match begins.</span>
+          </div>
+          {hasMatch && <button className="war-setup__close" onClick={onCancel} aria-label="Close match setup">×</button>}
+        </div>
+
+        <div className="war-setup__settings">
+          <Setting label="Starting ants" value={settings.startingAnts} display={`${settings.startingAnts} per colony`} min={1} max={100} step={1} onChange={value => update("startingAnts", value)} />
+          <Setting label="Food sources" value={settings.foodSources} display={`${settings.foodSources}`} min={1} max={12} step={1} onChange={value => update("foodSources", value)} />
+          <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={2000} step={50} onChange={value => update("foodPerSource", value)} />
+          <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => update("loopRate", value)} />
+        </div>
+
+        <div className="war-seed">
+          <div className="war-seed__heading">
+            <div>
+              <strong>Match seed</strong>
+              <span>Reuse a seed to compare strategies under identical starting conditions.</span>
+            </div>
+            <div className="war-seed__actions">
+              {hasMatch && <button className="war-button" onClick={onUseSameSeed}>Same seed</button>}
+              <button className="war-button" onClick={onGenerateSeed}>New seed</button>
+            </div>
+          </div>
+          <input
+            aria-label="Match seed"
+            value={settings.masterSeed}
+            onChange={event => onChange({ ...settings, masterSeed: event.target.value })}
+            spellCheck={false}
+          />
+        </div>
+
+        <div className="war-setup__footer">
+          {hasMatch && <button className="war-button" onClick={onCancel}>Cancel</button>}
+          <button className="war-button war-button--primary" onClick={onStart}>Start match</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function LocalWarMode() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [settings, setSettings] = useState<WarMatchSettings>({
+  const initialSettings = useRef<WarMatchSettings>({
     ...DEFAULT_WAR_SETTINGS,
     masterSeed: generateMasterSeed(),
   });
+  const [settings, setSettings] = useState<WarMatchSettings>(initialSettings.current);
+  const [draftSettings, setDraftSettings] = useState<WarMatchSettings>(initialSettings.current);
   const [speed, setSpeed] = useState(15);
   const [doctrines, setDoctrines] = useState<SimParams[]>([
     { ...DEFAULT_PARAMS }, { ...DEFAULT_PARAMS },
@@ -133,6 +194,8 @@ export default function LocalWarMode() {
   const [metrics, setMetrics] = useState(() => [warRef.current.getMetrics(0), warRef.current.getMetrics(1)]);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(warRef.current.result);
+  const [hasMatch, setHasMatch] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(true);
 
   const paint = useCallback(() => {
     const ctx = canvasRef.current?.getContext("2d");
@@ -144,15 +207,18 @@ export default function LocalWarMode() {
     setResult(warRef.current.result);
   }, []);
 
-  const resetMatch = useCallback((nextSettings = settings, nextDoctrines = doctrines) => {
+  const createMatch = useCallback((nextSettings: WarMatchSettings, nextDoctrines = doctrines) => {
     setRunning(false);
     warRef.current = new WarSimulation(nextSettings, nextDoctrines);
+    setSettings(nextSettings);
+    setHasMatch(true);
+    setSetupOpen(false);
     setResult(null);
     setMetrics([warRef.current.getMetrics(0), warRef.current.getMetrics(1)]);
     requestAnimationFrame(paint);
-  }, [doctrines, paint, settings]);
+  }, [doctrines, paint]);
 
-  useEffect(() => { paint(); }, [paint]);
+  useEffect(() => { if (hasMatch) paint(); }, [hasMatch, paint]);
 
   useEffect(() => {
     if (!running) return;
@@ -188,17 +254,40 @@ export default function LocalWarMode() {
     refreshStats();
   };
 
-  const updateSetting = (key: AdjustableSetting, value: number) => {
-    const next = { ...settings, [key]: value };
-    setSettings(next);
-    resetMatch(next, doctrines);
+  const openMatchSetup = (seed: "same" | "new" = "same") => {
+    setRunning(false);
+    setDraftSettings({
+      ...settings,
+      masterSeed: seed === "new" ? generateMasterSeed() : settings.masterSeed,
+    });
+    setSetupOpen(true);
   };
 
-  const newMaze = () => {
-    const next = { ...settings, masterSeed: generateMasterSeed() };
-    setSettings(next);
-    resetMatch(next, doctrines);
+  const startDraftMatch = () => {
+    const next = {
+      ...draftSettings,
+      masterSeed: draftSettings.masterSeed.trim() || generateMasterSeed(),
+    };
+    setDraftSettings(next);
+    createMatch(next);
+    setRunning(true);
   };
+
+  if (!hasMatch) {
+    return (
+      <main className="war-page war-page--setup">
+        <MatchSetup
+          settings={draftSettings}
+          hasMatch={false}
+          onChange={setDraftSettings}
+          onUseSameSeed={() => undefined}
+          onGenerateSeed={() => setDraftSettings(current => ({ ...current, masterSeed: generateMasterSeed() }))}
+          onCancel={() => undefined}
+          onStart={startDraftMatch}
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="war-page">
@@ -209,45 +298,72 @@ export default function LocalWarMode() {
           <span>Last colony standing wins.</span>
         </div>
         <div className="war-header__actions">
-          <button className="war-button war-button--primary" disabled={result !== null} onClick={() => setRunning(value => !value)}>
-            {running ? "Pause" : "Play"}
-          </button>
-          <button className="war-button" onClick={() => resetMatch()}>Reset</button>
-          <button className="war-button" onClick={newMaze}>New maze</button>
+          <button className="war-button" onClick={() => openMatchSetup()}>New match</button>
         </div>
       </header>
 
-      <section className="war-settings" aria-label="Match settings">
-        <div className="war-settings__heading"><strong>Match settings</strong><span>Changing these starts a fresh match · Seed: {settings.masterSeed}</span></div>
-        <div className="war-settings__grid">
-          <Setting label="Simulation speed" value={speed} display={`${speed} steps/sec`} min={2} max={60} step={1} onChange={setSpeed} />
-          <Setting label="Starting ants" value={settings.startingAnts} display={`${settings.startingAnts} per colony`} min={1} max={100} step={1} onChange={value => updateSetting("startingAnts", value)} />
-          <Setting label="Food sources" value={settings.foodSources} display={`${settings.foodSources}`} min={1} max={12} step={1} onChange={value => updateSetting("foodSources", value)} />
-          <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={2000} step={50} onChange={value => updateSetting("foodPerSource", value)} />
-          <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => updateSetting("loopRate", value)} />
+      <section className="war-matchbar" aria-label="Locked match settings">
+        <div className="war-matchbar__group">
+          <strong>Match settings</strong>
+          <div className="war-matchbar__summary">
+            <span>{settings.startingAnts} ants / colony</span>
+            <span>{settings.foodSources} food {settings.foodSources === 1 ? "source" : "sources"}</span>
+            <span>{settings.foodPerSource} food / source</span>
+            <span>{Math.round(settings.loopRate * 100)}% maze loops</span>
+            <span className="war-matchbar__seed" title={settings.masterSeed}>Seed: {settings.masterSeed}</span>
+          </div>
+        </div>
+        <div className="war-matchbar__group war-matchbar__group--controls">
+          <strong>Simulation controls</strong>
+          <div className="war-matchbar__controls">
+            <button className="war-button war-button--primary" disabled={result !== null} onClick={() => setRunning(value => !value)}>
+              {running ? "Pause" : "Play"}
+            </button>
+            <button className="war-button" onClick={() => createMatch(settings)}>Restart</button>
+            <Setting label="Simulation speed" value={speed} display={`${speed} steps/sec`} min={2} max={60} step={1} onChange={setSpeed} />
+          </div>
         </div>
       </section>
 
-      {result !== null && (
-        <div className="war-result" style={{ "--winner-color": result === "draw" ? "#f4ead7" : COLONY_COLORS[result].primary } as React.CSSProperties}>
-          <strong>{result === "draw" ? "Both colonies were eliminated" : `Colony ${result + 1} survives`}</strong>
-          <span>The match has ended. Reset or generate a new maze to play again.</span>
-        </div>
+      {setupOpen && (
+        <MatchSetup
+          settings={draftSettings}
+          hasMatch={hasMatch}
+          onChange={setDraftSettings}
+          onUseSameSeed={() => setDraftSettings(current => ({ ...current, masterSeed: settings.masterSeed }))}
+          onGenerateSeed={() => setDraftSettings(current => ({ ...current, masterSeed: generateMasterSeed() }))}
+          onCancel={() => setSetupOpen(false)}
+          onStart={startDraftMatch}
+        />
       )}
 
-      <section className="war-arena">
-        <DoctrinePanel colonyId={0} doctrine={doctrines[0]} metrics={metrics[0] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(0, key, value)} />
-        <div className="war-maze">
-          <canvas ref={canvasRef} width={W} height={H} />
-          <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div>
-        </div>
-        <DoctrinePanel colonyId={1} doctrine={doctrines[1]} metrics={metrics[1] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(1, key, value)} />
-      </section>
+      <>
+        {result !== null && (
+          <div className="war-result" style={{ "--winner-color": result === "draw" ? "#f4ead7" : COLONY_COLORS[result].primary } as React.CSSProperties}>
+            <div>
+              <strong>{result === "draw" ? "Both colonies were eliminated" : `Colony ${result + 1} survives`}</strong>
+              <span>The match has ended. Replay these conditions or generate a new seed.</span>
+            </div>
+            <div className="war-result__actions">
+              <button className="war-button" onClick={() => createMatch(settings)}>Rematch same seed</button>
+              <button className="war-button war-button--primary" onClick={() => openMatchSetup("new")}>Play new seed</button>
+            </div>
+          </div>
+        )}
 
-      <p className="war-rules-note">
-        Ants retreat below {Math.round(WAR_RULES.retreatEnergy / WAR_RULES.maxEnergy * 100)}% energy, refuel from their colony reserve,
-        and new ants hatch when the colony can afford them.
-      </p>
+        <section className="war-arena">
+          <DoctrinePanel colonyId={0} doctrine={doctrines[0]} metrics={metrics[0] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(0, key, value)} />
+          <div className="war-maze">
+            <canvas ref={canvasRef} width={W} height={H} />
+            <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div>
+          </div>
+          <DoctrinePanel colonyId={1} doctrine={doctrines[1]} metrics={metrics[1] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(1, key, value)} />
+        </section>
+        <p className="war-rules-note">
+          Ants retreat below {Math.round(WAR_RULES.retreatEnergy / WAR_RULES.maxEnergy * 100)}% energy, refuel from their colony reserve,
+          and new ants hatch when the colony can afford them.
+        </p>
+      </>
     </main>
   );
 }
