@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_PARAMS, H, W, generateMasterSeed, type SimParams } from "@stigsim/sim-core";
+import {
+  CELL,
+  DEFAULT_PARAMS,
+  DEPOSIT_RATE,
+  H,
+  V,
+  W,
+  generateMasterSeed,
+  type SimParams,
+} from "@stigsim/sim-core";
 import { COLONY_COLORS, render } from "../../render";
 import {
   DEFAULT_WAR_SETTINGS,
@@ -59,10 +68,11 @@ function DoctrinePanel({
   onChange: <K extends keyof SimParams>(key: K, value: SimParams[K]) => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
+  const tankCells = Math.round(doctrine.tankMax / (DEPOSIT_RATE * (CELL / V)));
   const sliders = [
     { key: "evapRate" as const, label: "Evaporation rate", min: 0.001, max: 0.02, step: 0.001, value: `${Math.round(doctrine.evapRate * 1000)}‰ / step` },
     { key: "trailPower" as const, label: "Trail bias", min: 1, max: 10, step: 0.5, value: `power ${doctrine.trailPower}` },
-    { key: "tankMax" as const, label: "Gland size", min: 1600, max: 16000, step: 800, value: `${doctrine.tankMax}` },
+    { key: "tankMax" as const, label: "Gland size", min: 1600, max: 16000, step: 800, value: `~${tankCells} cells` },
   ];
   return (
     <aside className="war-colony" style={{ "--colony-color": color } as React.CSSProperties}>
