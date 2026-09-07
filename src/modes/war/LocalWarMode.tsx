@@ -189,18 +189,19 @@ function MatchSetup({
 
 export default function LocalWarMode() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const initialSettings = useRef<WarMatchSettings>({
+  const [initialSettings] = useState<WarMatchSettings>(() => ({
     ...DEFAULT_WAR_SETTINGS,
     masterSeed: generateMasterSeed(),
-  });
-  const [settings, setSettings] = useState<WarMatchSettings>(initialSettings.current);
-  const [draftSettings, setDraftSettings] = useState<WarMatchSettings>(initialSettings.current);
+  }));
+  const [settings, setSettings] = useState<WarMatchSettings>(initialSettings);
+  const [draftSettings, setDraftSettings] = useState<WarMatchSettings>(initialSettings);
   const [speed, setSpeed] = useState(15);
   const speedRef = useRef(speed);
   const [doctrines, setDoctrines] = useState<SimParams[]>([
     { ...DEFAULT_PARAMS }, { ...DEFAULT_PARAMS },
   ]);
-  const warRef = useRef(new WarSimulation(settings, doctrines));
+  const [initialWar] = useState(() => new WarSimulation(initialSettings, doctrines));
+  const warRef = useRef(initialWar);
   const [metrics, setMetrics] = useState(() => [warRef.current.getMetrics(0), warRef.current.getMetrics(1)]);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(warRef.current.result);
