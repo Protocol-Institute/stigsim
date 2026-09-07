@@ -18,7 +18,16 @@ const EMPTY_METRICS: WarColonyMetrics = {
 type AdjustableSetting = "startingAnts" | "foodSources" | "foodPerSource" | "loopRate";
 
 function drawWar(ctx: CanvasRenderingContext2D, war: WarSimulation) {
-  render(ctx, war.simulation);
+  render(ctx, war.simulation, "all", 0, "none", null, {
+    showCautionaryForColony: colony => colony.ants.some(
+      ant => war.getAntSnapshot(ant)?.doctrine.cautionary === true
+    ),
+    antOpacity: ant => {
+      const energy = war.getAntSnapshot(ant)?.energy ?? war.rules.maxEnergy;
+      const energyFraction = Math.max(0, Math.min(1, energy / war.rules.maxEnergy));
+      return 0.3 + 0.7 * energyFraction;
+    },
+  });
   for (const colony of war.simulation.colonies) {
     for (const ant of colony.ants) {
       const state = war.getAntSnapshot(ant);
