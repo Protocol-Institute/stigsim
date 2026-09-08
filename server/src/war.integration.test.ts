@@ -114,3 +114,49 @@ test("two players and a spectator can complete the authoritative lobby flow", as
   assert.equal(malformed.message, "Malformed message");
   assert.equal(first.ws.readyState, WebSocket.OPEN);
 });
+
+test("a player who disconnects before ready releases their lobby seat", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}/api/war/ws`;
+  const creator = await connect(url);
+  const replacement = await connect(url);
+
+  t.after(async () => {
+    creator.ws.close();
+    replacement.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const createStart = creator.messages.length;
+  creator.ws.send(JSON.stringify({
+    type: "create-room",
+    playerName: "Alpha",
+    settings: DEFAULT_ONLINE_WAR_SETTINGS,
+  }));
+  const created = await creator.waitFor(message => message.type === "room-created", createStart);
+  const matchId = created.matchId as string;
+  creator.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Alpha", reconnectToken: created.reconnectToken }));
+  await creator.waitFor(message => message.type === "joined", createStart);
+
+  const lobbyStart = replacement.messages.length;
+  creator.ws.close();
+  const released = await replacement.waitFor(message => {
+    if (message.type !== "lobby-state") return false;
+    const match = (message.matches as Array<{ id: string; connected: boolean[]; playerNames: Array<string | null> }>).find(item => item.id === matchId);
+    return match?.connected[0] === false;
+  }, lobbyStart);
+  const releasedMatch = (released.matches as Array<{ id: string; connected: boolean[]; playerNames: Array<string | null> }>).find(match => match.id === matchId);
+  assert.deepEqual(releasedMatch?.playerNames, [null, null]);
+
+  const joinStart = replacement.messages.length;
+  replacement.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Beta" }));
+  const joined = await replacement.waitFor(message => message.type === "joined", joinStart);
+  assert.equal(joined.colonyId, 0);
+});
