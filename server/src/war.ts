@@ -3,12 +3,16 @@ import type { IncomingMessage, Server } from "node:http";
 import { performance } from "node:perf_hooks";
 import { DEFAULT_PARAMS, DenseField, DenseGrid, generateMasterSeed, type SimParams } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
+import { desc } from "drizzle-orm";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
+import { db } from "./db";
+import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import type {
   OnlineWarSettings,
   WarClientMessage,
   WarMatchSummary,
+  WarMatchRecord,
   WarServerMessage,
   WarSnapshot,
 } from "../../shared/war-contract";
@@ -40,11 +44,13 @@ interface WarMatch {
   snapshotAccumulator: number;
   emptySince: number | null;
   createdAt: number;
+  resultRecorded: boolean;
 }
 
 const matches = new Map<string, WarMatch>();
 const socketMatches = new Map<WebSocket, WarMatch>();
 const socketNames = new Map<WebSocket, string>();
+const matchHistory: WarMatchRecord[] = [];
 let activeWss: WebSocketServer | null = null;
 let activeServer: Server | null = null;
 let activeUpgradeHandler: ((request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => void) | null = null;
@@ -123,6 +129,7 @@ function createMatch(settings: OnlineWarSettings): WarMatch {
     snapshotAccumulator: 0,
     emptySince: null,
     createdAt: Date.now(),
+    resultRecorded: false,
   };
   matches.set(match.id, match);
   return match;
@@ -166,7 +173,55 @@ function lobbyMessage(): WarServerMessage {
       .filter(match => match.phase !== "finished")
       .map(summary)
       .sort((a, b) => b.createdAt - a.createdAt),
+    history: matchHistory.slice(0, 50),
   };
+}
+
+export function completedWarRecord(match: Pick<WarMatch, "id" | "war" | "settings" | "players">): WarMatchRecord {
+  if (match.war.result === null) throw new Error("Cannot record an unfinished War match");
+  return {
+    recordId: randomUUID(),
+    matchId: match.id,
+    completedAt: new Date().toISOString(),
+    playerNames: match.players.map(player => player?.name ?? null),
+    winner: match.war.result,
+    settings: { ...match.settings },
+    finalTick: match.war.simulation.tick,
+    finalMetrics: match.war.simulation.colonies.map(colony => match.war.getMetrics(colony.id)),
+    finalDoctrines: match.war.simulation.colonies.map(colony => match.war.getDoctrine(colony.id)),
+  };
+}
+
+async function loadMatchHistory(): Promise<void> {
+  if (!db) return;
+  try {
+    const rows = await db.select().from(warMatchRecordsTable).orderBy(desc(warMatchRecordsTable.completedAt)).limit(50);
+    matchHistory.splice(0, matchHistory.length, ...rows.flatMap(row => {
+      try { return [JSON.parse(row.data) as WarMatchRecord]; } catch { return []; }
+    }));
+  } catch (error) {
+    console.warn("[war] Failed to load match history", error);
+  }
+}
+
+async function recordCompletedMatch(match: WarMatch): Promise<void> {
+  if (match.resultRecorded || match.war.result === null) return;
+  match.resultRecorded = true;
+  const record = completedWarRecord(match);
+  matchHistory.unshift(record);
+  matchHistory.splice(50);
+  broadcastLobby();
+  if (!db) return;
+  try {
+    await db.insert(warMatchRecordsTable).values({
+      recordId: record.recordId,
+      matchId: record.matchId,
+      data: JSON.stringify(record),
+      completedAt: new Date(record.completedAt),
+    });
+  } catch (error) {
+    console.warn("[war] Failed to persist completed match", error);
+  }
 }
 
 function broadcastLobby(): void {
@@ -313,6 +368,7 @@ function resetMatch(match: WarMatch): void {
   match.war = makeWar(match.settings);
   match.phase = "waiting";
   match.simulationAccumulator = 0;
+  match.resultRecorded = false;
   for (const player of match.players) if (player) player.ready = Boolean(player.isBot);
   if (match.players.some(player => player?.isBot)) {
     for (const player of match.players) if (player) player.ready = true;
@@ -407,7 +463,7 @@ function advanceMatches(): void {
       if (match.war.result !== null) {
         match.phase = "finished";
         broadcastPlayers(match);
-        broadcastLobby();
+        void recordCompletedMatch(match);
       }
     }
     match.snapshotAccumulator += SNAPSHOT_RATE / CLOCK_RATE;
@@ -418,7 +474,8 @@ function advanceMatches(): void {
   }
 }
 
-export function attachWarWs(server: Server, allowedOrigins: string[], requireOrigin = false): void {
+export async function attachWarWs(server: Server, allowedOrigins: string[], requireOrigin = false): Promise<void> {
+  await loadMatchHistory();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1_024 });
   activeWss = wss;
   activeServer = server;
@@ -483,4 +540,5 @@ export function shutdownWar(): void {
   matches.clear();
   socketMatches.clear();
   socketNames.clear();
+  matchHistory.splice(0);
 }

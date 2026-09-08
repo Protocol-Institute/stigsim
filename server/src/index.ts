@@ -38,7 +38,8 @@ app.use("/api", router);
 const server = createServer(app);
 
 attachInfiniteWs(server, allowedOrigins, isProduction).then(() => {
-  attachWarWs(server, allowedOrigins, isProduction);
+  return attachWarWs(server, allowedOrigins, isProduction);
+}).then(() => {
   server.listen(port, () => {
     console.log(`[server] Listening on port ${port}`);
   });

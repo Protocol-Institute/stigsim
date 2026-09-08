@@ -91,8 +91,8 @@ other players have helped create. The leaderboard records colony lifespans.
 
 War Mode is a bounded two-colony survival match powered by the shared
 simulation core. It can run locally in one browser or authoritatively on the
-server. Online matches are intentionally session-lived: the server owns the
-clock and validates doctrine changes, while persistence and replay are deferred.
+server. The server owns the clock, validates doctrine changes, and persists
+compact completed-match results. Replay checkpoints and playback are deferred.
 
 ## How the shared world works
 

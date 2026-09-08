@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
-import { snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { completedWarRecord, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
@@ -34,4 +34,25 @@ test("wire snapshots contain the shared WarSimulation state", () => {
   assert.equal(snapshot.grid.length > 0, true);
   assert.equal(snapshot.colonies[0].homePhero.length, snapshot.grid.length * snapshot.grid[0].length);
   assert.equal(snapshot.colonies[0].ants.length, 2);
+});
+
+test("completed records retain results without replay snapshots", () => {
+  const war = new WarSimulation({ masterSeed: "history-test", startingAnts: 1 });
+  war.simulation.colonies[1].ants.length = 0;
+  war.step();
+  const record = completedWarRecord({
+    id: "ABCDE",
+    war,
+    settings: DEFAULT_ONLINE_WAR_SETTINGS,
+    players: [
+      { token: "one", socket: null, ready: true, name: "Alpha" },
+      { token: "two", socket: null, ready: true, name: "Beta" },
+    ],
+  });
+
+  assert.equal(record.matchId, "ABCDE");
+  assert.equal(record.winner, 0);
+  assert.deepEqual(record.playerNames, ["Alpha", "Beta"]);
+  assert.equal(record.finalMetrics.length, 2);
+  assert.equal("checkpoints" in record, false);
 });

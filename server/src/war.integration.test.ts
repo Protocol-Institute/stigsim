@@ -43,7 +43,7 @@ async function closeServer(server: Server): Promise<void> {
 test("two players and a spectator can complete the authoritative lobby flow", async t => {
   const { attachWarWs, shutdownWar } = await import("./war");
   const server = createServer();
-  attachWarWs(server, [TEST_ORIGIN], true);
+  await attachWarWs(server, [TEST_ORIGIN], true);
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
 
   const address = server.address();

@@ -7,7 +7,8 @@ intentionally session-lived.
 
 The WebSocket endpoints are `/api/infinite/ws` and `/api/war/ws`. Online War
 supports match creation, joining, spectating, reconnect tokens, server-validated
-doctrine changes, and rematches. Persistence and replay remain deferred.
+doctrine changes, and rematches. Compact completed-match results are persisted;
+replay checkpoints and playback remain deferred.
 
 ## Persistence boundary
 
@@ -95,6 +96,9 @@ Initialize the schema once:
 ```bash
 DATABASE_URL="postgresql://..." pnpm --dir server db:push
 ```
+
+Run this after deploying the Online War history change so the
+`war_match_records` table is created before completed matches are recorded.
 
 `railway.json` builds from the repository root because the server and frontend
 share `shared/infinite-contract.ts`. Configure one Railway replica and use

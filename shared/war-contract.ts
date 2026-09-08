@@ -30,6 +30,18 @@ export interface WarMatchSummary {
   settings: OnlineWarSettings;
 }
 
+export interface WarMatchRecord {
+  recordId: string;
+  matchId: string;
+  completedAt: string;
+  playerNames: Array<string | null>;
+  winner: number | "draw";
+  settings: OnlineWarSettings;
+  finalTick: number;
+  finalMetrics: WarMetricsWire[];
+  finalDoctrines: SimParams[];
+}
+
 export interface WarMetricsWire {
   population: number;
   foodCollected: number;
@@ -90,7 +102,6 @@ export type WarClientMessage =
 export type WarServerMessage =
   | { type: "joined"; matchId: string; colonyId: number | null; reconnectToken?: string; phase: WarMatchPhase }
   | { type: "player-state"; connected: boolean[]; ready: boolean[]; names: Array<string | null> }
-  | { type: "lobby-state"; matches: WarMatchSummary[] }
+  | { type: "lobby-state"; matches: WarMatchSummary[]; history: WarMatchRecord[] }
   | { type: "snapshot"; snapshot: WarSnapshot }
   | { type: "error"; message: string };
-
