@@ -327,6 +327,8 @@ function handleMessage(
 }
 
 let activeWss: WebSocketServer | null = null;
+let activeServer: Server | null = null;
+let activeUpgradeHandler: ((request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => void) | null = null;
 
 export async function attachInfiniteWs(
   server: Server,
@@ -335,8 +337,16 @@ export async function attachInfiniteWs(
 ) {
   await loadWorld();
 
-  const wss = new WebSocketServer({ server, path: "/api/infinite/ws", maxPayload: 16 * 1024 });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
   activeWss = wss;
+  activeServer = server;
+  const upgradeHandler = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
+    const pathname = new URL(request.url ?? "", "http://localhost").pathname;
+    if (pathname !== "/api/infinite/ws") return;
+    wss.handleUpgrade(request, socket, head, ws => wss.emit("connection", ws, request));
+  };
+  activeUpgradeHandler = upgradeHandler;
+  server.on("upgrade", upgradeHandler);
 
   wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     const origin = req.headers.origin;
@@ -395,7 +405,10 @@ export async function shutdownInfinite() {
   clearInterval(heartbeatInterval);
   await saveWorld();
   for (const ws of clients) ws.close(1001, "Server restarting");
+  if (activeServer && activeUpgradeHandler) activeServer.off("upgrade", activeUpgradeHandler);
   activeWss?.close();
+  activeServer = null;
+  activeUpgradeHandler = null;
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────

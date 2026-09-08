@@ -1,0 +1,111 @@
+import assert from "node:assert/strict";
+import { createServer, type Server } from "node:http";
+import test from "node:test";
+import WebSocket from "ws";
+import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
+
+type Message = Record<string, unknown>;
+const TEST_ORIGIN = "http://test.local";
+
+class MessageInbox {
+  readonly messages: Message[] = [];
+
+  constructor(readonly ws: WebSocket) {
+    ws.on("message", raw => this.messages.push(JSON.parse(raw.toString()) as Message));
+  }
+
+  async waitFor(predicate: (message: Message) => boolean, startAt = 0, timeoutMs = 3_000): Promise<Message> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const found = this.messages.slice(startAt).find(predicate);
+      if (found) return found;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw new Error(`Timed out waiting for War message; received ${JSON.stringify(this.messages.slice(startAt))}`);
+  }
+}
+
+async function connect(url: string): Promise<MessageInbox> {
+  const ws = new WebSocket(url, { origin: TEST_ORIGIN });
+  const inbox = new MessageInbox(ws);
+  await new Promise<void>((resolve, reject) => {
+    ws.once("open", resolve);
+    ws.once("error", reject);
+  });
+  await inbox.waitFor(message => message.type === "lobby-state");
+  return inbox;
+}
+
+async function closeServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+}
+
+test("two players and a spectator can complete the authoritative lobby flow", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}/api/war/ws`;
+  const first = await connect(url);
+  const second = await connect(url);
+  const spectator = await connect(url);
+
+  t.after(async () => {
+    first.ws.close();
+    second.ws.close();
+    spectator.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const firstStart = first.messages.length;
+  first.ws.send(JSON.stringify({
+    type: "create-room",
+    playerName: "Alpha",
+    settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, stepsPerSecond: 60 },
+  }));
+  const firstJoined = await first.waitFor(message => message.type === "joined", firstStart);
+  const matchId = firstJoined.matchId as string;
+  assert.equal(firstJoined.colonyId, 0);
+  assert.equal(typeof firstJoined.reconnectToken, "string");
+
+  const secondStart = second.messages.length;
+  second.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Beta" }));
+  const secondJoined = await second.waitFor(message => message.type === "joined", secondStart);
+  assert.equal(secondJoined.colonyId, 1);
+
+  const spectatorStart = spectator.messages.length;
+  spectator.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Observer" }));
+  const spectatorJoined = await spectator.waitFor(message => message.type === "joined", spectatorStart);
+  assert.equal(spectatorJoined.colonyId, null);
+
+  const deniedStart = spectator.messages.length;
+  spectator.ws.send(JSON.stringify({
+    type: "set-doctrine",
+    doctrine: { evapRate: 0.005, trailPower: 2.5, tankMax: 8_000, cautionary: false },
+  }));
+  const denied = await spectator.waitFor(message => message.type === "error", deniedStart);
+  assert.match(denied.message as string, /Only players/);
+
+  first.ws.send(JSON.stringify({ type: "ready" }));
+  second.ws.send(JSON.stringify({ type: "ready" }));
+  const running = await first.waitFor(
+    message => message.type === "snapshot" && (message.snapshot as { phase?: string }).phase === "running",
+    firstStart,
+  );
+  const runningTick = (running.snapshot as { tick: number }).tick;
+  const advanced = await first.waitFor(
+    message => message.type === "snapshot" && (message.snapshot as { tick?: number }).tick! > runningTick,
+    firstStart,
+  );
+  assert.equal((advanced.snapshot as { phase: string }).phase, "running");
+
+  const malformedStart = first.messages.length;
+  first.ws.send(JSON.stringify({ type: "join-room", matchId: null, playerName: "Oops" }));
+  const malformed = await first.waitFor(message => message.type === "error", malformedStart);
+  assert.equal(malformed.message, "Malformed message");
+  assert.equal(first.ws.readyState, WebSocket.OPEN);
+});

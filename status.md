@@ -2,7 +2,7 @@
 
 ## Active
 
-- Port local two-player War Mode onto `@stigsim/sim-core`, preserving the prototype's survival behavior in a separately tested mode layer.
+- Integrate the shared `WarSimulation` as an authoritative, session-lived Online War experience with create, join, spectate, reconnect, and rematch flows.
 - Point `stigsim.protocol-institute.org` (Cloudflare DNS) at GitHub Pages — repo side done, needs a CNAME DNS record added in Cloudflare.
 - Integrate and deploy Infinite Mode using one Railway simulation server and Neon Postgres.
 
@@ -13,6 +13,7 @@
 
 ## Done
 
+- **2026-09-07** — Ported local two-player War Mode onto `@stigsim/sim-core`, preserving its survival behavior in a separately tested mode layer. (PR #11)
 - **2026-08-27** — Made Maze Simulator runs reproducible from a seed: seeded PRNG streams, a command bus every mutation routes through, periodic state fingerprints, and a downloadable trace file that replays exactly with seek and divergence reporting. Added a Run panel (seed, save trace, load trace, replay bar, CSV export) and automated tests for core simulation behavior, including a golden-trace regression fixture (`pnpm golden`). Closes the "Add automated tests for core simulation behavior" item that was under Upcoming. (Patrick)
 - **2026-08-03** — Project container scaffolded and registered (`CLAUDE.md`, `status.md`, `README.md`, `.gitignore`); GitHub repo `Protocol-Institute/stigsim` created (public), initial commit pushed. (Venkat)
 - **2026-08-05** — Verified repo write access (commit + push to `main`) for second contributor. (0xErgod)

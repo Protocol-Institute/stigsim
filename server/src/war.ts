@@ -1,0 +1,486 @@
+import { randomUUID } from "node:crypto";
+import type { IncomingMessage, Server } from "node:http";
+import { performance } from "node:perf_hooks";
+import { DEFAULT_PARAMS, DenseField, DenseGrid, generateMasterSeed, type SimParams } from "@stigsim/sim-core";
+import { WebSocket, WebSocketServer } from "ws";
+import { WarSimulation } from "../../src/modes/war/war-simulation";
+import { isAllowedWebSocketOrigin } from "./security";
+import type {
+  OnlineWarSettings,
+  WarClientMessage,
+  WarMatchSummary,
+  WarServerMessage,
+  WarSnapshot,
+} from "../../shared/war-contract";
+
+const CLOCK_RATE = 60;
+const SNAPSHOT_RATE = 10;
+const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const EMPTY_ROOM_TTL_MS = 30 * 60 * 1_000;
+const MAX_MATCHES = 100;
+const MAX_MESSAGES_PER_SECOND = 30;
+const MAX_BUFFERED_BYTES = 512 * 1_024;
+
+interface PlayerSlot {
+  token: string;
+  socket: WebSocket | null;
+  ready: boolean;
+  name: string;
+  isBot?: boolean;
+}
+
+interface WarMatch {
+  id: string;
+  settings: OnlineWarSettings;
+  war: WarSimulation;
+  phase: "waiting" | "running" | "finished";
+  players: Array<PlayerSlot | null>;
+  spectators: Set<WebSocket>;
+  simulationAccumulator: number;
+  snapshotAccumulator: number;
+  emptySince: number | null;
+  createdAt: number;
+}
+
+const matches = new Map<string, WarMatch>();
+const socketMatches = new Map<WebSocket, WarMatch>();
+const socketNames = new Map<WebSocket, string>();
+let activeWss: WebSocketServer | null = null;
+let activeServer: Server | null = null;
+let activeUpgradeHandler: ((request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => void) | null = null;
+let clock: ReturnType<typeof setInterval> | null = null;
+let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+export function validOnlineWarSettings(value: unknown): value is OnlineWarSettings {
+  if (!value || typeof value !== "object") return false;
+  const settings = value as Partial<OnlineWarSettings>;
+  return typeof settings.masterSeed === "string" && settings.masterSeed.length <= 200
+    && Number.isInteger(settings.stepsPerSecond) && settings.stepsPerSecond! >= 2 && settings.stepsPerSecond! <= 60
+    && Number.isInteger(settings.startingAnts) && settings.startingAnts! >= 1 && settings.startingAnts! <= 100
+    && Number.isInteger(settings.foodSources) && settings.foodSources! >= 1 && settings.foodSources! <= 12
+    && Number.isInteger(settings.foodPerSource) && settings.foodPerSource! >= 50 && settings.foodPerSource! <= 10_000
+    && settings.foodPerSource! % 50 === 0
+    && typeof settings.loopRate === "number" && Number.isFinite(settings.loopRate)
+    && settings.loopRate >= 0 && settings.loopRate <= 0.5;
+}
+
+export function validWarDoctrine(value: unknown): value is SimParams {
+  if (!value || typeof value !== "object") return false;
+  const doctrine = value as Partial<SimParams>;
+  return typeof doctrine.evapRate === "number" && Number.isFinite(doctrine.evapRate)
+    && doctrine.evapRate >= 0.001 && doctrine.evapRate <= 0.02
+    && typeof doctrine.trailPower === "number" && Number.isFinite(doctrine.trailPower)
+    && doctrine.trailPower >= 1 && doctrine.trailPower <= 10
+    && doctrine.trailPower * 2 === Math.round(doctrine.trailPower * 2)
+    && Number.isInteger(doctrine.tankMax) && doctrine.tankMax! >= 1_600 && doctrine.tankMax! <= 16_000
+    && doctrine.tankMax! % 800 === 0
+    && typeof doctrine.cautionary === "boolean";
+}
+
+function cleanName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim().replace(/\s+/g, " ").slice(0, 24);
+  return name || null;
+}
+
+function roomCode(): string {
+  for (;;) {
+    let code = "";
+    for (let i = 0; i < 5; i++) code += ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)];
+    if (!matches.has(code)) return code;
+  }
+}
+
+function makeWar(settings: OnlineWarSettings): WarSimulation {
+  return new WarSimulation({
+    masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
+    startingAnts: settings.startingAnts,
+    foodSources: settings.foodSources,
+    foodPerSource: settings.foodPerSource,
+    loopRate: settings.loopRate,
+  });
+}
+
+function randomDoctrine(): SimParams {
+  return {
+    evapRate: (1 + Math.floor(Math.random() * 20)) / 1_000,
+    trailPower: 1 + Math.floor(Math.random() * 19) * 0.5,
+    tankMax: 1_600 + Math.floor(Math.random() * 19) * 800,
+    cautionary: Math.random() >= 0.5,
+  };
+}
+
+function createMatch(settings: OnlineWarSettings): WarMatch {
+  const normalized = { ...settings, masterSeed: settings.masterSeed.trim() || generateMasterSeed() };
+  const match: WarMatch = {
+    id: roomCode(),
+    settings: normalized,
+    war: makeWar(normalized),
+    phase: "waiting",
+    players: [null, null],
+    spectators: new Set(),
+    simulationAccumulator: 0,
+    snapshotAccumulator: 0,
+    emptySince: null,
+    createdAt: Date.now(),
+  };
+  matches.set(match.id, match);
+  return match;
+}
+
+function sockets(match: WarMatch): WebSocket[] {
+  return [...match.players.flatMap(player => player?.socket ? [player.socket] : []), ...match.spectators];
+}
+
+function send(socket: WebSocket, message: WarServerMessage): void {
+  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+
+function broadcast(match: WarMatch, message: WarServerMessage): void {
+  const encoded = JSON.stringify(message);
+  for (const socket of sockets(match)) {
+    if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < MAX_BUFFERED_BYTES) socket.send(encoded);
+  }
+}
+
+function connected(player: PlayerSlot | null): boolean {
+  return Boolean(player?.isBot || player?.socket?.readyState === WebSocket.OPEN);
+}
+
+function summary(match: WarMatch): WarMatchSummary {
+  return {
+    id: match.id,
+    phase: match.phase,
+    playerNames: match.players.map(player => player?.name ?? null),
+    connected: match.players.map(connected),
+    winner: match.war.result,
+    createdAt: match.createdAt,
+    settings: { ...match.settings },
+  };
+}
+
+function lobbyMessage(): WarServerMessage {
+  return {
+    type: "lobby-state",
+    matches: [...matches.values()]
+      .filter(match => match.phase !== "finished")
+      .map(summary)
+      .sort((a, b) => b.createdAt - a.createdAt),
+  };
+}
+
+function broadcastLobby(): void {
+  if (!activeWss) return;
+  const encoded = JSON.stringify(lobbyMessage());
+  for (const socket of activeWss.clients) {
+    if (socket.readyState === WebSocket.OPEN) socket.send(encoded);
+  }
+}
+
+function broadcastPlayers(match: WarMatch): void {
+  broadcast(match, {
+    type: "player-state",
+    connected: match.players.map(connected),
+    ready: match.players.map(player => Boolean(player?.ready)),
+    names: match.players.map(player => player?.name ?? null),
+  });
+}
+
+export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settings">): WarSnapshot {
+  const simulation = match.war.simulation;
+  const grid = simulation.occupancy;
+  if (!(grid instanceof DenseGrid)) throw new Error("Online War requires a bounded dense maze");
+  return {
+    tick: simulation.tick,
+    phase: match.phase,
+    winner: match.war.result,
+    settings: { ...match.settings },
+    grid: grid.cells.map(row => [...row]),
+    foodSources: simulation.foodSources.map(source => ({ ...source })),
+    colonies: simulation.colonies.map(colony => {
+      if (!(colony.field instanceof DenseField)) throw new Error("Online War requires dense pheromone fields");
+      return {
+        id: colony.id,
+        nestX: colony.nestX,
+        nestY: colony.nestY,
+        homePhero: Array.from(colony.field.layer("home")),
+        foodPhero: Array.from(colony.field.layer("food")),
+        cautPhero: Array.from(colony.field.layer("caut")),
+        ants: colony.ants.map((ant, key) => {
+          const runtime = match.war.getAntSnapshot(ant);
+          return {
+            key,
+            x: ant.x,
+            y: ant.y,
+            tx: ant.tx,
+            ty: ant.ty,
+            hasFood: ant.hasFood,
+            phase: runtime?.phase ?? ant.state,
+            energy: runtime?.energy ?? match.war.rules.maxEnergy,
+          };
+        }),
+        metrics: match.war.getMetrics(colony.id),
+        doctrine: match.war.getDoctrine(colony.id),
+      };
+    }),
+  };
+}
+
+function broadcastSnapshot(match: WarMatch): void {
+  broadcast(match, { type: "snapshot", snapshot: snapshotWarMatch(match) });
+}
+
+function playerIndex(match: WarMatch, socket: WebSocket): number {
+  return match.players.findIndex(player => player?.socket === socket);
+}
+
+function leaveMatch(socket: WebSocket): void {
+  const match = socketMatches.get(socket);
+  if (!match) return;
+  match.spectators.delete(socket);
+  const colonyId = playerIndex(match, socket);
+  if (colonyId >= 0) match.players[colonyId]!.socket = null;
+  socketMatches.delete(socket);
+  socketNames.delete(socket);
+  broadcastPlayers(match);
+  if (!sockets(match).some(client => client.readyState === WebSocket.OPEN)) match.emptySince = Date.now();
+  broadcastLobby();
+}
+
+function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectToken?: string): void {
+  leaveMatch(socket);
+  socketMatches.set(socket, match);
+  socketNames.set(socket, name);
+  match.emptySince = null;
+
+  let colonyId = reconnectToken
+    ? match.players.findIndex(player => player?.token === reconnectToken && !player.isBot)
+    : -1;
+  if (colonyId >= 0) {
+    match.players[colonyId]!.socket?.close(4001, "Reconnected elsewhere");
+    match.players[colonyId]!.socket = socket;
+    match.players[colonyId]!.name = name;
+  } else {
+    colonyId = match.players.findIndex(player => player === null);
+    if (colonyId >= 0) {
+      match.players[colonyId] = { token: randomUUID(), socket, ready: false, name };
+    } else {
+      match.spectators.add(socket);
+    }
+  }
+
+  send(socket, {
+    type: "joined",
+    matchId: match.id,
+    colonyId: colonyId >= 0 ? colonyId : null,
+    reconnectToken: colonyId >= 0 ? match.players[colonyId]!.token : undefined,
+    phase: match.phase,
+  });
+  send(socket, { type: "snapshot", snapshot: snapshotWarMatch(match) });
+  broadcastPlayers(match);
+  broadcastLobby();
+}
+
+function claimSeat(socket: WebSocket, match: WarMatch, colonyId: number): void {
+  if ((colonyId !== 0 && colonyId !== 1) || playerIndex(match, socket) >= 0) {
+    send(socket, { type: "error", message: "That seat cannot be claimed" });
+    return;
+  }
+  const existing = match.players[colonyId];
+  if (existing?.isBot || existing?.socket?.readyState === WebSocket.OPEN) {
+    send(socket, { type: "error", message: `Colony ${colonyId + 1} is already occupied` });
+    return;
+  }
+  match.spectators.delete(socket);
+  match.players[colonyId] = {
+    token: randomUUID(),
+    socket,
+    ready: false,
+    name: socketNames.get(socket) ?? `Player ${colonyId + 1}`,
+  };
+  send(socket, {
+    type: "joined",
+    matchId: match.id,
+    colonyId,
+    reconnectToken: match.players[colonyId]!.token,
+    phase: match.phase,
+  });
+  broadcastPlayers(match);
+  broadcastLobby();
+}
+
+function resetMatch(match: WarMatch): void {
+  match.war = makeWar(match.settings);
+  match.phase = "waiting";
+  match.simulationAccumulator = 0;
+  for (const player of match.players) if (player) player.ready = Boolean(player.isBot);
+  if (match.players.some(player => player?.isBot)) {
+    for (const player of match.players) if (player) player.ready = true;
+    match.phase = "running";
+  }
+  broadcastPlayers(match);
+  broadcastSnapshot(match);
+  broadcastLobby();
+}
+
+function parseMessage(raw: WebSocket.RawData): WarClientMessage | null {
+  try {
+    const value = JSON.parse(raw.toString()) as unknown;
+    return value && typeof value === "object" && typeof (value as { type?: unknown }).type === "string"
+      ? value as WarClientMessage
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function handleMessage(socket: WebSocket, message: WarClientMessage): void {
+  if (message.type === "create-room") {
+    const name = cleanName(message.playerName);
+    if (!name) return send(socket, { type: "error", message: "Enter a player name" });
+    if (!validOnlineWarSettings(message.settings)) {
+      return send(socket, { type: "error", message: "Match settings are outside the allowed range" });
+    }
+    if (matches.size >= MAX_MATCHES) return send(socket, { type: "error", message: "The server is at match capacity" });
+    const match = createMatch(message.settings);
+    if (message.randomOpponent) {
+      match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
+      match.war.setDoctrine(1, randomDoctrine());
+    }
+    enterMatch(socket, match, name);
+    if (message.randomOpponent) {
+      match.players[0]!.ready = true;
+      match.phase = "running";
+      broadcastPlayers(match);
+      broadcastSnapshot(match);
+      broadcastLobby();
+    }
+    return;
+  }
+
+  if (message.type === "join-room") {
+    const name = cleanName(message.playerName);
+    if (!name) return send(socket, { type: "error", message: "Enter a player name" });
+    const match = matches.get(message.matchId.trim().toUpperCase());
+    if (!match) return send(socket, { type: "error", message: "Match not found. Check the room code." });
+    enterMatch(socket, match, name, message.reconnectToken);
+    return;
+  }
+
+  const match = socketMatches.get(socket);
+  if (!match) return send(socket, { type: "error", message: "Create or join a match first" });
+  if (message.type === "claim-seat") return claimSeat(socket, match, message.colonyId);
+  const colonyId = playerIndex(match, socket);
+  if (colonyId < 0) return send(socket, { type: "error", message: "Only players can control a colony" });
+
+  if (message.type === "ready") {
+    if (match.phase !== "waiting") return;
+    match.players[colonyId]!.ready = true;
+    if (match.players.every(player => player?.ready)) match.phase = "running";
+    broadcastPlayers(match);
+    broadcastSnapshot(match);
+    broadcastLobby();
+  } else if (message.type === "set-doctrine") {
+    if (!validWarDoctrine(message.doctrine)) {
+      return send(socket, { type: "error", message: "Doctrine values are outside the allowed range" });
+    }
+    match.war.setDoctrine(colonyId, message.doctrine);
+    broadcastSnapshot(match);
+  } else if (message.type === "reset" && match.phase === "finished") {
+    resetMatch(match);
+  }
+}
+
+function advanceMatches(): void {
+  const now = Date.now();
+  for (const [id, match] of matches) {
+    if (match.emptySince && now - match.emptySince > EMPTY_ROOM_TTL_MS) {
+      matches.delete(id);
+      continue;
+    }
+    if (match.phase === "running") {
+      match.simulationAccumulator += match.settings.stepsPerSecond / CLOCK_RATE;
+      while (match.simulationAccumulator >= 1 && match.war.result === null) {
+        match.war.step();
+        match.simulationAccumulator--;
+      }
+      if (match.war.result !== null) {
+        match.phase = "finished";
+        broadcastPlayers(match);
+        broadcastLobby();
+      }
+    }
+    match.snapshotAccumulator += SNAPSHOT_RATE / CLOCK_RATE;
+    if (match.snapshotAccumulator >= 1) {
+      match.snapshotAccumulator--;
+      if (sockets(match).length > 0) broadcastSnapshot(match);
+    }
+  }
+}
+
+export function attachWarWs(server: Server, allowedOrigins: string[], requireOrigin = false): void {
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1_024 });
+  activeWss = wss;
+  activeServer = server;
+  const upgradeHandler = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
+    const pathname = new URL(request.url ?? "", "http://localhost").pathname;
+    if (pathname !== "/api/war/ws") return;
+    wss.handleUpgrade(request, socket, head, ws => wss.emit("connection", ws, request));
+  };
+  activeUpgradeHandler = upgradeHandler;
+  server.on("upgrade", upgradeHandler);
+  clock = setInterval(advanceMatches, 1_000 / CLOCK_RATE);
+
+  wss.on("connection", (socket: WebSocket, request: IncomingMessage) => {
+    if (!isAllowedWebSocketOrigin(request.headers.origin, allowedOrigins, requireOrigin)) {
+      socket.close(1008, "Origin not allowed");
+      return;
+    }
+    let messageCount = 0;
+    const rateWindow = setInterval(() => { messageCount = 0; }, 1_000);
+    send(socket, lobbyMessage());
+    socket.on("message", raw => {
+      if (++messageCount > MAX_MESSAGES_PER_SECOND) {
+        socket.close(1008, "Rate limit exceeded");
+        return;
+      }
+      const message = parseMessage(raw);
+      if (!message) return send(socket, { type: "error", message: "Invalid JSON message" });
+      try {
+        handleMessage(socket, message);
+      } catch {
+        send(socket, { type: "error", message: "Malformed message" });
+      }
+    });
+    socket.on("close", () => {
+      clearInterval(rateWindow);
+      leaveMatch(socket);
+    });
+    socket.on("error", () => {
+      clearInterval(rateWindow);
+      leaveMatch(socket);
+    });
+  });
+  heartbeat = setInterval(() => {
+    for (const socket of wss.clients) {
+      if (socket.readyState === WebSocket.OPEN) socket.ping();
+    }
+  }, 25_000);
+  console.log("[ws] War WebSocket server attached at /api/war/ws");
+}
+
+export function shutdownWar(): void {
+  if (clock) clearInterval(clock);
+  if (heartbeat) clearInterval(heartbeat);
+  clock = null;
+  heartbeat = null;
+  for (const socket of activeWss?.clients ?? []) socket.close(1001, "Server restarting");
+  if (activeServer && activeUpgradeHandler) activeServer.off("upgrade", activeUpgradeHandler);
+  activeWss?.close();
+  activeWss = null;
+  activeServer = null;
+  activeUpgradeHandler = null;
+  matches.clear();
+  socketMatches.clear();
+  socketNames.clear();
+}

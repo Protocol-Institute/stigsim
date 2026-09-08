@@ -1,8 +1,13 @@
-# Infinite Mode server
+# Shared simulation server
 
-This Express and WebSocket service owns the single authoritative Infinite Mode
-world. Run exactly one production replica: simulation state is held in memory
-and snapshotted to Postgres every 60 seconds.
+This Express and WebSocket service owns the authoritative Infinite Mode world
+and Online War matches. Run exactly one production replica: Infinite state is
+held in memory and snapshotted to Postgres every 60 seconds; War matches are
+intentionally session-lived.
+
+The WebSocket endpoints are `/api/infinite/ws` and `/api/war/ws`. Online War
+supports match creation, joining, spectating, reconnect tokens, server-validated
+doctrine changes, and rematches. Persistence and replay remain deferred.
 
 ## Persistence boundary
 

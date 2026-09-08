@@ -31,14 +31,14 @@ class MessageInbox {
   }
 }
 
-async function connect(url: string): Promise<MessageInbox> {
+async function connect(url: string, initialType = "init"): Promise<MessageInbox> {
   const ws = new WebSocket(url, { origin: TEST_ORIGIN });
   const inbox = new MessageInbox(ws);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", resolve);
     ws.once("error", reject);
   });
-  await inbox.waitFor(message => message.type === "init");
+  await inbox.waitFor(message => message.type === initialType);
   return inbox;
 }
 
@@ -52,19 +52,25 @@ test("two clients share edits without claiming or deleting each other's colony",
   // The integration test must never read or write a developer's configured DB.
   delete process.env.DATABASE_URL;
   const { attachInfiniteWs, shutdownInfinite } = await import("./ws");
+  const { attachWarWs, shutdownWar } = await import("./war");
   const server = createServer();
   await attachInfiniteWs(server, [TEST_ORIGIN], true);
+  attachWarWs(server, [TEST_ORIGIN], true);
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
 
   const address = server.address();
   assert(address && typeof address === "object");
   const url = `ws://127.0.0.1:${address.port}/api/infinite/ws`;
+  const warUrl = `ws://127.0.0.1:${address.port}/api/war/ws`;
   const owner = await connect(url);
   const observer = await connect(url);
+  const warLobby = await connect(warUrl, "lobby-state");
 
   t.after(async () => {
     owner.ws.close();
     observer.ws.close();
+    warLobby.ws.close();
+    shutdownWar();
     await shutdownInfinite();
     await closeServer(server);
   });
