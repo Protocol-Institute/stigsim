@@ -354,11 +354,10 @@ export default function OnlineWarMode() {
     : snapshot?.phase === "running" ? "Match running" : connected.every(Boolean) ? "Both players connected" : "Waiting for opponent";
   const shareInvite = async () => {
     try {
-      if (navigator.share) await navigator.share({ title: `Join Stigsim room ${matchId}`, url: inviteUrl });
-      else await navigator.clipboard.writeText(inviteUrl);
+      await navigator.clipboard.writeText(inviteUrl);
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 1_800);
-    } catch { /* The player may dismiss the native share sheet. */ }
+    } catch { setError("Could not copy the invite link. Copy it from the browser address bar instead."); }
   };
   const matchStatus = snapshot?.phase === "finished" ? "Finished" : snapshot?.phase === "running" ? "Running" : colonyId !== null && ready[colonyId] ? "Ready" : "Waiting";
   const playerStatus = (id: number) => !connected[id] ? "Open seat" : snapshot?.phase === "waiting" ? ready[id] ? "Ready" : "Connected" : "Connected";
@@ -366,11 +365,9 @@ export default function OnlineWarMode() {
   const waitingTitle = !connected.every(Boolean) ? "Waiting for an opponent" : colonyId === null ? "Waiting for players" : ready[colonyId] ? "You’re ready" : "Ready to begin?";
   const waitingMessage = !connected.every(Boolean) ? "Share this room so another player can claim the open colony." : colonyId === null ? "Both players must ready up before the match begins." : ready[colonyId] ? `Waiting for ${names[opponentId] ?? "your opponent"} to ready up.` : "Review your doctrine, then signal that you’re ready to start.";
   return <main className="war-page online-war-match">
-    <header className="war-header"><div><p>Online · Two players</p><h1>Online War Mode</h1><span>Last colony standing wins.</span></div><div className="war-header__actions">
+    <header className="war-header"><div><nav className="online-war-breadcrumb" aria-label="Breadcrumb"><a href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a><span aria-hidden="true">›</span><strong>Room {matchId}</strong></nav><h1>Online War Mode</h1><span>Last colony standing wins.</span></div><div className="war-header__actions">
       <span className={`online-war-status online-war-status--${matchStatus.toLowerCase()}`}>{matchStatus}</span>
-      <span className="online-war-room">Room {matchId}</span>
       <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share"}</button>
-      <a className="war-button" href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a>
     </div></header>
     {error && <div className="online-war-error">{error}</div>}
     {snapshot && <section className="war-matchbar" aria-label="Locked match settings"><div className="war-matchbar__group"><strong>Match settings</strong><div className="war-matchbar__summary"><span>{snapshot.settings.startingAnts} ants / colony</span><span>{snapshot.settings.foodSources} food {snapshot.settings.foodSources === 1 ? "source" : "sources"}</span><span>{snapshot.settings.foodPerSource} food / source</span><span>{Math.round(snapshot.settings.loopRate * 100)}% maze loops</span><span className="war-matchbar__seed" title={snapshot.settings.masterSeed}>Seed: {snapshot.settings.masterSeed}</span></div></div><div className="war-matchbar__group war-matchbar__group--controls"><strong>Simulation</strong><div className="war-matchbar__summary"><span>{snapshot.settings.stepsPerSecond} steps / sec</span></div></div></section>}

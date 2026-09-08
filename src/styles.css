@@ -263,7 +263,11 @@
 .online-war-status--running { border-color: #36c27566; background: #36c27518; color: #5ed48d !important; }
 .online-war-status--ready { border-color: #f59e0b66; background: #f59e0b18; color: #f0b44e !important; }
 .online-war-status--finished { color: #e3c47f !important; }
-.online-war-room { align-self: center; color: #927e5f !important; font-size: .68rem !important; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.online-war-breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: #806d52; font-size: .68rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.online-war-breadcrumb a { color: #d69a36; text-decoration: none; }
+.online-war-breadcrumb a:hover { color: #f5b94e; text-decoration: underline; text-underline-offset: 3px; }
+.online-war-breadcrumb span { color: #594a35 !important; font-size: .9rem !important; }
+.online-war-breadcrumb strong { color: #9c8767; font-weight: 750; }
 .war-colony__name em { margin-left: auto; color: #806d52; font-size: .6rem; font-style: normal; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
 .online-war-claim { width: 100%; margin: 0 0 10px; border-color: var(--colony-color); color: var(--colony-color); }
 .online-war-maze { position: relative; }
