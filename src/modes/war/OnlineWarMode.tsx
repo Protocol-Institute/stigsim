@@ -201,6 +201,7 @@ function SetupModal({ mode, settings, onChange, onClose, onStart }: {
 function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mode: "waiting" | "running"; ownRoom: boolean; onJoin: (spectate: boolean) => void }) {
   const openColony = match.connected.findIndex(isConnected => !isConnected);
   const waitingAction = ownRoom ? "Enter your game" : openColony >= 0 ? `Join and take Colony ${openColony + 1}` : "View waiting room";
+  const action = mode === "running" ? ownRoom ? "Return to game" : "Watch game" : waitingAction;
   return <article className="mp-match-row">
     <div className={`mp-row-mode ${mode === "running" ? "live" : ""}`}><span>{mode === "running" ? "●" : "🐜"}</span><strong>{match.id}</strong><small>{mode === "running" ? "Live now" : "War match"}</small></div>
     <div className="mp-row-players"><div><i className="blue" /><strong className={match.connected[0] ? "" : "is-open"}>{match.connected[0] ? match.playerNames[0] : "Open colony"}</strong></div><div><i className="red" /><strong className={match.connected[1] ? "" : "is-open"}>{match.connected[1] ? match.playerNames[1] : "Open colony"}</strong></div></div>
@@ -208,7 +209,7 @@ function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mo
     <div className="mp-row-stat"><small>Food</small><strong>{match.settings.foodSources}</strong><span>{match.settings.foodPerSource}/source</span></div>
     <div className="mp-row-stat"><small>Speed</small><strong>{match.settings.stepsPerSecond}</strong><span>steps/sec</span></div>
     <div className="mp-row-stat"><small>Maze</small><strong>{Math.round(match.settings.loopRate * 100)}%</strong><span>loops</span></div>
-    <button className={`mp-row-action ${mode === "running" ? "watch" : "join"}`} onClick={() => onJoin(mode === "running" || openColony < 0 && !ownRoom)}>{mode === "running" ? "Watch game" : waitingAction}</button>
+    <button className={`mp-row-action ${mode === "running" ? "watch" : "join"}`} onClick={() => onJoin(mode === "running" ? !ownRoom : openColony < 0 && !ownRoom)}>{action}</button>
   </article>;
 }
 
