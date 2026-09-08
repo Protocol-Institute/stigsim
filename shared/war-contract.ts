@@ -100,6 +100,7 @@ export type WarClientMessage =
   | { type: "reset" };
 
 export type WarServerMessage =
+  | { type: "room-created"; matchId: string; reconnectToken: string }
   | { type: "joined"; matchId: string; colonyId: number | null; reconnectToken?: string; phase: WarMatchPhase }
   | { type: "player-state"; connected: boolean[]; ready: boolean[]; names: Array<string | null> }
   | { type: "lobby-state"; matches: WarMatchSummary[]; history: WarMatchRecord[] }

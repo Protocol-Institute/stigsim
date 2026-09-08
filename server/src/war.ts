@@ -135,6 +135,14 @@ function createMatch(settings: OnlineWarSettings): WarMatch {
   return match;
 }
 
+function createWaitingMatch(playerName: string, settings: OnlineWarSettings): { match: WarMatch; token: string } {
+  const match = createMatch(settings);
+  const token = randomUUID();
+  match.players[0] = { token, socket: null, ready: false, name: playerName };
+  match.emptySince = Date.now();
+  return { match, token };
+}
+
 function sockets(match: WarMatch): WebSocket[] {
   return [...match.players.flatMap(player => player?.socket ? [player.socket] : []), ...match.spectators];
 }
@@ -398,6 +406,12 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
       return send(socket, { type: "error", message: "Match settings are outside the allowed range" });
     }
     if (matches.size >= MAX_MATCHES) return send(socket, { type: "error", message: "The server is at match capacity" });
+    if (!message.randomOpponent) {
+      const { match, token } = createWaitingMatch(name, message.settings);
+      send(socket, { type: "room-created", matchId: match.id, reconnectToken: token });
+      broadcastLobby();
+      return;
+    }
     const match = createMatch(message.settings);
     if (message.randomOpponent) {
       match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };

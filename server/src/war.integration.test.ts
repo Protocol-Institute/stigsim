@@ -67,8 +67,13 @@ test("two players and a spectator can complete the authoritative lobby flow", as
     playerName: "Alpha",
     settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, stepsPerSecond: 60 },
   }));
+  const created = await first.waitFor(message => message.type === "room-created", firstStart);
+  const matchId = created.matchId as string;
+  assert.equal(first.messages.slice(firstStart).some(message => message.type === "joined"), false);
+  const listed = await first.waitFor(message => message.type === "lobby-state" && ((message.matches as Array<{ id: string }>).some(match => match.id === matchId)), firstStart);
+  assert(listed);
+  first.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Alpha", reconnectToken: created.reconnectToken }));
   const firstJoined = await first.waitFor(message => message.type === "joined", firstStart);
-  const matchId = firstJoined.matchId as string;
   assert.equal(firstJoined.colonyId, 0);
   assert.equal(typeof firstJoined.reconnectToken, "string");
 
