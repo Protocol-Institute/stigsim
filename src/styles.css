@@ -86,29 +86,6 @@
 .mp-modal-actions button { padding: 10px 14px; border: 1px solid #4a351d; border-radius: 7px; background: #171007; color: #e5d5b5; cursor: pointer; }
 .mp-modal-actions button.primary { border: 0; background: #f59e0b; color: #160e04; font-weight: 900; }
 
-.online-war-name,
-.online-war-lobby,
-.online-war-match {
-  min-height: 100vh;
-  padding: 40px clamp(20px, 4vw, 64px) 72px;
-  color: #f4ead7;
-  background: radial-gradient(circle at top, #251608 0, #0a0602 55%);
-}
-
-.online-war-name { display: grid; place-items: center; }
-.online-war-name form {
-  width: min(440px, 100%);
-  display: grid;
-  gap: 18px;
-  padding: 36px;
-  border: 1px solid #553b20;
-  border-radius: 18px;
-  background: #171007;
-  text-align: center;
-}
-.online-war-name form > span { font-size: 44px; }
-.online-war-name input,
-.online-war-invite input,
 .online-war-settings__seed input {
   min-width: 0;
   padding: 12px 14px;
@@ -118,9 +95,7 @@
   background: #0d0905;
 }
 
-.online-war-name button,
-.online-war-lobby button,
-.online-war-match button {
+.online-war-match .war-button {
   padding: 10px 14px;
   border: 1px solid #a36b2c;
   border-radius: 8px;
@@ -128,37 +103,8 @@
   background: #6e3f12;
   cursor: pointer;
 }
-.online-war-name button:disabled,
-.online-war-match button:disabled { cursor: default; opacity: 0.5; }
-
-.online-war-lobby > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  max-width: 1260px;
-  margin: 0 auto 24px;
-}
-.online-war-lobby h1 { margin: 4px 0; font-size: clamp(2rem, 5vw, 4rem); }
-.online-war-lobby header > div:last-child { display: grid; text-align: right; }
-
-.online-war-create,
-.online-war-directory,
-.online-war-invite,
-.online-war-players,
-.online-war-error {
-  max-width: 1260px;
-  margin: 0 auto 20px;
-}
-.online-war-create {
-  padding: 22px;
-  border: 1px solid #49331e;
-  border-radius: 14px;
-  background: #151006;
-}
-.online-war-create > div:first-child { display: inline-block; margin-right: 24px; }
-.online-war-create h2 { margin: 0 0 4px; }
-.online-war-create p { margin: 0; color: #baa98c; }
+.online-war-match .war-button:disabled { cursor: default; opacity: 0.5; }
+.online-war-error { max-width: 1260px; margin: 0 auto 20px; padding: 12px 16px; border: 1px solid #b94a48; border-radius: 8px; color: #ffd7d4; background: #421b19; }
 
 .online-war-settings {
   display: grid;
@@ -169,94 +115,6 @@
 .online-war-settings label { display: grid; gap: 8px; }
 .online-war-settings label span { display: flex; justify-content: space-between; gap: 12px; }
 .online-war-settings__seed { grid-column: 1 / -1; }
-.online-war-create__actions { display: flex; gap: 10px; margin-top: 18px; }
-
-.online-war-directory {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-.online-war-directory > div {
-  padding: 20px;
-  border: 1px solid #49331e;
-  border-radius: 14px;
-  background: #120c06;
-}
-.online-war-directory h2 { margin-top: 0; }
-.online-war-directory article {
-  display: grid;
-  grid-template-columns: 70px 1fr auto auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
-  border-top: 1px solid #332414;
-}
-.online-war-directory article span,
-.online-war-directory article small { color: #baa98c; }
-
-.online-war-invite {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #49331e;
-  border-radius: 10px;
-  background: #151006;
-}
-.online-war-invite input { flex: 1; }
-.online-war-error { padding: 12px 16px; border: 1px solid #b94a48; border-radius: 8px; color: #ffd7d4; background: #421b19; }
-
-.online-war-players {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.online-war-players > div {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 1px solid currentColor;
-  border-radius: 10px;
-  background: #100b06;
-}
-.online-war-players span { margin-left: auto; color: #baa98c; }
-.online-war-network { width: 100%; max-width: 1220px; margin: 0 auto 14px; padding: 12px 14px; border: 1px solid #2b2116; border-radius: 10px; background: #0f0a04; }
-.online-war-network__heading { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(360px, 1.3fr); align-items: center; gap: 16px; }
-.online-war-network__heading > div:first-child { display: grid; gap: 3px; }
-.online-war-network__heading span, .online-war-network > p { color: #9b8568; font-size: .68rem; }
-.online-war-network > p { margin: 10px 0 0; text-align: center; }
-.online-war-network .online-war-invite { max-width: none; margin: 0; padding: 0; border: 0; background: transparent; }
-.online-war-network .online-war-players { max-width: none; margin: 10px 0 0; }
-.mp-locked-settings { max-width: 1260px; margin: 0 auto 16px; display: grid; grid-template-columns: 1.2fr repeat(4, 1fr); gap: 1px; overflow: hidden; border: 1px solid #332414; border-radius: 10px; background: #332414; }
-.mp-locked-settings > div { display: grid; gap: 3px; padding: 11px 13px; background: #120c06; }
-.mp-locked-settings span, .mp-locked-settings small { color: #806d52; font-size: .6rem; }
-.mp-locked-settings strong { font-size: .72rem; }
-.online-war-arena { max-width: 1260px; margin: 0 auto; }
-
-.online-war-colony {
-  min-width: 0;
-  padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--colony-color) 45%, transparent);
-  border-radius: 12px;
-  background: #120c06;
-}
-.online-war-colony__name { display: flex; align-items: center; gap: 8px; color: var(--colony-color); font-weight: 700; }
-.online-war-colony__name > span { width: 9px; height: 9px; border-radius: 50%; background: var(--colony-color); }
-.online-war-colony__population { display: flex; align-items: end; justify-content: space-between; margin: 18px 0; }
-.online-war-colony__population strong { color: var(--colony-color); font-size: 42px; }
-.online-war-colony__metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.online-war-colony__metrics > div { display: flex; justify-content: space-between; padding: 8px; border-radius: 6px; background: #201609; }
-.online-war-colony__metrics span { color: #baa98c; }
-.online-war-colony__controls { display: grid; gap: 14px; margin-top: 18px; }
-.online-war-colony__controls label { display: grid; gap: 6px; }
-.online-war-colony__controls label span { display: flex; justify-content: space-between; }
-.online-war-colony__controls input { accent-color: var(--colony-color); }
-.online-war-colony__toggle { display: flex; align-items: center; gap: 6px; }
-.online-war-colony__toggle span { margin-right: auto; }
-.online-war-colony__toggle button.is-active { color: #090604; background: var(--colony-color); }
-.online-war-colony > p { color: #baa98c; font-size: 0.82rem; }
-.online-war-spectator { text-align: center; color: #baa98c; }
 .online-war-status { align-self: center; padding: 6px 9px; border: 1px solid #806d5266; border-radius: 999px; background: #806d5214; color: #cbb796 !important; font-size: .62rem !important; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .online-war-status--running { border-color: #36c27566; background: #36c27518; color: #5ed48d !important; }
 .online-war-status--ready { border-color: #f59e0b66; background: #f59e0b18; color: #f0b44e !important; }
@@ -287,22 +145,12 @@
   .mp-directory-header { grid-template-columns: 1fr; }
   .mp-match-rows { overflow-x: auto; }
   .mp-match-row { min-width: 920px; }
-  .online-war-directory { grid-template-columns: 1fr; }
-  .online-war-arena { grid-template-columns: 1fr; }
-  .online-war-arena .war-maze { order: -1; }
 }
 
 @media (max-width: 640px) {
   .mp-directory-actions { grid-template-columns: 1fr 1fr; }
   .mp-saved-identity { grid-column: 1 / -1; }
   .mp-setup-modal .online-war-settings { grid-template-columns: 1fr; }
-  .online-war-lobby > header,
-  .online-war-create__actions { flex-direction: column; }
-  .online-war-directory article { grid-template-columns: 60px 1fr; }
-  .online-war-directory article button { grid-column: 1 / -1; }
-  .online-war-players { grid-template-columns: 1fr; }
-  .online-war-network__heading { grid-template-columns: 1fr; }
-  .mp-locked-settings { grid-template-columns: 1fr 1fr; }
 }
 
 * {

@@ -115,7 +115,7 @@ test("two players and a spectator can complete the authoritative lobby flow", as
   assert.equal(first.ws.readyState, WebSocket.OPEN);
 });
 
-test("a player who disconnects before ready releases their lobby seat", async t => {
+test("a creator holds their lobby seat until disconnecting before ready", async t => {
   const { attachWarWs, shutdownWar } = await import("./war");
   const server = createServer();
   await attachWarWs(server, [TEST_ORIGIN], true);
@@ -142,8 +142,13 @@ test("a player who disconnects before ready releases their lobby seat", async t 
   }));
   const created = await creator.waitFor(message => message.type === "room-created", createStart);
   const matchId = created.matchId as string;
-  creator.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Alpha", reconnectToken: created.reconnectToken }));
-  await creator.waitFor(message => message.type === "joined", createStart);
+  const reserved = await replacement.waitFor(message => {
+    if (message.type !== "lobby-state") return false;
+    const match = (message.matches as Array<{ id: string; connected: boolean[]; playerNames: Array<string | null> }>).find(item => item.id === matchId);
+    return match?.connected[0] === true;
+  });
+  const reservedMatch = (reserved.matches as Array<{ id: string; connected: boolean[]; playerNames: Array<string | null> }>).find(match => match.id === matchId);
+  assert.deepEqual(reservedMatch?.playerNames, ["Alpha", null]);
 
   const lobbyStart = replacement.messages.length;
   creator.ws.close();

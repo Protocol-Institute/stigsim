@@ -136,11 +136,12 @@ function createMatch(settings: OnlineWarSettings): WarMatch {
   return match;
 }
 
-function createWaitingMatch(playerName: string, settings: OnlineWarSettings): { match: WarMatch; token: string } {
+function createWaitingMatch(socket: WebSocket, playerName: string, settings: OnlineWarSettings): { match: WarMatch; token: string } {
   const match = createMatch(settings);
   const token = randomUUID();
-  match.players[0] = { token, socket: null, ready: false, name: playerName };
-  match.emptySince = Date.now();
+  match.players[0] = { token, socket, ready: false, name: playerName };
+  socketMatches.set(socket, match);
+  socketNames.set(socket, playerName);
   return { match, token };
 }
 
@@ -312,7 +313,9 @@ function leaveMatch(socket: WebSocket): void {
 }
 
 function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectToken?: string): void {
-  leaveMatch(socket);
+  const previousMatch = socketMatches.get(socket);
+  if (previousMatch && previousMatch !== match) leaveMatch(socket);
+  else match.spectators.delete(socket);
   socketMatches.set(socket, match);
   socketNames.set(socket, name);
   match.emptySince = null;
@@ -321,7 +324,8 @@ function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectT
     ? match.players.findIndex(player => player?.token === reconnectToken && !player.isBot)
     : -1;
   if (colonyId >= 0) {
-    match.players[colonyId]!.socket?.close(4001, "Reconnected elsewhere");
+    const previousSocket = match.players[colonyId]!.socket;
+    if (previousSocket && previousSocket !== socket) previousSocket.close(4001, "Reconnected elsewhere");
     match.players[colonyId]!.socket = socket;
     match.players[colonyId]!.name = name;
   } else {
@@ -411,7 +415,8 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     }
     if (matches.size >= MAX_MATCHES) return send(socket, { type: "error", message: "The server is at match capacity" });
     if (!message.randomOpponent) {
-      const { match, token } = createWaitingMatch(name, message.settings);
+      leaveMatch(socket);
+      const { match, token } = createWaitingMatch(socket, name, message.settings);
       send(socket, { type: "room-created", matchId: match.id, reconnectToken: token });
       broadcastLobby();
       return;
