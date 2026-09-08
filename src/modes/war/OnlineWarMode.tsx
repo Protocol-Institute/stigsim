@@ -316,12 +316,12 @@ export default function OnlineWarMode() {
     <form onSubmit={event => { event.preventDefault(); const name = playerName.trim(); if (!name) return; localStorage.setItem("stigsim-player-name", name); setPlayerName(name); setNameConfirmed(true); if (initialInvite) join(initialInvite, name); }}>
       <span className="mp-name-ant">🐜</span><h1>What should we call you?</h1><p>This name will identify your colony in multiplayer games.</p>
       <input aria-label="Your multiplayer name" autoFocus maxLength={24} value={playerName} onChange={event => setPlayerName(event.target.value)} placeholder="Enter your name" />
-      <button disabled={!playerName.trim()}>Continue to multiplayer</button><a href={appHref("/war", import.meta.env.BASE_URL)}>← Back to local mode</a>
+      <button disabled={!playerName.trim()}>Continue to multiplayer</button>
     </form>
   </main>;
 
   if (!matchId) return <main className="mp-page mp-room-page"><div className="mp-directory-shell">
-    <header className="mp-directory-header"><div><a href={appHref("/war", import.meta.env.BASE_URL)}>← Local mode</a><h1>War mode · Multiplayer</h1><p>Find a match, watch one in progress, or create a new challenge.</p></div>
+    <header className="mp-directory-header"><div><h1>War mode · Multiplayer</h1><p>Find a match, watch one in progress, or create a new challenge.</p></div>
       <div className="mp-directory-actions"><div className="mp-saved-identity"><span>Playing as</span><strong>{playerName}</strong><button onClick={() => setNameConfirmed(false)}>Change</button></div><button className="mp-create-room" onClick={() => setSetupMode("human")}>New game</button><button className="mp-random-room" onClick={() => setSetupMode("random")}>Play against random</button></div></header>
     {error && <div className="online-war-error">{error}</div>}
     {initialInvite && <section className="mp-invite-join"><span>Invitation to room <strong>{initialInvite}</strong></span><button onClick={() => join(initialInvite)}>Join room</button></section>}
