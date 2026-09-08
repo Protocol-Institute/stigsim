@@ -268,8 +268,11 @@
 .online-war-breadcrumb a:hover { color: #f5b94e; text-decoration: underline; text-underline-offset: 3px; }
 .online-war-breadcrumb span { color: #594a35 !important; font-size: .9rem !important; }
 .online-war-breadcrumb strong { color: #9c8767; font-weight: 750; }
-.online-war-room-header { align-items: center; margin-bottom: 12px; }
+.online-war-room-header { align-items: center; box-sizing: border-box; padding-inline: 14px; margin-bottom: 12px; }
 .online-war-room-header .online-war-breadcrumb { margin-bottom: 0; }
+.online-war-room-header .war-header__actions { align-items: center; margin-left: auto; }
+.online-war-identity { display: flex; align-items: baseline; gap: 5px; margin-right: 4px; color: #806d52 !important; font-size: .62rem !important; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.online-war-identity strong { color: #d6c4a5; font-size: .72rem; letter-spacing: 0; text-transform: none; }
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 .war-colony__name em { margin-left: auto; color: #806d52; font-size: .6rem; font-style: normal; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
 .online-war-claim { width: 100%; margin: 0 0 10px; border-color: var(--colony-color); color: var(--colony-color); }
