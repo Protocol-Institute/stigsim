@@ -281,7 +281,6 @@
 .online-war-overlay p { max-width: 350px; margin: 0; color: #9b8568; font-size: .72rem; line-height: 1.5; }
 .online-war-overlay > div { display: flex; justify-content: center; gap: 8px; margin-top: 18px; }
 .online-war-overlay .war-button--primary { min-width: 150px; padding-block: 12px; font-size: .86rem; }
-.online-war-overlay--result { background: #090603f2; }
 .online-war-overlay a.war-button { text-decoration: none; }
 
 @media (max-width: 980px) {
