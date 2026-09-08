@@ -365,7 +365,7 @@ export default function OnlineWarMode() {
   const waitingTitle = !connected.every(Boolean) ? "Waiting for an opponent" : colonyId === null ? "Waiting for players" : ready[colonyId] ? "You’re ready" : "Ready to begin?";
   const waitingMessage = !connected.every(Boolean) ? "Share this room so another player can claim the open colony." : colonyId === null ? "Both players must ready up before the match begins." : ready[colonyId] ? `Waiting for ${names[opponentId] ?? "your opponent"} to ready up.` : "Review your doctrine, then signal that you’re ready to start.";
   return <main className="war-page online-war-match">
-    <header className="war-header"><div><nav className="online-war-breadcrumb" aria-label="Breadcrumb"><a href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a><span aria-hidden="true">›</span><strong>Room {matchId}</strong></nav><h1>Online War Mode</h1><span>Last colony standing wins.</span></div><div className="war-header__actions">
+    <header className="war-header online-war-room-header"><div><nav className="online-war-breadcrumb" aria-label="Breadcrumb"><a href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a><span aria-hidden="true">›</span><strong>Room {matchId}</strong></nav><h1 className="visually-hidden">Online War Mode — Room {matchId}</h1></div><div className="war-header__actions">
       <span className={`online-war-status online-war-status--${matchStatus.toLowerCase()}`}>{matchStatus}</span>
       <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share"}</button>
     </div></header>
