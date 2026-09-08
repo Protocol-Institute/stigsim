@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
-import { completedWarRecord, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { completedWarRecord, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
@@ -15,6 +15,16 @@ test("online doctrine validation matches the controls exposed to players", () =>
   assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.5, tankMax: 8_000, cautionary: true }), true);
   assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.25, tankMax: 8_000, cautionary: true }), false);
   assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.5, tankMax: 8_001, cautionary: true }), false);
+});
+
+test("random-opponent doctrine is deterministic from the match seed", () => {
+  const first = randomOpponentDoctrine("amber-lattice-1234");
+  const second = randomOpponentDoctrine("amber-lattice-1234");
+  const different = randomOpponentDoctrine("amber-lattice-1235");
+
+  assert.deepEqual(first, second);
+  assert.notDeepEqual(first, different);
+  assert.equal(validWarDoctrine(first), true);
 });
 
 test("wire snapshots contain the shared WarSimulation state", () => {

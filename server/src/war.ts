@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import { performance } from "node:perf_hooks";
-import { DEFAULT_PARAMS, DenseField, DenseGrid, generateMasterSeed, type SimParams } from "@stigsim/sim-core";
+import { DEFAULT_PARAMS, DenseField, DenseGrid, deriveStreamSeed, generateMasterSeed, makeRng, type SimParams } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
@@ -97,22 +97,23 @@ function roomCode(): string {
   }
 }
 
-function makeWar(settings: OnlineWarSettings): WarSimulation {
+function makeWar(settings: OnlineWarSettings, doctrines?: SimParams[]): WarSimulation {
   return new WarSimulation({
     masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
     startingAnts: settings.startingAnts,
     foodSources: settings.foodSources,
     foodPerSource: settings.foodPerSource,
     loopRate: settings.loopRate,
-  });
+  }, doctrines);
 }
 
-function randomDoctrine(): SimParams {
+export function randomOpponentDoctrine(masterSeed: string): SimParams {
+  const rng = makeRng(deriveStreamSeed(masterSeed, "war-random-opponent-doctrine"));
   return {
-    evapRate: (1 + Math.floor(Math.random() * 20)) / 1_000,
-    trailPower: 1 + Math.floor(Math.random() * 19) * 0.5,
-    tankMax: 1_600 + Math.floor(Math.random() * 19) * 800,
-    cautionary: Math.random() >= 0.5,
+    evapRate: (1 + Math.floor(rng() * 20)) / 1_000,
+    trailPower: 1 + Math.floor(rng() * 19) * 0.5,
+    tankMax: 1_600 + Math.floor(rng() * 19) * 800,
+    cautionary: rng() >= 0.5,
   };
 }
 
@@ -373,7 +374,10 @@ function claimSeat(socket: WebSocket, match: WarMatch, colonyId: number): void {
 }
 
 function resetMatch(match: WarMatch): void {
-  match.war = makeWar(match.settings);
+  const doctrines = match.players.map(player => player?.isBot
+    ? randomOpponentDoctrine(match.settings.masterSeed)
+    : DEFAULT_PARAMS);
+  match.war = makeWar(match.settings, doctrines);
   match.phase = "waiting";
   match.simulationAccumulator = 0;
   match.resultRecorded = false;
@@ -415,7 +419,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     const match = createMatch(message.settings);
     if (message.randomOpponent) {
       match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
-      match.war.setDoctrine(1, randomDoctrine());
+      match.war = makeWar(match.settings, [DEFAULT_PARAMS, randomOpponentDoctrine(match.settings.masterSeed)]);
     }
     enterMatch(socket, match, name);
     if (message.randomOpponent) {
