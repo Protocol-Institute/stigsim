@@ -13,7 +13,6 @@ import {
 } from "@stigsim/sim-core";
 import { COLONY_COLORS } from "../../render";
 import { appHref } from "../../routes";
-import { WAR_RULES } from "./war-simulation";
 import {
   DEFAULT_ONLINE_WAR_SETTINGS,
   type OnlineWarSettings,
@@ -382,6 +381,5 @@ export default function OnlineWarMode() {
         <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div></div>
       <ColonyPanel colonyId={1} name={connected[1] ? names[1] : null} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} editable={colonyId === 1} status={playerStatus(1)} onClaim={colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onChange={(key, value) => changeDoctrine(1, key, value)} />
     </section>
-    <p className="war-rules-note">Ants retreat below {Math.round(WAR_RULES.retreatEnergy / WAR_RULES.maxEnergy * 100)}% energy, refuel from their colony reserve, and new ants hatch when the colony can afford them.</p>
   </main>;
 }
