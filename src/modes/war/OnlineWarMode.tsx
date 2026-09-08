@@ -128,12 +128,14 @@ function drawSnapshot(canvas: HTMLCanvasElement, snapshot: WarSnapshot, previous
   }
 }
 
-function ColonyPanel({ colonyId, name, metrics, doctrine, editable, onChange }: {
+function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onClaim, onChange }: {
   colonyId: number;
   name: string | null;
   metrics: WarMetricsWire;
   doctrine: SimParams;
   editable: boolean;
+  status: string;
+  onClaim?: () => void;
   onChange: <K extends keyof SimParams>(key: K, value: SimParams[K]) => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
@@ -144,7 +146,8 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, editable, onChange }: 
     ["tankMax", "Gland size", 1_600, 16_000, 800, `~${tankCells} cells`],
   ] as const;
   return <aside className="war-colony" style={{ "--colony-color": color } as React.CSSProperties}>
-    <div className="war-colony__name"><span />{name ?? `Colony ${colonyId + 1}`}{editable ? " · You" : ""}</div>
+    <div className="war-colony__name"><span />{name ?? `Colony ${colonyId + 1}`}{editable ? " · You" : ""}<em>{status}</em></div>
+    {onClaim && <button className="war-button online-war-claim" onClick={onClaim}>Join Colony {colonyId + 1}</button>}
     <div className="war-colony__hero"><span>Total ants</span><strong>{metrics.population}</strong></div>
     <div className="war-metrics">
       {[["Reserve", Math.floor(metrics.reserve)], ["Food total", metrics.foodCollected], ["Hatching", metrics.hatching], ["Searching", metrics.searching], ["Carrying", metrics.carrying], ["Retreating", metrics.retreating], ["Waiting", metrics.waiting], ["Low energy", metrics.lowEnergy], ["Born", metrics.births], ["Died", metrics.deaths]].map(([label, value]) =>
@@ -239,6 +242,7 @@ export default function OnlineWarMode() {
   const [settings, setSettings] = useState<OnlineWarSettings>(() => ({ ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: generateMasterSeed() }));
   const [setupMode, setSetupMode] = useState<"human" | "random" | null>(null);
   const [error, setError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
 
   const send = useCallback((message: WarClientMessage) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify(message));
@@ -348,25 +352,35 @@ export default function OnlineWarMode() {
   const inviteUrl = new URL(appHref(`/multiplayer?match=${matchId}`, import.meta.env.BASE_URL), location.origin).toString();
   const status = snapshot?.phase === "finished" ? snapshot.winner === "draw" ? "Draw" : `${names[Number(snapshot.winner)] ?? `Colony ${Number(snapshot.winner) + 1}`} wins`
     : snapshot?.phase === "running" ? "Match running" : connected.every(Boolean) ? "Both players connected" : "Waiting for opponent";
-  const waitingHelp = colonyId === null
-    ? connected.every(Boolean) ? "Both seats are occupied. You’re watching as a spectator." : "Choose an open colony seat, then invite another player to claim the other seat."
-    : connected.every(Boolean) ? "Both seats are filled. Each player must click Ready up to start." : "You’ve joined. Invite another player to claim the other seat.";
+  const shareInvite = async () => {
+    try {
+      if (navigator.share) await navigator.share({ title: `Join Stigsim room ${matchId}`, url: inviteUrl });
+      else await navigator.clipboard.writeText(inviteUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1_800);
+    } catch { /* The player may dismiss the native share sheet. */ }
+  };
+  const matchStatus = snapshot?.phase === "finished" ? "Finished" : snapshot?.phase === "running" ? "Running" : colonyId !== null && ready[colonyId] ? "Ready" : "Waiting";
+  const playerStatus = (id: number) => !connected[id] ? "Open seat" : snapshot?.phase === "waiting" ? ready[id] ? "Ready" : "Connected" : "Connected";
+  const opponentId = colonyId === 0 ? 1 : 0;
+  const waitingTitle = !connected.every(Boolean) ? "Waiting for an opponent" : colonyId === null ? "Waiting for players" : ready[colonyId] ? "You’re ready" : "Ready to begin?";
+  const waitingMessage = !connected.every(Boolean) ? "Share this room so another player can claim the open colony." : colonyId === null ? "Both players must ready up before the match begins." : ready[colonyId] ? `Waiting for ${names[opponentId] ?? "your opponent"} to ready up.` : "Review your doctrine, then signal that you’re ready to start.";
   return <main className="war-page online-war-match">
     <header className="war-header"><div><p>Online · Two players</p><h1>Online War Mode</h1><span>Last colony standing wins.</span></div><div className="war-header__actions">
+      <span className={`online-war-status online-war-status--${matchStatus.toLowerCase()}`}>{matchStatus}</span>
+      <span className="online-war-room">Room {matchId}</span>
+      <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share"}</button>
       <a className="war-button" href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a>
-      {colonyId !== null && snapshot?.phase === "waiting" && <button className="war-button war-button--primary" disabled={ready[colonyId]} onClick={() => send({ type: "ready" })}>{ready[colonyId] ? "Ready — waiting" : "Ready up"}</button>}
-      {colonyId !== null && snapshot?.phase === "finished" && <button className="war-button war-button--primary" onClick={() => send({ type: "reset" })}>Rematch same seed</button>}
     </div></header>
     {error && <div className="online-war-error">{error}</div>}
-    <section className="online-war-network" aria-label="Online match status"><div className="online-war-network__heading"><div><strong>{status}</strong><span>{connection} · Room {matchId}</span></div><div className="online-war-invite"><span>Invite link</span><input readOnly value={inviteUrl} /><button onClick={() => void navigator.clipboard.writeText(inviteUrl)}>Copy</button></div></div>
-      <div className="online-war-players">{[0, 1].map(id => <div key={id} style={{ color: COLONY_COLORS[id].primary }}><strong>{names[id] ?? `Colony ${id + 1}`}</strong><span>{connected[id] ? ready[id] || snapshot?.phase !== "waiting" ? "Ready" : "Connected" : "Open seat"}</span>{colonyId === null && !connected[id] && <button onClick={() => send({ type: "claim-seat", colonyId: id })}>Join Colony {id + 1}</button>}</div>)}</div>
-      {snapshot?.phase === "waiting" && <p>{waitingHelp}</p>}
-    </section>
     {snapshot && <section className="war-matchbar" aria-label="Locked match settings"><div className="war-matchbar__group"><strong>Match settings</strong><div className="war-matchbar__summary"><span>{snapshot.settings.startingAnts} ants / colony</span><span>{snapshot.settings.foodSources} food {snapshot.settings.foodSources === 1 ? "source" : "sources"}</span><span>{snapshot.settings.foodPerSource} food / source</span><span>{Math.round(snapshot.settings.loopRate * 100)}% maze loops</span><span className="war-matchbar__seed" title={snapshot.settings.masterSeed}>Seed: {snapshot.settings.masterSeed}</span></div></div><div className="war-matchbar__group war-matchbar__group--controls"><strong>Simulation</strong><div className="war-matchbar__summary"><span>{snapshot.settings.stepsPerSecond} steps / sec</span></div></div></section>}
     <section className="war-arena">
-      <ColonyPanel colonyId={0} name={names[0]} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} editable={colonyId === 0} onChange={(key, value) => changeDoctrine(0, key, value)} />
-      <div className="war-maze"><canvas ref={canvasRef} width={W} height={H} /><div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div></div>
-      <ColonyPanel colonyId={1} name={names[1]} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} editable={colonyId === 1} onChange={(key, value) => changeDoctrine(1, key, value)} />
+      <ColonyPanel colonyId={0} name={names[0]} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} editable={colonyId === 0} status={playerStatus(0)} onClaim={colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onChange={(key, value) => changeDoctrine(0, key, value)} />
+      <div className="war-maze online-war-maze"><canvas ref={canvasRef} width={W} height={H} />
+        {snapshot?.phase === "waiting" && <div className="online-war-overlay"><span>Room {matchId}</span><h2>{waitingTitle}</h2><p>{waitingMessage}</p><div>{!connected.every(Boolean) && <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share invite"}</button>}{colonyId !== null && connected.every(Boolean) && <button className="war-button war-button--primary" disabled={ready[colonyId]} onClick={() => send({ type: "ready" })}>{ready[colonyId] ? "Ready — waiting" : "Ready up"}</button>}</div></div>}
+        {snapshot?.phase === "finished" && <div className="online-war-overlay online-war-overlay--result"><span>Match complete</span><h2>{status}</h2><p>The match has ended. Replay these conditions or return to the match rooms.</p><div>{colonyId !== null && <button className="war-button war-button--primary" onClick={() => send({ type: "reset" })}>Rematch same seed</button>}<a className="war-button" href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a></div></div>}
+        <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div></div>
+      <ColonyPanel colonyId={1} name={names[1]} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} editable={colonyId === 1} status={playerStatus(1)} onClaim={colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onChange={(key, value) => changeDoctrine(1, key, value)} />
     </section>
     <p className="war-rules-note">Ants retreat below {Math.round(WAR_RULES.retreatEnergy / WAR_RULES.maxEnergy * 100)}% energy, refuel from their colony reserve, and new ants hatch when the colony can afford them.</p>
   </main>;
