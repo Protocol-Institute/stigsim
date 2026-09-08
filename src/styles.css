@@ -131,8 +131,7 @@
 .online-war-name button:disabled,
 .online-war-match button:disabled { cursor: default; opacity: 0.5; }
 
-.online-war-lobby > header,
-.online-war-match > header {
+.online-war-lobby > header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -140,8 +139,7 @@
   max-width: 1260px;
   margin: 0 auto 24px;
 }
-.online-war-lobby h1,
-.online-war-match h1 { margin: 4px 0; font-size: clamp(2rem, 5vw, 4rem); }
+.online-war-lobby h1 { margin: 4px 0; font-size: clamp(2rem, 5vw, 4rem); }
 .online-war-lobby header > div:last-child { display: grid; text-align: right; }
 
 .online-war-create,
@@ -268,7 +266,7 @@
 .online-war-breadcrumb a:hover { color: #f5b94e; text-decoration: underline; text-underline-offset: 3px; }
 .online-war-breadcrumb span { color: #594a35 !important; font-size: .9rem !important; }
 .online-war-breadcrumb strong { color: #9c8767; font-weight: 750; }
-.online-war-room-header { align-items: center; box-sizing: border-box; padding-inline: 14px; margin-bottom: 12px; }
+.war-header.online-war-room-header { align-items: center; box-sizing: border-box; padding-inline: 14px; margin-bottom: 12px; }
 .online-war-room-header .online-war-breadcrumb { margin-bottom: 0; }
 .online-war-room-header .war-header__actions { align-items: center; margin-left: auto; }
 .online-war-identity { display: flex; align-items: baseline; gap: 5px; margin-right: 4px; color: #806d52 !important; font-size: .62rem !important; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
@@ -300,7 +298,6 @@
   .mp-saved-identity { grid-column: 1 / -1; }
   .mp-setup-modal .online-war-settings { grid-template-columns: 1fr; }
   .online-war-lobby > header,
-  .online-war-match > header,
   .online-war-create__actions { flex-direction: column; }
   .online-war-directory article { grid-template-columns: 60px 1fr; }
   .online-war-directory article button { grid-column: 1 / -1; }
