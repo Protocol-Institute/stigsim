@@ -204,6 +204,8 @@ test("entering is spectator-only and a player can stand up before starting", asy
   visitor.ws.send(JSON.stringify({ type: "claim-seat", colonyId: 1 }));
   const seated = await visitor.waitFor(message => message.type === "joined" && message.colonyId === 1, enterStart);
   assert.equal(typeof seated.reconnectToken, "string");
+  const seatedState = await visitor.waitFor(message => message.type === "player-state" && (message.connected as boolean[])[1] === true, enterStart);
+  assert.deepEqual(seatedState.spectators, []);
 
   const standStart = visitor.messages.length;
   visitor.ws.send(JSON.stringify({ type: "stand-up" }));

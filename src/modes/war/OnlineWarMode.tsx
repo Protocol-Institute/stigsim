@@ -275,6 +275,8 @@ export default function OnlineWarMode() {
         if (message.type === "lobby-state") { setMatches(message.matches); setMatchHistory(message.history); }
         else if (message.type === "room-created") {
           sessionStorage.setItem(tokenKey(message.matchId), message.reconnectToken);
+          const savedName = localStorage.getItem("stigsim-player-name")?.trim();
+          if (savedName) socket.send(JSON.stringify({ type: "join-room", matchId: message.matchId, playerName: savedName, reconnectToken: message.reconnectToken } satisfies WarClientMessage));
           setError("");
         } else if (message.type === "joined") {
           setMatchId(message.matchId);

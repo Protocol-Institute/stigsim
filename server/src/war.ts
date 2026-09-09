@@ -243,15 +243,17 @@ function broadcastLobby(): void {
 }
 
 function broadcastPlayers(match: WarMatch): void {
+  const playerNames = new Set(match.players.flatMap(player => connected(player) ? [player!.name] : []));
+  const spectatorNames = [...new Set([...match.spectators].flatMap(socket => {
+    const name = socketNames.get(socket);
+    return name && !playerNames.has(name) ? [name] : [];
+  }))];
   broadcast(match, {
     type: "player-state",
     connected: match.players.map(connected),
     ready: match.players.map(player => Boolean(player?.ready)),
     names: match.players.map(player => player?.name ?? null),
-    spectators: [...match.spectators].flatMap(socket => {
-      const name = socketNames.get(socket);
-      return name ? [name] : [];
-    }),
+    spectators: spectatorNames,
   });
 }
 
