@@ -8,6 +8,7 @@ import { WarSimulation } from "../../src/modes/war/war-simulation";
 import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
+import { registerWebSocketRoute } from "./upgrade-router";
 import type {
   OnlineWarSettings,
   WarClientMessage,
@@ -52,8 +53,7 @@ const socketMatches = new Map<WebSocket, WarMatch>();
 const socketNames = new Map<WebSocket, string>();
 const matchHistory: WarMatchRecord[] = [];
 let activeWss: WebSocketServer | null = null;
-let activeServer: Server | null = null;
-let activeUpgradeHandler: ((request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => void) | null = null;
+let unregisterUpgradeRoute: (() => void) | null = null;
 let clock: ReturnType<typeof setInterval> | null = null;
 let heartbeat: ReturnType<typeof setInterval> | null = null;
 
@@ -517,14 +517,9 @@ export async function attachWarWs(server: Server, allowedOrigins: string[], requ
   await loadMatchHistory();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1_024 });
   activeWss = wss;
-  activeServer = server;
-  const upgradeHandler = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
-    const pathname = new URL(request.url ?? "", "http://localhost").pathname;
-    if (pathname !== "/api/war/ws") return;
+  unregisterUpgradeRoute = registerWebSocketRoute(server, "/api/war/ws", (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, ws => wss.emit("connection", ws, request));
-  };
-  activeUpgradeHandler = upgradeHandler;
-  server.on("upgrade", upgradeHandler);
+  });
   clock = setInterval(advanceMatches, 1_000 / CLOCK_RATE);
 
   wss.on("connection", (socket: WebSocket, request: IncomingMessage) => {
@@ -571,11 +566,10 @@ export function shutdownWar(): void {
   clock = null;
   heartbeat = null;
   for (const socket of activeWss?.clients ?? []) socket.close(1001, "Server restarting");
-  if (activeServer && activeUpgradeHandler) activeServer.off("upgrade", activeUpgradeHandler);
+  unregisterUpgradeRoute?.();
   activeWss?.close();
   activeWss = null;
-  activeServer = null;
-  activeUpgradeHandler = null;
+  unregisterUpgradeRoute = null;
   matches.clear();
   socketMatches.clear();
   socketNames.clear();

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
+import { connect as connectTcp } from "node:net";
 import test from "node:test";
 import WebSocket from "ws";
 
@@ -48,6 +49,33 @@ async function closeServer(server: Server) {
   });
 }
 
+async function requestUnknownUpgrade(port: number): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const socket = connectTcp(port, "127.0.0.1");
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("Unknown WebSocket upgrade socket remained open"));
+    }, 1_000);
+    socket.on("connect", () => socket.write([
+      "GET /api/anything HTTP/1.1",
+      `Host: 127.0.0.1:${port}`,
+      "Connection: Upgrade",
+      "Upgrade: websocket",
+      "Sec-WebSocket-Version: 13",
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+      "",
+      "",
+    ].join("\r\n")));
+    socket.on("data", chunk => chunks.push(chunk));
+    socket.on("error", reject);
+    socket.on("close", () => {
+      clearTimeout(timeout);
+      resolve(Buffer.concat(chunks).toString());
+    });
+  });
+}
+
 test("two clients share edits without claiming or deleting each other's colony", async t => {
   // The integration test must never read or write a developer's configured DB.
   delete process.env.DATABASE_URL;
@@ -65,6 +93,9 @@ test("two clients share edits without claiming or deleting each other's colony",
   const owner = await connect(url);
   const observer = await connect(url);
   const warLobby = await connect(warUrl, "lobby-state");
+
+  const unknownUpgradeResponse = await requestUnknownUpgrade(address.port);
+  assert.match(unknownUpgradeResponse, /^HTTP\/1\.1 400 Bad Request/);
 
   t.after(async () => {
     owner.ws.close();
