@@ -33,6 +33,28 @@ const EMPTY_METRICS: WarMetricsWire = {
 
 const tokenKey = (matchId: string) => `stigsim-war-token-${matchId}`;
 
+function storedToken(matchId: string): string | null {
+  const key = tokenKey(matchId);
+  const durableToken = localStorage.getItem(key);
+  if (durableToken) return durableToken;
+  const legacyToken = sessionStorage.getItem(key);
+  if (legacyToken) {
+    localStorage.setItem(key, legacyToken);
+    sessionStorage.removeItem(key);
+  }
+  return legacyToken;
+}
+
+function storeToken(matchId: string, token: string): void {
+  localStorage.setItem(tokenKey(matchId), token);
+  sessionStorage.removeItem(tokenKey(matchId));
+}
+
+function removeStoredToken(matchId: string): void {
+  localStorage.removeItem(tokenKey(matchId));
+  sessionStorage.removeItem(tokenKey(matchId));
+}
+
 function warSocketUrl(): string {
   const configured = (import.meta.env.VITE_INFINITE_SERVER_URL ?? "").replace(/\/$/, "");
   const base = configured || window.location.origin;
@@ -256,7 +278,7 @@ export default function OnlineWarMode() {
   const join = useCallback((id: string, name = playerName) => {
     const normalized = id.trim().toUpperCase();
     if (!normalized || !name.trim()) return;
-    send({ type: "join-room", matchId: normalized, playerName: name.trim(), reconnectToken: sessionStorage.getItem(tokenKey(normalized)) ?? undefined });
+    send({ type: "join-room", matchId: normalized, playerName: name.trim(), reconnectToken: storedToken(normalized) ?? undefined });
   }, [playerName, send]);
 
   useEffect(() => {
@@ -270,22 +292,22 @@ export default function OnlineWarMode() {
         setConnection("Connected");
         const room = new URLSearchParams(location.search).get("match")?.trim().toUpperCase();
         const savedName = localStorage.getItem("stigsim-player-name")?.trim();
-        const reconnectToken = room ? sessionStorage.getItem(tokenKey(room)) : null;
+        const reconnectToken = room ? storedToken(room) : null;
         if (room && savedName) socket.send(JSON.stringify({ type: "join-room", matchId: room, playerName: savedName, reconnectToken: reconnectToken ?? undefined } satisfies WarClientMessage));
       };
       socket.onmessage = event => {
         const message = JSON.parse(event.data) as WarServerMessage;
         if (message.type === "lobby-state") { setMatches(message.matches); setMatchHistory(message.history); }
         else if (message.type === "room-created") {
-          sessionStorage.setItem(tokenKey(message.matchId), message.reconnectToken);
+          storeToken(message.matchId, message.reconnectToken);
           const savedName = localStorage.getItem("stigsim-player-name")?.trim();
           if (savedName) socket.send(JSON.stringify({ type: "join-room", matchId: message.matchId, playerName: savedName, reconnectToken: message.reconnectToken } satisfies WarClientMessage));
           setError("");
         } else if (message.type === "joined") {
           setMatchId(message.matchId);
           setColonyId(message.colonyId);
-          if (message.reconnectToken) sessionStorage.setItem(tokenKey(message.matchId), message.reconnectToken);
-          else sessionStorage.removeItem(tokenKey(message.matchId));
+          if (message.reconnectToken) storeToken(message.matchId, message.reconnectToken);
+          else removeStoredToken(message.matchId);
           history.replaceState(null, "", appHref(`/multiplayer?match=${message.matchId}`, import.meta.env.BASE_URL));
           setError("");
         } else if (message.type === "player-state") {
@@ -370,8 +392,8 @@ export default function OnlineWarMode() {
     {error && <div className="online-war-error">{error}</div>}
     {initialInvite && <section className="mp-invite-join"><span>Invitation to room <strong>{initialInvite}</strong></span><button onClick={() => join(initialInvite)}>Join room</button></section>}
     <div className="mp-directory-sections">
-      <section className="mp-directory-section mp-waiting-section"><div className="mp-section-title"><div><span>1</span><h2>Waiting for opponent</h2><p>Enter a room, then choose an open colony.</p></div><strong>{waitingMatches.length}</strong></div><div className="mp-match-rows">{waitingMatches.length ? waitingMatches.map(match => <MatchRow key={match.id} match={match} mode="waiting" ownRoom={Boolean(sessionStorage.getItem(tokenKey(match.id)))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No one is waiting yet. Start a new game above.</div>}</div></section>
-      <section className="mp-directory-section mp-active-section"><div className="mp-section-title"><div><span>2</span><h2>Active games</h2><p>Drop into a live match as a spectator.</p></div><strong>{runningMatches.length}</strong></div><div className="mp-match-rows">{runningMatches.length ? runningMatches.map(match => <MatchRow key={match.id} match={match} mode="running" ownRoom={Boolean(sessionStorage.getItem(tokenKey(match.id)))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No matches are live right now.</div>}</div></section>
+      <section className="mp-directory-section mp-waiting-section"><div className="mp-section-title"><div><span>1</span><h2>Waiting for opponent</h2><p>Enter a room, then choose an open colony.</p></div><strong>{waitingMatches.length}</strong></div><div className="mp-match-rows">{waitingMatches.length ? waitingMatches.map(match => <MatchRow key={match.id} match={match} mode="waiting" ownRoom={Boolean(storedToken(match.id))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No one is waiting yet. Start a new game above.</div>}</div></section>
+      <section className="mp-directory-section mp-active-section"><div className="mp-section-title"><div><span>2</span><h2>Active games</h2><p>Drop into a live match as a spectator.</p></div><strong>{runningMatches.length}</strong></div><div className="mp-match-rows">{runningMatches.length ? runningMatches.map(match => <MatchRow key={match.id} match={match} mode="running" ownRoom={Boolean(storedToken(match.id))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No matches are live right now.</div>}</div></section>
       <section className="mp-directory-section"><div className="mp-section-title"><div><span>3</span><h2>Past games</h2><p>Completed results and match configurations.</p></div><strong>{matchHistory.length}</strong></div><div className="mp-match-rows">{matchHistory.length ? matchHistory.map(record => <HistoryRow key={record.recordId} record={record} />) : <div className="mp-section-empty">Completed games will appear here.</div>}</div></section>
     </div><small className="mp-directory-connection">{connection}</small>
     {setupMode && <SetupModal mode={setupMode} settings={settings} onChange={setSettings} onClose={() => setSetupMode(null)} onStart={() => { send({ type: "create-room", playerName, settings, randomOpponent: setupMode === "random" }); setSetupMode(null); }} />}
