@@ -59,7 +59,7 @@ export interface WarMetricsWire {
 }
 
 export interface WarAntWire {
-  key: number;
+  id: number;
   x: number;
   y: number;
   tx: number;

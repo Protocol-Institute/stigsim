@@ -102,10 +102,10 @@ function drawSnapshot(canvas: HTMLCanvasElement, snapshot: WarSnapshot, previous
     ctx.fillText("🍎", px + CELL / 2, py + CELL / 2);
     ctx.globalAlpha = 1;
   }
-  const previousAnts = new Map(previousSnapshot?.colonies.flatMap(colony => colony.ants.map(ant => [`${colony.id}:${ant.key}`, ant] as const)) ?? []);
+  const previousAnts = new Map(previousSnapshot?.colonies.flatMap(colony => colony.ants.map(ant => [`${colony.id}:${ant.id}`, ant] as const)) ?? []);
   for (const colony of snapshot.colonies) {
     for (const ant of colony.ants) {
-      const previous = previousAnts.get(`${colony.id}:${ant.key}`);
+      const previous = previousAnts.get(`${colony.id}:${ant.id}`);
       const x = previous ? previous.x + (ant.x - previous.x) * interpolation : ant.x;
       const y = previous ? previous.y + (ant.y - previous.y) * interpolation : ant.y;
       const energyFraction = Math.max(0, Math.min(1, ant.energy / 1_600));

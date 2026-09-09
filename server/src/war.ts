@@ -277,17 +277,18 @@ export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settin
         homePhero: Array.from(colony.field.layer("home")),
         foodPhero: Array.from(colony.field.layer("food")),
         cautPhero: Array.from(colony.field.layer("caut")),
-        ants: colony.ants.map((ant, key) => {
+        ants: colony.ants.map(ant => {
           const runtime = match.war.getAntSnapshot(ant);
+          if (!runtime) throw new Error("War ant is missing runtime state");
           return {
-            key,
+            id: runtime.id,
             x: ant.x,
             y: ant.y,
             tx: ant.tx,
             ty: ant.ty,
             hasFood: ant.hasFood,
-            phase: runtime?.phase ?? ant.state,
-            energy: runtime?.energy ?? match.war.rules.maxEnergy,
+            phase: runtime.phase,
+            energy: runtime.energy,
           };
         }),
         metrics: match.war.getMetrics(colony.id),

@@ -46,6 +46,18 @@ test("wire snapshots contain the shared WarSimulation state", () => {
   assert.equal(snapshot.colonies[0].ants.length, 2);
 });
 
+test("wire ant ids remain stable when an earlier ant leaves the array", () => {
+  const war = new WarSimulation({ masterSeed: "stable-ant-id-test", startingAnts: 3 });
+  const before = snapshotWarMatch({ war, phase: "running", settings: DEFAULT_ONLINE_WAR_SETTINGS });
+  war.simulation.colonies[0].ants.splice(0, 1);
+  const after = snapshotWarMatch({ war, phase: "running", settings: DEFAULT_ONLINE_WAR_SETTINGS });
+
+  assert.deepEqual(
+    after.colonies[0].ants.map(ant => ant.id),
+    before.colonies[0].ants.slice(1).map(ant => ant.id),
+  );
+});
+
 test("completed records retain results without replay snapshots", () => {
   const war = new WarSimulation({ masterSeed: "history-test", startingAnts: 1 });
   war.simulation.colonies[1].ants.length = 0;
