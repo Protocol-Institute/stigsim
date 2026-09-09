@@ -4,6 +4,10 @@ import test from "node:test";
 import WebSocket from "ws";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 
+// This suite dynamically imports the War server below. Clear persistence first
+// so local tests can never read, write, or hold open a developer's Postgres.
+delete process.env.DATABASE_URL;
+
 type Message = Record<string, unknown>;
 const TEST_ORIGIN = "http://test.local";
 
