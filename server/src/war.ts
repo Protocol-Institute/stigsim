@@ -436,19 +436,13 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
       broadcastLobby();
       return;
     }
-    const match = createMatch(message.settings);
-    if (message.randomOpponent) {
-      match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
-      match.war = makeWar(match.settings, [DEFAULT_PARAMS, randomOpponentDoctrine(match.settings.masterSeed)]);
-    }
-    enterMatch(socket, match, name);
-    if (message.randomOpponent) {
-      match.players[0]!.ready = true;
-      match.phase = "running";
-      broadcastPlayers(match);
-      broadcastSnapshot(match);
-      broadcastLobby();
-    }
+    leaveMatch(socket);
+    const { match, token } = createWaitingMatch(socket, name, message.settings);
+    match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
+    match.players[0]!.ready = true;
+    match.war = makeWar(match.settings, [DEFAULT_PARAMS, randomOpponentDoctrine(match.settings.masterSeed)]);
+    match.phase = "running";
+    enterMatch(socket, match, name, token);
     return;
   }
 

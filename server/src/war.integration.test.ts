@@ -256,3 +256,36 @@ test("a burst of doctrine updates is dropped without disconnecting the player", 
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(player.ws.readyState, WebSocket.OPEN);
 });
+
+test("a random-opponent game seats its creator and starts immediately", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const player = await connect(`ws://127.0.0.1:${address.port}/api/war/ws`);
+  t.after(async () => {
+    player.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const start = player.messages.length;
+  player.ws.send(JSON.stringify({
+    type: "create-room",
+    playerName: "Alpha",
+    settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "random-match-test" },
+    randomOpponent: true,
+  }));
+  const joined = await player.waitFor(message => message.type === "joined", start);
+  assert.equal(joined.colonyId, 0);
+  assert.equal(typeof joined.reconnectToken, "string");
+  const running = await player.waitFor(
+    message => message.type === "snapshot" && (message.snapshot as { phase?: string }).phase === "running",
+    start,
+  );
+  assert.equal((running.snapshot as { colonies: Array<{ doctrine: unknown }> }).colonies.length, 2);
+  assert.equal(player.messages.slice(start).some(message => message.type === "error"), false);
+});
