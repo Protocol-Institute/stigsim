@@ -44,6 +44,7 @@ interface WarMatch {
   simulationAccumulator: number;
   snapshotAccumulator: number;
   emptySince: number | null;
+  finishedAt: number | null;
   createdAt: number;
   resultRecorded: boolean;
 }
@@ -129,6 +130,7 @@ function createMatch(settings: OnlineWarSettings): WarMatch {
     simulationAccumulator: 0,
     snapshotAccumulator: 0,
     emptySince: null,
+    finishedAt: null,
     createdAt: Date.now(),
     resultRecorded: false,
   };
@@ -147,6 +149,25 @@ function createWaitingMatch(socket: WebSocket, playerName: string, settings: Onl
 
 function sockets(match: WarMatch): WebSocket[] {
   return [...match.players.flatMap(player => player?.socket ? [player.socket] : []), ...match.spectators];
+}
+
+function evictMatch(match: WarMatch): void {
+  matches.delete(match.id);
+  for (const socket of sockets(match)) {
+    socketMatches.delete(socket);
+    socketNames.delete(socket);
+    socket.close(1001, "Match room expired");
+  }
+  match.spectators.clear();
+  for (const player of match.players) if (player) player.socket = null;
+}
+
+function releaseCompletedRoomForCapacity(): void {
+  if (matches.size < MAX_MATCHES) return;
+  const completed = [...matches.values()]
+    .filter(match => match.phase === "finished")
+    .sort((a, b) => (a.finishedAt ?? a.createdAt) - (b.finishedAt ?? b.createdAt))[0];
+  if (completed) evictMatch(completed);
 }
 
 function send(socket: WebSocket, message: WarServerMessage): void {
@@ -399,6 +420,7 @@ function resetMatch(match: WarMatch): void {
     : DEFAULT_PARAMS);
   match.war = makeWar(match.settings, doctrines);
   match.phase = "waiting";
+  match.finishedAt = null;
   match.simulationAccumulator = 0;
   match.resultRecorded = false;
   for (const player of match.players) if (player) player.ready = Boolean(player.isBot);
@@ -429,6 +451,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     if (!validOnlineWarSettings(message.settings)) {
       return send(socket, { type: "error", message: "Match settings are outside the allowed range" });
     }
+    releaseCompletedRoomForCapacity();
     if (matches.size >= MAX_MATCHES) return send(socket, { type: "error", message: "The server is at match capacity" });
     if (!message.randomOpponent) {
       leaveMatch(socket);
@@ -483,9 +506,10 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
 
 function advanceMatches(): void {
   const now = Date.now();
-  for (const [id, match] of matches) {
-    if (match.emptySince && now - match.emptySince > EMPTY_ROOM_TTL_MS) {
-      matches.delete(id);
+  for (const match of matches.values()) {
+    if ((match.finishedAt && now - match.finishedAt > EMPTY_ROOM_TTL_MS)
+        || (match.emptySince && now - match.emptySince > EMPTY_ROOM_TTL_MS)) {
+      evictMatch(match);
       continue;
     }
     if (match.phase !== "running") continue;
@@ -496,6 +520,7 @@ function advanceMatches(): void {
     }
     if (match.war.result !== null) {
       match.phase = "finished";
+      match.finishedAt = now;
       broadcastPlayers(match);
       broadcastSnapshot(match);
       void recordCompletedMatch(match);
