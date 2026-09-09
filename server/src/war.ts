@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
-import { performance } from "node:perf_hooks";
 import { DEFAULT_PARAMS, DenseField, DenseGrid, deriveStreamSeed, generateMasterSeed, makeRng, type SimParams } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
@@ -93,9 +92,18 @@ function cleanName(value: unknown): string | null {
 function roomCode(): string {
   for (;;) {
     let code = "";
-    for (let i = 0; i < 5; i++) code += ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)];
+    for (let i = 0; i < 5; i++) code += ROOM_ALPHABET[randomInt(ROOM_ALPHABET.length)];
     if (!matches.has(code)) return code;
   }
+}
+
+function warDoctrine(value: SimParams): SimParams {
+  return {
+    evapRate: value.evapRate,
+    trailPower: value.trailPower,
+    tankMax: value.tankMax,
+    cautionary: value.cautionary,
+  };
 }
 
 function makeWar(settings: OnlineWarSettings, doctrines?: SimParams[]): WarSimulation {
@@ -493,7 +501,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
   if (message.type === "ready") {
     if (match.phase !== "waiting") return;
     match.players[colonyId]!.ready = true;
-    if (match.players.every(player => player?.ready)) match.phase = "running";
+    if (match.players.every(player => player?.ready && connected(player))) match.phase = "running";
     broadcastPlayers(match);
     broadcastSnapshot(match);
     broadcastLobby();
@@ -501,7 +509,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     if (!validWarDoctrine(message.doctrine)) {
       return send(socket, { type: "error", message: "Doctrine values are outside the allowed range" });
     }
-    match.war.setDoctrine(colonyId, message.doctrine);
+    match.war.setDoctrine(colonyId, warDoctrine(message.doctrine));
     if (match.phase === "waiting") broadcastSnapshot(match);
   } else if (message.type === "reset" && match.phase === "finished") {
     resetMatch(match);

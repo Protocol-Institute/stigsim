@@ -94,6 +94,21 @@ test("two players and a spectator can complete the authoritative lobby flow", as
   const spectatorJoined = await spectator.waitFor(message => message.type === "joined", spectatorStart);
   assert.equal(spectatorJoined.colonyId, null);
 
+  const doctrineStart = first.messages.length;
+  first.ws.send(JSON.stringify({
+    type: "set-doctrine",
+    doctrine: { evapRate: 0.006, trailPower: 3, tankMax: 7_200, cautionary: true, ignored: "client data" },
+  }));
+  const doctrineSnapshot = await first.waitFor(message => {
+    if (message.type !== "snapshot") return false;
+    const doctrine = (message.snapshot as { colonies: Array<{ doctrine: Record<string, unknown> }> }).colonies[0].doctrine;
+    return doctrine.evapRate === 0.006;
+  }, doctrineStart);
+  assert.deepEqual(
+    (doctrineSnapshot.snapshot as { colonies: Array<{ doctrine: unknown }> }).colonies[0].doctrine,
+    { evapRate: 0.006, trailPower: 3, tankMax: 7_200, cautionary: true },
+  );
+
   const deniedStart = spectator.messages.length;
   spectator.ws.send(JSON.stringify({
     type: "set-doctrine",
@@ -239,6 +254,53 @@ test("entering is spectator-only and a player can stand up before starting", asy
   const playerState = await visitor.waitFor(message => message.type === "player-state", standStart);
   assert.deepEqual(playerState.connected, [true, false]);
   assert.deepEqual(playerState.spectators, ["Observer"]);
+});
+
+test("a disconnected ready player cannot start a waiting match", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}/api/war/ws`;
+  const first = await connect(url);
+  const second = await connect(url);
+  t.after(async () => {
+    first.ws.close();
+    second.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const firstStart = first.messages.length;
+  first.ws.send(JSON.stringify({ type: "create-room", playerName: "Alpha", settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+  const created = await first.waitFor(message => message.type === "room-created", firstStart);
+  first.ws.send(JSON.stringify({ type: "join-room", matchId: created.matchId, playerName: "Alpha", reconnectToken: created.reconnectToken }));
+  await first.waitFor(message => message.type === "joined" && message.colonyId === 0, firstStart);
+
+  const secondStart = second.messages.length;
+  second.ws.send(JSON.stringify({ type: "join-room", matchId: created.matchId, playerName: "Beta" }));
+  await second.waitFor(message => message.type === "joined", secondStart);
+  second.ws.send(JSON.stringify({ type: "claim-seat", colonyId: 1 }));
+  await second.waitFor(message => message.type === "joined" && message.colonyId === 1, secondStart);
+  second.ws.send(JSON.stringify({ type: "ready" }));
+  await first.waitFor(message => message.type === "player-state" && (message.ready as boolean[])[1] === true, firstStart);
+  second.ws.close();
+  await first.waitFor(message => message.type === "player-state" && (message.connected as boolean[])[1] === false, firstStart);
+
+  const readyStart = first.messages.length;
+  first.ws.send(JSON.stringify({ type: "ready" }));
+  const waiting = await first.waitFor(
+    message => message.type === "snapshot" && (message.snapshot as { phase?: string }).phase === "waiting",
+    readyStart,
+  );
+  assert.equal((waiting.snapshot as { phase: string }).phase, "waiting");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(first.messages.slice(readyStart).some(
+    message => message.type === "snapshot" && (message.snapshot as { phase?: string }).phase === "running",
+  ), false);
 });
 
 test("a burst of doctrine updates is dropped without disconnecting the player", async t => {

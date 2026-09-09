@@ -13,6 +13,7 @@ import {
 } from "@stigsim/sim-core";
 import { COLONY_COLORS } from "../../render";
 import { appHref } from "../../routes";
+import { WAR_RULES } from "./war-simulation";
 import {
   DEFAULT_ONLINE_WAR_SETTINGS,
   type OnlineWarSettings,
@@ -108,7 +109,7 @@ function drawSnapshot(canvas: HTMLCanvasElement, snapshot: WarSnapshot, previous
       const previous = previousAnts.get(`${colony.id}:${ant.id}`);
       const x = previous ? previous.x + (ant.x - previous.x) * interpolation : ant.x;
       const y = previous ? previous.y + (ant.y - previous.y) * interpolation : ant.y;
-      const energyFraction = Math.max(0, Math.min(1, ant.energy / 1_600));
+      const energyFraction = Math.max(0, Math.min(1, ant.energy / WAR_RULES.maxEnergy));
       const radius = ant.hasFood ? 4.5 : 3.5;
       ctx.globalAlpha = 0.3 + 0.7 * energyFraction;
       ctx.beginPath();
