@@ -168,7 +168,7 @@ function summary(match: WarMatch): WarMatchSummary {
   return {
     id: match.id,
     phase: match.phase,
-    playerNames: match.players.map(player => connected(player) ? player!.name : null),
+    playerNames: match.players.map(player => player?.name ?? null),
     connected: match.players.map(connected),
     winner: match.war.result,
     createdAt: match.createdAt,

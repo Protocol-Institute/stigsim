@@ -61,6 +61,8 @@
 .mp-row-players i.red { border-color: #ff6b6b; background: #ff6b6b22; }
 .mp-row-players strong { min-width: 0; overflow: hidden; color: #eee2cf; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
 .mp-row-players strong.is-open { color: #f0b44e; }
+.mp-row-players strong.is-disconnected { color: #9b8568; }
+.mp-row-players small { color: #8f5d4e; font-size: .52rem; text-transform: uppercase; letter-spacing: .04em; }
 .mp-row-players b { color: #e5d5b5; font-size: .78rem; }
 .mp-row-stat, .mp-row-result { display: flex; flex-direction: column; gap: 2px; }
 .mp-row-stat small, .mp-row-result small { color: #625643; font-size: .52rem; text-transform: uppercase; letter-spacing: .05em; }

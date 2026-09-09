@@ -116,6 +116,18 @@ test("two players and a spectator can complete the authoritative lobby flow", as
   const malformed = await first.waitFor(message => message.type === "error", malformedStart);
   assert.equal(malformed.message, "Malformed message");
   assert.equal(first.ws.readyState, WebSocket.OPEN);
+
+  const disconnectStart = first.messages.length;
+  second.ws.close();
+  const disconnectedPlayers = await first.waitFor(message => message.type === "player-state" && (message.connected as boolean[])[1] === false, disconnectStart);
+  assert.deepEqual(disconnectedPlayers.names, ["Alpha", "Beta"]);
+  const disconnectedLobby = await first.waitFor(message => {
+    if (message.type !== "lobby-state") return false;
+    const match = (message.matches as Array<{ id: string; connected: boolean[] }>).find(item => item.id === matchId);
+    return match?.connected[1] === false;
+  }, disconnectStart);
+  const activeMatch = (disconnectedLobby.matches as Array<{ id: string; playerNames: Array<string | null> }>).find(match => match.id === matchId);
+  assert.deepEqual(activeMatch?.playerNames, ["Alpha", "Beta"]);
 });
 
 test("a creator holds their lobby seat until disconnecting before ready", async t => {
