@@ -127,7 +127,7 @@ function drawSnapshot(canvas: HTMLCanvasElement, snapshot: WarSnapshot, previous
   }
 }
 
-function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onClaim, onChange }: {
+function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onClaim, onStandUp, onChange }: {
   colonyId: number;
   name: string | null;
   metrics: WarMetricsWire;
@@ -135,6 +135,7 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onCl
   editable: boolean;
   status: string;
   onClaim?: () => void;
+  onStandUp?: () => void;
   onChange: <K extends keyof SimParams>(key: K, value: SimParams[K]) => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
@@ -147,6 +148,7 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onCl
   return <aside className="war-colony" style={{ "--colony-color": color } as React.CSSProperties}>
     <div className="war-colony__name"><span />{name ?? `Colony ${colonyId + 1}`}{editable ? " · You" : ""}<em>{status}</em></div>
     {onClaim && <button className="war-button online-war-claim" onClick={onClaim}>Join Colony {colonyId + 1}</button>}
+    {onStandUp && <button className="online-war-stand-up" onClick={onStandUp}>Stand up</button>}
     <div className="war-colony__hero"><span>Total ants</span><strong>{metrics.population}</strong></div>
     <div className="war-metrics">
       {[["Reserve", Math.floor(metrics.reserve)], ["Food total", metrics.foodCollected], ["Hatching", metrics.hatching], ["Searching", metrics.searching], ["Carrying", metrics.carrying], ["Retreating", metrics.retreating], ["Waiting", metrics.waiting], ["Low energy", metrics.lowEnergy], ["Born", metrics.births], ["Died", metrics.deaths]].map(([label, value]) =>
@@ -197,10 +199,8 @@ function SetupModal({ mode, settings, onChange, onClose, onStart }: {
   </div>;
 }
 
-function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mode: "waiting" | "running"; ownRoom: boolean; onJoin: (spectate: boolean) => void }) {
-  const openColony = match.connected.findIndex(isConnected => !isConnected);
-  const waitingAction = ownRoom ? "Enter your game" : openColony >= 0 ? `Join and take Colony ${openColony + 1}` : "View waiting room";
-  const action = mode === "running" ? ownRoom ? "Return to game" : "Watch game" : waitingAction;
+function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mode: "waiting" | "running"; ownRoom: boolean; onJoin: () => void }) {
+  const action = ownRoom ? "Return to room" : mode === "running" ? "Watch game" : "Enter room";
   return <article className="mp-match-row">
     <div className={`mp-row-mode ${mode === "running" ? "live" : ""}`}><span>{mode === "running" ? "●" : "🐜"}</span><strong>{match.id}</strong><small>{mode === "running" ? "Live now" : "War match"}</small></div>
     <div className="mp-row-players"><div><i className="blue" /><strong className={match.connected[0] ? "" : "is-open"}>{match.connected[0] ? match.playerNames[0] : "Open colony"}</strong></div><div><i className="red" /><strong className={match.connected[1] ? "" : "is-open"}>{match.connected[1] ? match.playerNames[1] : "Open colony"}</strong></div></div>
@@ -208,7 +208,7 @@ function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mo
     <div className="mp-row-stat"><small>Food</small><strong>{match.settings.foodSources}</strong><span>{match.settings.foodPerSource}/source</span></div>
     <div className="mp-row-stat"><small>Speed</small><strong>{match.settings.stepsPerSecond}</strong><span>steps/sec</span></div>
     <div className="mp-row-stat"><small>Maze</small><strong>{Math.round(match.settings.loopRate * 100)}%</strong><span>loops</span></div>
-    <button className={`mp-row-action ${mode === "running" ? "watch" : "join"}`} onClick={() => onJoin(mode === "running" ? !ownRoom : openColony < 0 && !ownRoom)}>{action}</button>
+    <button className={`mp-row-action ${mode === "running" ? "watch" : "join"}`} onClick={onJoin}>{action}</button>
   </article>;
 }
 
@@ -240,6 +240,7 @@ export default function OnlineWarMode() {
   const [connected, setConnected] = useState([false, false]);
   const [ready, setReady] = useState([false, false]);
   const [names, setNames] = useState<Array<string | null>>([null, null]);
+  const [spectators, setSpectators] = useState<string[]>([]);
   const [settings, setSettings] = useState<OnlineWarSettings>(() => ({ ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: generateMasterSeed() }));
   const [setupMode, setSetupMode] = useState<"human" | "random" | null>(null);
   const [error, setError] = useState("");
@@ -249,10 +250,10 @@ export default function OnlineWarMode() {
     if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify(message));
   }, []);
 
-  const join = useCallback((id: string, name = playerName, spectate = false) => {
+  const join = useCallback((id: string, name = playerName) => {
     const normalized = id.trim().toUpperCase();
     if (!normalized || !name.trim()) return;
-    send({ type: "join-room", matchId: normalized, playerName: name.trim(), reconnectToken: spectate ? undefined : sessionStorage.getItem(tokenKey(normalized)) ?? undefined });
+    send({ type: "join-room", matchId: normalized, playerName: name.trim(), reconnectToken: sessionStorage.getItem(tokenKey(normalized)) ?? undefined });
   }, [playerName, send]);
 
   useEffect(() => {
@@ -279,10 +280,11 @@ export default function OnlineWarMode() {
           setMatchId(message.matchId);
           setColonyId(message.colonyId);
           if (message.reconnectToken) sessionStorage.setItem(tokenKey(message.matchId), message.reconnectToken);
+          else sessionStorage.removeItem(tokenKey(message.matchId));
           history.replaceState(null, "", appHref(`/multiplayer?match=${message.matchId}`, import.meta.env.BASE_URL));
           setError("");
         } else if (message.type === "player-state") {
-          setConnected(message.connected); setReady(message.ready); setNames(message.names);
+          setConnected(message.connected); setReady(message.ready); setNames(message.names); setSpectators(message.spectators);
         } else if (message.type === "snapshot") {
           renderSnapshotsRef.current.previous = renderSnapshotsRef.current.current;
           renderSnapshotsRef.current.current = { snapshot: message.snapshot, receivedAt: performance.now() };
@@ -343,8 +345,8 @@ export default function OnlineWarMode() {
     {error && <div className="online-war-error">{error}</div>}
     {initialInvite && <section className="mp-invite-join"><span>Invitation to room <strong>{initialInvite}</strong></span><button onClick={() => join(initialInvite)}>Join room</button></section>}
     <div className="mp-directory-sections">
-      <section className="mp-directory-section mp-waiting-section"><div className="mp-section-title"><div><span>1</span><h2>Waiting for opponent</h2><p>Take the open colony and start a match.</p></div><strong>{waitingMatches.length}</strong></div><div className="mp-match-rows">{waitingMatches.length ? waitingMatches.map(match => <MatchRow key={match.id} match={match} mode="waiting" ownRoom={Boolean(sessionStorage.getItem(tokenKey(match.id)))} onJoin={spectate => join(match.id, playerName, spectate)} />) : <div className="mp-section-empty">No one is waiting yet. Start a new game above.</div>}</div></section>
-      <section className="mp-directory-section mp-active-section"><div className="mp-section-title"><div><span>2</span><h2>Active games</h2><p>Drop into a live match as a spectator.</p></div><strong>{runningMatches.length}</strong></div><div className="mp-match-rows">{runningMatches.length ? runningMatches.map(match => <MatchRow key={match.id} match={match} mode="running" ownRoom={Boolean(sessionStorage.getItem(tokenKey(match.id)))} onJoin={spectate => join(match.id, playerName, spectate)} />) : <div className="mp-section-empty">No matches are live right now.</div>}</div></section>
+      <section className="mp-directory-section mp-waiting-section"><div className="mp-section-title"><div><span>1</span><h2>Waiting for opponent</h2><p>Enter a room, then choose an open colony.</p></div><strong>{waitingMatches.length}</strong></div><div className="mp-match-rows">{waitingMatches.length ? waitingMatches.map(match => <MatchRow key={match.id} match={match} mode="waiting" ownRoom={Boolean(sessionStorage.getItem(tokenKey(match.id)))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No one is waiting yet. Start a new game above.</div>}</div></section>
+      <section className="mp-directory-section mp-active-section"><div className="mp-section-title"><div><span>2</span><h2>Active games</h2><p>Drop into a live match as a spectator.</p></div><strong>{runningMatches.length}</strong></div><div className="mp-match-rows">{runningMatches.length ? runningMatches.map(match => <MatchRow key={match.id} match={match} mode="running" ownRoom={Boolean(sessionStorage.getItem(tokenKey(match.id)))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No matches are live right now.</div>}</div></section>
       <section className="mp-directory-section"><div className="mp-section-title"><div><span>3</span><h2>Past games</h2><p>Completed results and match configurations.</p></div><strong>{matchHistory.length}</strong></div><div className="mp-match-rows">{matchHistory.length ? matchHistory.map(record => <HistoryRow key={record.recordId} record={record} />) : <div className="mp-section-empty">Completed games will appear here.</div>}</div></section>
     </div><small className="mp-directory-connection">{connection}</small>
     {setupMode && <SetupModal mode={setupMode} settings={settings} onChange={setSettings} onClose={() => setSetupMode(null)} onStart={() => { send({ type: "create-room", playerName, settings, randomOpponent: setupMode === "random" }); setSetupMode(null); }} />}
@@ -368,18 +370,19 @@ export default function OnlineWarMode() {
   return <main className="war-page online-war-match">
     <header className="war-header online-war-room-header"><div><nav className="online-war-breadcrumb" aria-label="Breadcrumb"><a href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a><span aria-hidden="true">›</span><strong>Room {matchId}</strong></nav><h1 className="visually-hidden">Online War Mode — Room {matchId}</h1></div><div className="war-header__actions">
       <span className="online-war-identity">Playing as <strong>{playerName}</strong></span>
+      <span className="online-war-spectators" title={spectators.length ? `Watching: ${spectators.join(", ")}` : "No spectators"}>{spectators.length} watching</span>
       <span className={`online-war-status online-war-status--${matchStatus.toLowerCase()}`}>{matchStatus}</span>
       <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share"}</button>
     </div></header>
     {error && <div className="online-war-error">{error}</div>}
     {snapshot && <section className="war-matchbar" aria-label="Locked match settings"><div className="war-matchbar__group"><strong>Match settings</strong><div className="war-matchbar__summary"><span>{snapshot.settings.startingAnts} ants / colony</span><span>{snapshot.settings.foodSources} food {snapshot.settings.foodSources === 1 ? "source" : "sources"}</span><span>{snapshot.settings.foodPerSource} food / source</span><span>{Math.round(snapshot.settings.loopRate * 100)}% maze loops</span><span className="war-matchbar__seed" title={snapshot.settings.masterSeed}>Seed: {snapshot.settings.masterSeed}</span></div></div><div className="war-matchbar__group war-matchbar__group--controls"><strong>Simulation</strong><div className="war-matchbar__summary"><span>{snapshot.settings.stepsPerSecond} steps / sec</span></div></div></section>}
     <section className="war-arena">
-      <ColonyPanel colonyId={0} name={connected[0] ? names[0] : null} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} editable={colonyId === 0} status={playerStatus(0)} onClaim={colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onChange={(key, value) => changeDoctrine(0, key, value)} />
+      <ColonyPanel colonyId={0} name={connected[0] ? names[0] : null} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} editable={colonyId === 0} status={playerStatus(0)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 0 ? () => send({ type: "stand-up" }) : undefined} onChange={(key, value) => changeDoctrine(0, key, value)} />
       <div className="war-maze online-war-maze"><canvas ref={canvasRef} width={W} height={H} />
         {snapshot?.phase === "waiting" && <div className="online-war-overlay"><span>Room {matchId}</span><h2>{waitingTitle}</h2><p>{waitingMessage}</p><div>{!connected.every(Boolean) && <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share invite"}</button>}{colonyId !== null && connected.every(Boolean) && <button className="war-button war-button--primary" disabled={ready[colonyId]} onClick={() => send({ type: "ready" })}>{ready[colonyId] ? "Ready — waiting" : "Ready up"}</button>}</div></div>}
         {snapshot?.phase === "finished" && <div className="online-war-overlay"><span>Match complete</span><h2>{status}</h2><p>The match has ended. Replay these conditions or return to the match rooms.</p><div>{colonyId !== null && <button className="war-button war-button--primary" onClick={() => send({ type: "reset" })}>Rematch same seed</button>}<a className="war-button" href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a></div></div>}
         <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div></div>
-      <ColonyPanel colonyId={1} name={connected[1] ? names[1] : null} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} editable={colonyId === 1} status={playerStatus(1)} onClaim={colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onChange={(key, value) => changeDoctrine(1, key, value)} />
+      <ColonyPanel colonyId={1} name={connected[1] ? names[1] : null} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} editable={colonyId === 1} status={playerStatus(1)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 1 ? () => send({ type: "stand-up" }) : undefined} onChange={(key, value) => changeDoctrine(1, key, value)} />
     </section>
   </main>;
 }

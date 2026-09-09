@@ -79,7 +79,10 @@ test("two players and a spectator can complete the authoritative lobby flow", as
 
   const secondStart = second.messages.length;
   second.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Beta" }));
-  const secondJoined = await second.waitFor(message => message.type === "joined", secondStart);
+  const secondEntered = await second.waitFor(message => message.type === "joined", secondStart);
+  assert.equal(secondEntered.colonyId, null);
+  second.ws.send(JSON.stringify({ type: "claim-seat", colonyId: 1 }));
+  const secondJoined = await second.waitFor(message => message.type === "joined" && message.colonyId === 1, secondStart);
   assert.equal(secondJoined.colonyId, 1);
 
   const spectatorStart = spectator.messages.length;
@@ -162,6 +165,53 @@ test("a creator holds their lobby seat until disconnecting before ready", async 
 
   const joinStart = replacement.messages.length;
   replacement.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Beta" }));
-  const joined = await replacement.waitFor(message => message.type === "joined", joinStart);
+  const entered = await replacement.waitFor(message => message.type === "joined", joinStart);
+  assert.equal(entered.colonyId, null);
+  replacement.ws.send(JSON.stringify({ type: "claim-seat", colonyId: 0 }));
+  const joined = await replacement.waitFor(message => message.type === "joined" && message.colonyId === 0, joinStart);
   assert.equal(joined.colonyId, 0);
+});
+
+test("entering is spectator-only and a player can stand up before starting", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}/api/war/ws`;
+  const creator = await connect(url);
+  const visitor = await connect(url);
+
+  t.after(async () => {
+    creator.ws.close();
+    visitor.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const createStart = creator.messages.length;
+  creator.ws.send(JSON.stringify({ type: "create-room", playerName: "Alpha", settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+  const created = await creator.waitFor(message => message.type === "room-created", createStart);
+  const matchId = created.matchId as string;
+
+  const enterStart = visitor.messages.length;
+  visitor.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Observer" }));
+  const entered = await visitor.waitFor(message => message.type === "joined", enterStart);
+  assert.equal(entered.colonyId, null);
+
+  visitor.ws.send(JSON.stringify({ type: "claim-seat", colonyId: 1 }));
+  const seated = await visitor.waitFor(message => message.type === "joined" && message.colonyId === 1, enterStart);
+  assert.equal(typeof seated.reconnectToken, "string");
+
+  const standStart = visitor.messages.length;
+  visitor.ws.send(JSON.stringify({ type: "stand-up" }));
+  const stoodUp = await visitor.waitFor(message => message.type === "joined", standStart);
+  assert.equal(stoodUp.colonyId, null);
+  assert.equal("reconnectToken" in stoodUp, false);
+
+  const playerState = await visitor.waitFor(message => message.type === "player-state", standStart);
+  assert.deepEqual(playerState.connected, [true, false]);
+  assert.deepEqual(playerState.spectators, ["Observer"]);
 });

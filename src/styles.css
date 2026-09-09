@@ -129,9 +129,11 @@
 .online-war-room-header .war-header__actions { align-items: center; margin-left: auto; }
 .online-war-identity { display: flex; align-items: baseline; gap: 5px; margin-right: 4px; color: #806d52 !important; font-size: .62rem !important; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .online-war-identity strong { color: #d6c4a5; font-size: .72rem; letter-spacing: 0; text-transform: none; }
+.online-war-spectators { color: #806d52; font-size: .66rem; white-space: nowrap; }
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 .war-colony__name em { margin-left: auto; color: #806d52; font-size: .6rem; font-style: normal; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
 .online-war-claim { width: 100%; margin: 0 0 10px; border-color: var(--colony-color); color: var(--colony-color); }
+.online-war-stand-up { margin: -3px 0 10px auto; padding: 3px 0; border: 0; background: transparent; color: #8f7b60; font-size: .64rem; text-decoration: underline; cursor: pointer; }
 .online-war-maze { position: relative; }
 .online-war-overlay { position: absolute; inset: 2px 2px 31px; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px; border-radius: 7px; background: #090603bd; backdrop-filter: blur(1px) saturate(.7); text-align: center; }
 .online-war-overlay > span { color: #f59e0b; font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }

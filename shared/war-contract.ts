@@ -95,6 +95,7 @@ export type WarClientMessage =
   | { type: "create-room"; playerName: string; settings: OnlineWarSettings; randomOpponent?: boolean }
   | { type: "join-room"; matchId: string; playerName: string; reconnectToken?: string }
   | { type: "claim-seat"; colonyId: number }
+  | { type: "stand-up" }
   | { type: "ready" }
   | { type: "set-doctrine"; doctrine: SimParams }
   | { type: "reset" };
@@ -102,7 +103,7 @@ export type WarClientMessage =
 export type WarServerMessage =
   | { type: "room-created"; matchId: string; reconnectToken: string }
   | { type: "joined"; matchId: string; colonyId: number | null; reconnectToken?: string; phase: WarMatchPhase }
-  | { type: "player-state"; connected: boolean[]; ready: boolean[]; names: Array<string | null> }
+  | { type: "player-state"; connected: boolean[]; ready: boolean[]; names: Array<string | null>; spectators: string[] }
   | { type: "lobby-state"; matches: WarMatchSummary[]; history: WarMatchRecord[] }
   | { type: "snapshot"; snapshot: WarSnapshot }
   | { type: "error"; message: string };

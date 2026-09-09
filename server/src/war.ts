@@ -248,6 +248,10 @@ function broadcastPlayers(match: WarMatch): void {
     connected: match.players.map(connected),
     ready: match.players.map(player => Boolean(player?.ready)),
     names: match.players.map(player => player?.name ?? null),
+    spectators: [...match.spectators].flatMap(socket => {
+      const name = socketNames.get(socket);
+      return name ? [name] : [];
+    }),
   });
 }
 
@@ -304,7 +308,10 @@ function leaveMatch(socket: WebSocket): void {
   if (!match) return;
   match.spectators.delete(socket);
   const colonyId = playerIndex(match, socket);
-  if (colonyId >= 0) match.players[colonyId]!.socket = null;
+  if (colonyId >= 0) {
+    if (match.phase === "waiting") match.players[colonyId] = null;
+    else match.players[colonyId]!.socket = null;
+  }
   socketMatches.delete(socket);
   socketNames.delete(socket);
   broadcastPlayers(match);
@@ -328,14 +335,7 @@ function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectT
     if (previousSocket && previousSocket !== socket) previousSocket.close(4001, "Reconnected elsewhere");
     match.players[colonyId]!.socket = socket;
     match.players[colonyId]!.name = name;
-  } else {
-    colonyId = match.players.findIndex(player => player === null || (!player.isBot && !connected(player)));
-    if (colonyId >= 0) {
-      match.players[colonyId] = { token: randomUUID(), socket, ready: false, name };
-    } else {
-      match.spectators.add(socket);
-    }
-  }
+  } else match.spectators.add(socket);
 
   send(socket, {
     type: "joined",
@@ -350,12 +350,12 @@ function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectT
 }
 
 function claimSeat(socket: WebSocket, match: WarMatch, colonyId: number): void {
-  if ((colonyId !== 0 && colonyId !== 1) || playerIndex(match, socket) >= 0) {
+  if (match.phase !== "waiting" || (colonyId !== 0 && colonyId !== 1) || playerIndex(match, socket) >= 0) {
     send(socket, { type: "error", message: "That seat cannot be claimed" });
     return;
   }
   const existing = match.players[colonyId];
-  if (existing?.isBot || existing?.socket?.readyState === WebSocket.OPEN) {
+  if (existing) {
     send(socket, { type: "error", message: `Colony ${colonyId + 1} is already occupied` });
     return;
   }
@@ -373,6 +373,19 @@ function claimSeat(socket: WebSocket, match: WarMatch, colonyId: number): void {
     reconnectToken: match.players[colonyId]!.token,
     phase: match.phase,
   });
+  broadcastPlayers(match);
+  broadcastLobby();
+}
+
+function standUp(socket: WebSocket, match: WarMatch): void {
+  const colonyId = playerIndex(match, socket);
+  if (match.phase !== "waiting" || colonyId < 0 || match.players[colonyId]?.isBot) {
+    send(socket, { type: "error", message: "You can only stand up before the match starts" });
+    return;
+  }
+  match.players[colonyId] = null;
+  match.spectators.add(socket);
+  send(socket, { type: "joined", matchId: match.id, colonyId: null, phase: match.phase });
   broadcastPlayers(match);
   broadcastLobby();
 }
@@ -449,6 +462,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
   const match = socketMatches.get(socket);
   if (!match) return send(socket, { type: "error", message: "Create or join a match first" });
   if (message.type === "claim-seat") return claimSeat(socket, match, message.colonyId);
+  if (message.type === "stand-up") return standUp(socket, match);
   const colonyId = playerIndex(match, socket);
   if (colonyId < 0) return send(socket, { type: "error", message: "Only players can control a colony" });
 
