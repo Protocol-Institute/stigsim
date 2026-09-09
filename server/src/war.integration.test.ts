@@ -216,6 +216,13 @@ test("entering is spectator-only and a player can stand up before starting", asy
   visitor.ws.send(JSON.stringify({ type: "join-room", matchId, playerName: "Observer" }));
   const entered = await visitor.waitFor(message => message.type === "joined", enterStart);
   assert.equal(entered.colonyId, null);
+  await visitor.waitFor(message => message.type === "snapshot", enterStart);
+  const waitingSnapshotCount = visitor.messages.slice(enterStart).filter(message => message.type === "snapshot").length;
+  await new Promise(resolve => setTimeout(resolve, 250));
+  assert.equal(
+    visitor.messages.slice(enterStart).filter(message => message.type === "snapshot").length,
+    waitingSnapshotCount,
+  );
 
   visitor.ws.send(JSON.stringify({ type: "claim-seat", colonyId: 1 }));
   const seated = await visitor.waitFor(message => message.type === "joined" && message.colonyId === 1, enterStart);

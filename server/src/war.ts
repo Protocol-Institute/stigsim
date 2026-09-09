@@ -475,6 +475,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
       return send(socket, { type: "error", message: "Doctrine values are outside the allowed range" });
     }
     match.war.setDoctrine(colonyId, message.doctrine);
+    if (match.phase === "waiting") broadcastSnapshot(match);
   } else if (message.type === "reset" && match.phase === "finished") {
     resetMatch(match);
   }
@@ -487,17 +488,18 @@ function advanceMatches(): void {
       matches.delete(id);
       continue;
     }
-    if (match.phase === "running") {
-      match.simulationAccumulator += match.settings.stepsPerSecond / CLOCK_RATE;
-      while (match.simulationAccumulator >= 1 && match.war.result === null) {
-        match.war.step();
-        match.simulationAccumulator--;
-      }
-      if (match.war.result !== null) {
-        match.phase = "finished";
-        broadcastPlayers(match);
-        void recordCompletedMatch(match);
-      }
+    if (match.phase !== "running") continue;
+    match.simulationAccumulator += match.settings.stepsPerSecond / CLOCK_RATE;
+    while (match.simulationAccumulator >= 1 && match.war.result === null) {
+      match.war.step();
+      match.simulationAccumulator--;
+    }
+    if (match.war.result !== null) {
+      match.phase = "finished";
+      broadcastPlayers(match);
+      broadcastSnapshot(match);
+      void recordCompletedMatch(match);
+      continue;
     }
     match.snapshotAccumulator += SNAPSHOT_RATE / CLOCK_RATE;
     if (match.snapshotAccumulator >= 1) {
