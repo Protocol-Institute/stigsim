@@ -270,7 +270,7 @@ export default function OnlineWarMode() {
         const room = new URLSearchParams(location.search).get("match")?.trim().toUpperCase();
         const savedName = localStorage.getItem("stigsim-player-name")?.trim();
         const reconnectToken = room ? sessionStorage.getItem(tokenKey(room)) : null;
-        if (room && savedName && reconnectToken) socket.send(JSON.stringify({ type: "join-room", matchId: room, playerName: savedName, reconnectToken } satisfies WarClientMessage));
+        if (room && savedName) socket.send(JSON.stringify({ type: "join-room", matchId: room, playerName: savedName, reconnectToken: reconnectToken ?? undefined } satisfies WarClientMessage));
       };
       socket.onmessage = event => {
         const message = JSON.parse(event.data) as WarServerMessage;
