@@ -278,6 +278,10 @@ function broadcastPlayers(match: WarMatch): void {
   });
 }
 
+function pheromoneWireValues(layer: Float32Array): number[] {
+  return Array.from(layer, value => Math.round(value * 1_000) / 1_000);
+}
+
 export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settings">): WarSnapshot {
   const simulation = match.war.simulation;
   const grid = simulation.occupancy;
@@ -295,9 +299,9 @@ export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settin
         id: colony.id,
         nestX: colony.nestX,
         nestY: colony.nestY,
-        homePhero: Array.from(colony.field.layer("home")),
-        foodPhero: Array.from(colony.field.layer("food")),
-        cautPhero: Array.from(colony.field.layer("caut")),
+        homePhero: pheromoneWireValues(colony.field.layer("home")),
+        foodPhero: pheromoneWireValues(colony.field.layer("food")),
+        cautPhero: pheromoneWireValues(colony.field.layer("caut")),
         ants: colony.ants.map(ant => {
           const runtime = match.war.getAntSnapshot(ant);
           if (!runtime) throw new Error("War ant is missing runtime state");

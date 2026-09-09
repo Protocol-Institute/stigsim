@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DenseField } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
 import { completedWarRecord, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
@@ -44,6 +45,23 @@ test("wire snapshots contain the shared WarSimulation state", () => {
   assert.equal(snapshot.grid.length > 0, true);
   assert.equal(snapshot.colonies[0].homePhero.length, snapshot.grid.length * snapshot.grid[0].length);
   assert.equal(snapshot.colonies[0].ants.length, 2);
+});
+
+test("wire snapshots round pheromones without changing simulation precision", () => {
+  const war = new WarSimulation({ masterSeed: "snapshot-rounding-test", startingAnts: 1 });
+  const field = war.simulation.colonies[0].field;
+  assert.equal(field instanceof DenseField, true);
+  if (!(field instanceof DenseField)) return;
+  const home = field.layer("home");
+  home[0] = 1 / 3;
+  const authoritativeValue = home[0];
+
+  const snapshot = snapshotWarMatch({ war, phase: "running", settings: DEFAULT_ONLINE_WAR_SETTINGS });
+
+  assert.equal(snapshot.colonies[0].homePhero[0], 0.333);
+  assert.equal(home[0], authoritativeValue);
+  assert.notEqual(authoritativeValue, snapshot.colonies[0].homePhero[0]);
+  assert.equal(JSON.stringify(snapshot).includes("0.3333333432674408"), false);
 });
 
 test("wire ant ids remain stable when an earlier ant leaves the array", () => {
