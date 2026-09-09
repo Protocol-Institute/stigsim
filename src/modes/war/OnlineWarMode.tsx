@@ -127,7 +127,7 @@ function drawSnapshot(canvas: HTMLCanvasElement, snapshot: WarSnapshot, previous
   }
 }
 
-function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onClaim, onStandUp, onChange }: {
+function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onClaim, onStandUp, onChange, onCommit }: {
   colonyId: number;
   name: string | null;
   metrics: WarMetricsWire;
@@ -137,6 +137,7 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onCl
   onClaim?: () => void;
   onStandUp?: () => void;
   onChange: <K extends keyof SimParams>(key: K, value: SimParams[K]) => void;
+  onCommit: () => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
   const tankCells = Math.round(doctrine.tankMax / (DEPOSIT_RATE * (CELL / V)));
@@ -158,10 +159,10 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, editable, status, onCl
       {controls.map(([key, label, min, max, step, value]) => <label key={key}>
         <span><b>{label}</b><strong>{value}</strong></span>
         <input disabled={!editable} type="range" min={min} max={max} step={step} value={doctrine[key] as number}
-          onChange={event => onChange(key, Number(event.target.value))} />
+          onChange={event => onChange(key, Number(event.target.value))} onPointerUp={onCommit} onKeyUp={onCommit} onBlur={onCommit} />
       </label>)}
       <div className="war-toggle"><b>Cautionary</b><div>{([false, true] as const).map(value =>
-        <button disabled={!editable} className={doctrine.cautionary === value ? "is-active" : ""} key={String(value)} onClick={() => onChange("cautionary", value)}>{value ? "On" : "Off"}</button>)}</div></div>
+        <button disabled={!editable} className={doctrine.cautionary === value ? "is-active" : ""} key={String(value)} onClick={() => { onChange("cautionary", value); onCommit(); }}>{value ? "On" : "Off"}</button>)}</div></div>
     </div>
     {metrics.doctrineChanged && <p className="war-adoption"><strong>{metrics.doctrineAdopted}/{metrics.population} ants updated.</strong>{" "}Changes are adopted when each ant returns to this colony’s nest.</p>}
   </aside>;
@@ -227,6 +228,7 @@ function HistoryRow({ record }: { record: WarMatchRecord }) {
 export default function OnlineWarMode() {
   const socketRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const doctrineSendRef = useRef<{ pending: SimParams | null; timer: ReturnType<typeof setTimeout> | null; lastSentAt: number }>({ pending: null, timer: null, lastSentAt: 0 });
   const renderSnapshotsRef = useRef<{ previous: { snapshot: WarSnapshot; receivedAt: number } | null; current: { snapshot: WarSnapshot; receivedAt: number } | null }>({ previous: null, current: null });
   const [initialInvite] = useState(() => new URLSearchParams(location.search).get("match")?.trim().toUpperCase() ?? "");
   const [playerName, setPlayerName] = useState(() => localStorage.getItem("stigsim-player-name") ?? "");
@@ -324,12 +326,32 @@ export default function OnlineWarMode() {
   }, []);
 
   const doctrine = (id: number) => snapshot?.colonies[id]?.doctrine ?? DEFAULT_PARAMS;
+  const flushDoctrine = () => {
+    const queued = doctrineSendRef.current;
+    if (queued.timer) clearTimeout(queued.timer);
+    queued.timer = null;
+    if (!queued.pending) return;
+    send({ type: "set-doctrine", doctrine: queued.pending });
+    queued.pending = null;
+    queued.lastSentAt = performance.now();
+  };
+  const queueDoctrine = (nextDoctrine: SimParams) => {
+    const queued = doctrineSendRef.current;
+    queued.pending = nextDoctrine;
+    if (queued.timer) return;
+    const remaining = Math.max(0, 100 - (performance.now() - queued.lastSentAt));
+    if (remaining === 0) flushDoctrine();
+    else queued.timer = setTimeout(flushDoctrine, remaining);
+  };
   const changeDoctrine = <K extends keyof SimParams>(id: number, key: K, value: SimParams[K]) => {
     if (id !== colonyId || !snapshot) return;
     const nextDoctrine = { ...doctrine(id), [key]: value };
     setSnapshot({ ...snapshot, colonies: snapshot.colonies.map(colony => colony.id === id ? { ...colony, doctrine: nextDoctrine } : colony) });
-    send({ type: "set-doctrine", doctrine: nextDoctrine });
+    queueDoctrine(nextDoctrine);
   };
+  useEffect(() => () => {
+    if (doctrineSendRef.current.timer) clearTimeout(doctrineSendRef.current.timer);
+  }, []);
   const waitingMatches = useMemo(() => matches.filter(match => match.phase === "waiting"), [matches]);
   const runningMatches = useMemo(() => matches.filter(match => match.phase === "running"), [matches]);
 
@@ -379,12 +401,12 @@ export default function OnlineWarMode() {
     {error && <div className="online-war-error">{error}</div>}
     {snapshot && <section className="war-matchbar" aria-label="Locked match settings"><div className="war-matchbar__group"><strong>Match settings</strong><div className="war-matchbar__summary"><span>{snapshot.settings.startingAnts} ants / colony</span><span>{snapshot.settings.foodSources} food {snapshot.settings.foodSources === 1 ? "source" : "sources"}</span><span>{snapshot.settings.foodPerSource} food / source</span><span>{Math.round(snapshot.settings.loopRate * 100)}% maze loops</span><span className="war-matchbar__seed" title={snapshot.settings.masterSeed}>Seed: {snapshot.settings.masterSeed}</span></div></div><div className="war-matchbar__group war-matchbar__group--controls"><strong>Simulation</strong><div className="war-matchbar__summary"><span>{snapshot.settings.stepsPerSecond} steps / sec</span></div></div></section>}
     <section className="war-arena">
-      <ColonyPanel colonyId={0} name={names[0]} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} editable={colonyId === 0} status={playerStatus(0)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 0 ? () => send({ type: "stand-up" }) : undefined} onChange={(key, value) => changeDoctrine(0, key, value)} />
+      <ColonyPanel colonyId={0} name={names[0]} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} editable={colonyId === 0} status={playerStatus(0)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 0 ? () => send({ type: "stand-up" }) : undefined} onChange={(key, value) => changeDoctrine(0, key, value)} onCommit={flushDoctrine} />
       <div className="war-maze online-war-maze"><canvas ref={canvasRef} width={W} height={H} />
         {snapshot?.phase === "waiting" && <div className="online-war-overlay"><span>Room {matchId}</span><h2>{waitingTitle}</h2><p>{waitingMessage}</p><div>{!connected.every(Boolean) && <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share invite"}</button>}{colonyId !== null && connected.every(Boolean) && <button className="war-button war-button--primary" disabled={ready[colonyId]} onClick={() => send({ type: "ready" })}>{ready[colonyId] ? "Ready — waiting" : "Ready up"}</button>}</div></div>}
         {snapshot?.phase === "finished" && <div className="online-war-overlay"><span>Match complete</span><h2>{status}</h2><p>The match has ended. Replay these conditions or return to the match rooms.</p><div>{colonyId !== null && <button className="war-button war-button--primary" onClick={() => send({ type: "reset" })}>Rematch same seed</button>}<a className="war-button" href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a></div></div>}
         <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div></div>
-      <ColonyPanel colonyId={1} name={names[1]} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} editable={colonyId === 1} status={playerStatus(1)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 1 ? () => send({ type: "stand-up" }) : undefined} onChange={(key, value) => changeDoctrine(1, key, value)} />
+      <ColonyPanel colonyId={1} name={names[1]} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} editable={colonyId === 1} status={playerStatus(1)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 1 ? () => send({ type: "stand-up" }) : undefined} onChange={(key, value) => changeDoctrine(1, key, value)} onCommit={flushDoctrine} />
     </section>
   </main>;
 }

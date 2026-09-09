@@ -480,7 +480,6 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
       return send(socket, { type: "error", message: "Doctrine values are outside the allowed range" });
     }
     match.war.setDoctrine(colonyId, message.doctrine);
-    broadcastSnapshot(match);
   } else if (message.type === "reset" && match.phase === "finished") {
     resetMatch(match);
   }
@@ -531,12 +530,18 @@ export async function attachWarWs(server: Server, allowedOrigins: string[], requ
     const rateWindow = setInterval(() => { messageCount = 0; }, 1_000);
     send(socket, lobbyMessage());
     socket.on("message", raw => {
-      if (++messageCount > MAX_MESSAGES_PER_SECOND) {
+      const overLimit = ++messageCount > MAX_MESSAGES_PER_SECOND;
+      const message = parseMessage(raw);
+      if (!message) {
+        if (overLimit) socket.close(1008, "Rate limit exceeded");
+        else send(socket, { type: "error", message: "Invalid JSON message" });
+        return;
+      }
+      if (overLimit) {
+        if (message.type === "set-doctrine") return;
         socket.close(1008, "Rate limit exceeded");
         return;
       }
-      const message = parseMessage(raw);
-      if (!message) return send(socket, { type: "error", message: "Invalid JSON message" });
       try {
         handleMessage(socket, message);
       } catch {

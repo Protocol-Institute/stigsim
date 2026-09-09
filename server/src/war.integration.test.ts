@@ -229,3 +229,30 @@ test("entering is spectator-only and a player can stand up before starting", asy
   assert.deepEqual(playerState.connected, [true, false]);
   assert.deepEqual(playerState.spectators, ["Observer"]);
 });
+
+test("a burst of doctrine updates is dropped without disconnecting the player", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const player = await connect(`ws://127.0.0.1:${address.port}/api/war/ws`);
+  t.after(async () => {
+    player.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const start = player.messages.length;
+  player.ws.send(JSON.stringify({ type: "create-room", playerName: "Alpha", settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+  const created = await player.waitFor(message => message.type === "room-created", start);
+  player.ws.send(JSON.stringify({ type: "join-room", matchId: created.matchId, playerName: "Alpha", reconnectToken: created.reconnectToken }));
+  await player.waitFor(message => message.type === "joined", start);
+
+  const doctrine = { evapRate: 0.005, trailPower: 5, tankMax: 6_400, cautionary: false };
+  for (let index = 0; index < 40; index++) player.ws.send(JSON.stringify({ type: "set-doctrine", doctrine }));
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(player.ws.readyState, WebSocket.OPEN);
+});
