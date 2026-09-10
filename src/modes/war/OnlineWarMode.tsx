@@ -14,6 +14,7 @@ import {
 import { COLONY_COLORS } from "../../render";
 import { appHref } from "../../routes";
 import { WAR_RULES } from "./war-simulation";
+import { terminalWarCloseMessage } from "./online-war-connection";
 import {
   DEFAULT_ONLINE_WAR_SETTINGS,
   type OnlineWarSettings,
@@ -320,8 +321,14 @@ export default function OnlineWarMode() {
         else if (message.type === "error") setError(message.message);
       };
       socket.onerror = () => setConnection("Server unavailable");
-      socket.onclose = () => {
+      socket.onclose = event => {
         if (stopped) return;
+        const terminalMessage = terminalWarCloseMessage(event.code);
+        if (terminalMessage) {
+          setConnection("Disconnected");
+          setError(terminalMessage);
+          return;
+        }
         setConnection("Reconnecting…");
         reconnectTimer = setTimeout(connect, 1_500);
       };

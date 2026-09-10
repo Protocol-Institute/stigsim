@@ -8,6 +8,7 @@ import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
+import { WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
 import type {
   OnlineWarSettings,
   WarClientMessage,
@@ -375,7 +376,7 @@ function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectT
     : -1;
   if (colonyId >= 0) {
     const previousSocket = match.players[colonyId]!.socket;
-    if (previousSocket && previousSocket !== socket) previousSocket.close(4001, "Reconnected elsewhere");
+    if (previousSocket && previousSocket !== socket) previousSocket.close(WAR_RECONNECTED_ELSEWHERE_CODE, "Reconnected elsewhere");
     match.players[colonyId]!.socket = socket;
     match.players[colonyId]!.name = name;
   } else match.spectators.add(socket);
