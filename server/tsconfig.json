@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "../shared/**/*.ts", "drizzle.config.ts"]
+  "include": ["src/**/*.ts", "../shared/**/*.ts", "../src/modes/war/war-simulation.ts", "drizzle.config.ts"]
 }

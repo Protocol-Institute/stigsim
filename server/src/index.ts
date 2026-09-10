@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import router from "./routes";
 import { attachInfiniteWs, shutdownInfinite } from "./ws";
+import { attachWarWs, shutdownWar } from "./war";
 import { closeDb } from "./db";
 
 const port = Number(process.env.PORT ?? 3001);
@@ -37,6 +38,8 @@ app.use("/api", router);
 const server = createServer(app);
 
 attachInfiniteWs(server, allowedOrigins, isProduction).then(() => {
+  return attachWarWs(server, allowedOrigins, isProduction);
+}).then(() => {
   server.listen(port, () => {
     console.log(`[server] Listening on port ${port}`);
   });
@@ -49,6 +52,7 @@ async function shutdown(signal: string) {
   console.log(`[server] ${signal} received — saving world and shutting down`);
   server.close();
   await shutdownInfinite();
+  shutdownWar();
   await closeDb();
   process.exit(0);
 }

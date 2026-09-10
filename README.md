@@ -7,8 +7,8 @@ SIGFPT (Formal Protocol Theory) initiative.
 Stigmergy is coordination through a shared environment: agents respond to
 traces left by other agents instead of communicating directly or following a
 central controller. In Stigsim, ants explore mazes, discover food, and reinforce
-useful routes with pheromone trails. The project offers two ways to explore that
-idea: a self-contained maze sandbox and a persistent multiplayer world.
+useful routes with pheromone trails. The project includes private experiments,
+head-to-head War matches, and a persistent multiplayer world.
 
 ## Play online
 
@@ -22,7 +22,12 @@ browser. This is the original, self-contained Stigsim experience.
 Join one shared, persistent simulation with other players. Changes made by one
 player become part of the world everyone inhabits.
 
-## Two modes, two kinds of experiment
+### [Play Online War →](https://stigsim.protocol-institute.org/multiplayer)
+
+Create or join a two-colony match, invite another player, spectate a running
+game, or practice against a randomized colony.
+
+## Simulation modes
 
 | | Maze Simulator | Infinite World |
 | --- | --- | --- |
@@ -82,6 +87,13 @@ You can enter in **God Mode** to shape the environment and observe its colonies,
 or use **Survive Mode** to place a colony and see how long it lasts in the world
 other players have helped create. The leaderboard records colony lifespans.
 
+### War Mode
+
+War Mode is a bounded two-colony survival match powered by the shared
+simulation core. It can run locally in one browser or authoritatively on the
+server. The server owns the clock, validates doctrine changes, and persists
+compact completed-match results. Replay checkpoints and playback are deferred.
+
 ## How the shared world works
 
 The website is a static React/Vite application hosted on GitHub Pages. Infinite
@@ -125,7 +137,7 @@ PORT=3000 BASE_PATH=/ pnpm dev
 Open the local [simulation index](http://localhost:3000/) or go directly to the
 [Maze Simulator](http://localhost:3000/maze).
 
-### Run Infinite World locally
+### Run server-backed modes locally
 
 Start the simulation server in a second terminal:
 
@@ -133,8 +145,9 @@ Start the simulation server in a second terminal:
 pnpm dev:server
 ```
 
-Then open the local [Infinite World](http://localhost:3000/infinite). Vite
-proxies `/api` HTTP and WebSocket traffic to the server on port 3001.
+Then open the local [Infinite World](http://localhost:3000/infinite) or
+[Online War](http://localhost:3000/multiplayer). During development both use
+the server on port 3001.
 
 No database is required for local experimentation. Without `DATABASE_URL`, the
 server loads the bundled seed and keeps changes in memory for the current server

@@ -63,6 +63,7 @@ export const DEFAULT_WAR_SETTINGS: WarMatchSettings = {
 };
 
 interface AntRuntime {
+  id: number;
   phase: WarAntPhase;
   energy: number;
   doctrine: SimParams;
@@ -82,6 +83,7 @@ interface ColonyRuntime {
 }
 
 export interface WarAntSnapshot {
+  id: number;
   phase: WarAntPhase;
   energy: number;
   doctrine: SimParams;
@@ -117,6 +119,7 @@ export class WarSimulation {
   private readonly antRuntime = new Map<Ant, AntRuntime>();
   private readonly colonyRuntime: ColonyRuntime[];
   private readonly economyRng: ReturnType<typeof makeRng>;
+  private nextAntId = 0;
   result: WarResult = null;
 
   constructor(
@@ -178,6 +181,7 @@ export class WarSimulation {
   getAntSnapshot(ant: Ant): WarAntSnapshot | null {
     const state = this.antRuntime.get(ant);
     return state ? {
+      id: state.id,
       phase: state.phase,
       energy: state.energy,
       doctrine: copyDoctrine(state.doctrine),
@@ -235,6 +239,7 @@ export class WarSimulation {
     const doctrine = copyDoctrine(colony.pendingDoctrine);
     ant.tank = doctrine.tankMax;
     this.antRuntime.set(ant, {
+      id: this.nextAntId++,
       phase: "searching",
       energy: this.rules.maxEnergy,
       doctrine,

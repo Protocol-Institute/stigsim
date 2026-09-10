@@ -19,6 +19,7 @@ import { eq, desc } from "drizzle-orm";
 import { db, worldStateTable, colonyRecordsTable } from "./db";
 import { InfiniteSimulation, type PersistedColony, type PersistedWorld } from "./sim";
 import { isAllowedWebSocketOrigin } from "./security";
+import { registerWebSocketRoute } from "./upgrade-router";
 import {
   foodUpsertMessage,
   makeIdempotentCleanup,
@@ -327,6 +328,7 @@ function handleMessage(
 }
 
 let activeWss: WebSocketServer | null = null;
+let unregisterUpgradeRoute: (() => void) | null = null;
 
 export async function attachInfiniteWs(
   server: Server,
@@ -335,8 +337,11 @@ export async function attachInfiniteWs(
 ) {
   await loadWorld();
 
-  const wss = new WebSocketServer({ server, path: "/api/infinite/ws", maxPayload: 16 * 1024 });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
   activeWss = wss;
+  unregisterUpgradeRoute = registerWebSocketRoute(server, "/api/infinite/ws", (request, socket, head) => {
+    wss.handleUpgrade(request, socket, head, ws => wss.emit("connection", ws, request));
+  });
 
   wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     const origin = req.headers.origin;
@@ -395,7 +400,9 @@ export async function shutdownInfinite() {
   clearInterval(heartbeatInterval);
   await saveWorld();
   for (const ws of clients) ws.close(1001, "Server restarting");
+  unregisterUpgradeRoute?.();
   activeWss?.close();
+  unregisterUpgradeRoute = null;
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
