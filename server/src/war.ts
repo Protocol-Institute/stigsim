@@ -173,12 +173,12 @@ function sockets(match: WarMatch): WebSocket[] {
   return [...match.players.flatMap(player => player?.socket ? [player.socket] : []), ...match.spectators];
 }
 
-function evictMatch(match: WarMatch): void {
+function evictMatch(match: WarMatch, closeReason = "Match room expired"): void {
   matches.delete(match.id);
   for (const socket of sockets(match)) {
     socketMatches.delete(socket);
     socketNames.delete(socket);
-    socket.close(1001, "Match room expired");
+    socket.close(1001, closeReason);
   }
   match.spectators.clear();
   for (const player of match.players) if (player) player.socket = null;
@@ -543,29 +543,40 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
 function advanceMatches(): void {
   const now = Date.now();
   for (const match of matches.values()) {
-    if ((match.finishedAt && now - match.finishedAt > EMPTY_ROOM_TTL_MS)
-        || (match.emptySince && now - match.emptySince > EMPTY_ROOM_TTL_MS)) {
-      evictMatch(match);
-      continue;
-    }
-    if (match.phase !== "running") continue;
-    match.simulationAccumulator += match.settings.stepsPerSecond / CLOCK_RATE;
-    while (match.simulationAccumulator >= 1 && match.war.result === null) {
-      match.war.step();
-      match.simulationAccumulator--;
-    }
-    if (match.war.result !== null) {
-      match.phase = "finished";
-      match.finishedAt = now;
-      broadcastPlayers(match);
-      broadcastSnapshot(match);
-      void recordCompletedMatch(match);
-      continue;
-    }
-    match.snapshotAccumulator += SNAPSHOT_RATE / CLOCK_RATE;
-    if (match.snapshotAccumulator >= 1) {
-      match.snapshotAccumulator--;
-      if (sockets(match).length > 0) broadcastSnapshot(match);
+    try {
+      if ((match.finishedAt && now - match.finishedAt > EMPTY_ROOM_TTL_MS)
+          || (match.emptySince && now - match.emptySince > EMPTY_ROOM_TTL_MS)) {
+        evictMatch(match);
+        continue;
+      }
+      if (match.phase !== "running") continue;
+      match.simulationAccumulator += match.settings.stepsPerSecond / CLOCK_RATE;
+      while (match.simulationAccumulator >= 1 && match.war.result === null) {
+        match.war.step();
+        match.simulationAccumulator--;
+      }
+      if (match.war.result !== null) {
+        match.phase = "finished";
+        match.finishedAt = now;
+        broadcastPlayers(match);
+        broadcastSnapshot(match);
+        void recordCompletedMatch(match);
+        continue;
+      }
+      match.snapshotAccumulator += SNAPSHOT_RATE / CLOCK_RATE;
+      if (match.snapshotAccumulator >= 1) {
+        match.snapshotAccumulator--;
+        if (sockets(match).length > 0) broadcastSnapshot(match);
+      }
+    } catch (error) {
+      console.error(`[war] Match ${match.id} failed and was removed`, error);
+      try {
+        broadcast(match, { type: "error", message: "This match stopped because of a server error" });
+        evictMatch(match, "Match stopped because of a server error");
+      } catch (cleanupError) {
+        console.error(`[war] Failed to clean up match ${match.id}`, cleanupError);
+        matches.delete(match.id);
+      }
     }
   }
 }
