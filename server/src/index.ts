@@ -18,6 +18,7 @@ if (isProduction && !process.env.DATABASE_URL) {
 }
 
 const app = express();
+app.set("trust proxy", 1);
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000,http://localhost:5173")
   .split(",")
   .map(origin => origin.trim())
@@ -25,6 +26,9 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000,ht
 
 if (isProduction && !process.env.ALLOWED_ORIGINS) {
   throw new Error("ALLOWED_ORIGINS must be set in production");
+}
+if (isProduction && (!process.env.AUTH_SECRET || !process.env.RESEND_API_KEY || !process.env.AUTH_FROM_EMAIL)) {
+  throw new Error("AUTH_SECRET, RESEND_API_KEY, and AUTH_FROM_EMAIL must be set in production");
 }
 
 app.use(cors({

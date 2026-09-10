@@ -5,6 +5,7 @@ import SimulationIndex from "./components/SimulationIndex";
 import LocalWarMode from "./modes/war/LocalWarMode";
 import OnlineWarMode from "./modes/war/OnlineWarMode";
 import { appHref, resolveAppRoute } from "./routes";
+import OnlineAuthGate from "./auth/OnlineAuth";
 
 export default function App() {
   const basePath = import.meta.env.BASE_URL;
@@ -15,9 +16,9 @@ export default function App() {
 
   let content;
   if (route === "war") content = <LocalWarMode />;
-  else if (route === "multiplayer") content = <OnlineWarMode />;
+  else if (route === "multiplayer") content = <OnlineAuthGate><OnlineWarMode /></OnlineAuthGate>;
   else if (route === "not-found") content = <NotFound href={href} />;
-  else content = route === "maze" ? <AntSim /> : <InfiniteSim simulationsHref={href("/")} />;
+  else content = route === "maze" ? <AntSim /> : <OnlineAuthGate><InfiniteSim simulationsHref={href("/")} /></OnlineAuthGate>;
 
   return (
     <>

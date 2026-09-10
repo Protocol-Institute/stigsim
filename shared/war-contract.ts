@@ -1,4 +1,5 @@
 import type { SimParams } from "@stigsim/sim-core";
+import type { AuthenticateMessage } from "./auth-contract";
 
 export const WAR_RECONNECTED_ELSEWHERE_CODE = 4001;
 export const WAR_MATCH_REMOVED_CODE = 4002;
@@ -95,6 +96,7 @@ export interface WarSnapshot {
 }
 
 export type WarClientMessage =
+  | AuthenticateMessage
   | { type: "create-room"; playerName: string; settings: OnlineWarSettings; randomOpponent?: boolean }
   | { type: "join-room"; matchId: string; playerName: string; reconnectToken?: string }
   | { type: "claim-seat"; colonyId: number }

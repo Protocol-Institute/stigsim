@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import test from "node:test";
 import WebSocket from "ws";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
+import { issueCode, verifyCode } from "./auth";
 
 // This suite dynamically imports the War server below. Clear persistence first
 // so local tests can never read, write, or hold open a developer's Postgres.
@@ -36,6 +37,10 @@ async function connect(url: string): Promise<MessageInbox> {
     ws.once("open", resolve);
     ws.once("error", reject);
   });
+  const email = `war-${Math.random()}@test.local`;
+  const token = verifyCode(email, issueCode(email).code);
+  assert.ok(token);
+  ws.send(JSON.stringify({ type: "authenticate", token }));
   await inbox.waitFor(message => message.type === "lobby-state");
   return inbox;
 }

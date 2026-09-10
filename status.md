@@ -2,6 +2,7 @@
 
 ## Active
 
+- Add emailed one-time-code authentication to Infinite Mode and Online War while keeping local modes public.
 - Integrate the shared `WarSimulation` as an authoritative Online War experience with create, join, spectate, reconnect, rematch, and compact completed-match history. Replay remains a follow-up.
 - Point `stigsim.protocol-institute.org` (Cloudflare DNS) at GitHub Pages — repo side done, needs a CNAME DNS record added in Cloudflare.
 - Integrate and deploy Infinite Mode using one Railway simulation server and Neon Postgres.

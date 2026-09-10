@@ -147,7 +147,9 @@ pnpm dev:server
 
 Then open the local [Infinite World](http://localhost:3000/infinite) or
 [Online War](http://localhost:3000/multiplayer). During development both use
-the server on port 3001.
+the server on port 3001. These two online modes require email-code sign-in.
+When no email provider is configured outside production, the development code
+is shown directly on the sign-in screen and logged by the server.
 
 No database is required for local experimentation. Without `DATABASE_URL`, the
 server loads the bundled seed and keeps changes in memory for the current server
@@ -163,6 +165,8 @@ simulation server. The server requires:
 - `ALLOWED_ORIGINS` for the browser origins permitted to use the API and
   WebSocket
 - `NODE_ENV=production`
+- `AUTH_SECRET` with at least 32 random bytes for signing online sessions
+- `RESEND_API_KEY` and `AUTH_FROM_EMAIL` for delivering sign-in codes
 - Exactly one running server replica
 
 See [`server/README.md`](server/README.md) for the server setup and deployment
@@ -188,5 +192,6 @@ work and the roadmap.
 ## Privacy
 
 Stigsim does not include analytics or tracking. Maze Simulator activity remains
-inside your browser. Infinite World sends the actions required to participate in
-the shared simulation to its server.
+inside your browser. Infinite World and Online War send the actions required to
+participate in their shared simulations to the server. Online-mode sign-in sends
+the supplied email address to the server and configured email-delivery provider.

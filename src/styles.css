@@ -903,6 +903,71 @@ textarea {
   line-height: 1.5;
 }
 
+.online-auth {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  color: #f8ecd7;
+  background: #090704;
+}
+
+.online-auth__card {
+  width: min(440px, 100%);
+  padding: 36px;
+  border: 1px solid #4b3517;
+  border-radius: 18px;
+  background: #100c07;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .45);
+}
+
+.online-auth__eyebrow {
+  color: #f59e0b;
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+
+.online-auth__card h1 { margin: 10px 0 8px; font-size: 2rem; }
+.online-auth__card > p { color: #a89070; line-height: 1.5; }
+.online-auth__card form { display: grid; gap: 14px; margin-top: 24px; }
+.online-auth__card label { display: grid; gap: 8px; font-weight: 700; }
+.online-auth__card input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid #5a4020;
+  border-radius: 9px;
+  color: #f8ecd7;
+  background: #090704;
+  font: inherit;
+}
+.online-auth__card button {
+  padding: 13px 16px;
+  border: 1px solid #c77b11;
+  border-radius: 9px;
+  color: #1a0f03;
+  background: #f59e0b;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.online-auth__card button:disabled { cursor: wait; opacity: .55; }
+.online-auth__card .online-auth__secondary { color: #cbb89d; background: transparent; border-color: #3d2d1b; }
+.online-auth__dev-code { padding: 10px; border-radius: 8px; color: #b7e4c7 !important; background: #102318; }
+.online-auth__error { color: #ff7777 !important; }
+.online-auth__signout {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 100;
+  padding: 8px 12px;
+  border: 1px solid #40301e;
+  border-radius: 999px;
+  color: #a89070;
+  background: rgba(13, 10, 6, .92);
+  cursor: pointer;
+}
+
 @media (max-width: 1100px) {
   .war-matchbar {
     flex-direction: column;

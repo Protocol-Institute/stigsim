@@ -17,6 +17,8 @@ import { WAR_RULES } from "./war-simulation";
 import { terminalWarCloseMessage, warCloseAction } from "./online-war-connection";
 import { sameWarDoctrine } from "./online-war-doctrine";
 import { settingsForOnlineWarSetup } from "./online-war-setup";
+import { useOnlineAuth } from "../../auth/OnlineAuth";
+import { AUTH_REQUIRED_CLOSE_CODE } from "../../../shared/auth-contract";
 import {
   DEFAULT_ONLINE_WAR_SETTINGS,
   type OnlineWarSettings,
@@ -252,6 +254,7 @@ function HistoryRow({ record }: { record: WarMatchRecord }) {
 }
 
 export default function OnlineWarMode() {
+  const { token } = useOnlineAuth();
   const socketRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const doctrineSendRef = useRef<{ pending: SimParams | null; timer: ReturnType<typeof setTimeout> | null; lastSentAt: number }>({ pending: null, timer: null, lastSentAt: 0 });
@@ -300,6 +303,7 @@ export default function OnlineWarMode() {
       socketRef.current = socket;
       socket.onopen = () => {
         setConnection("Connected");
+        socket.send(JSON.stringify({ type: "authenticate", token } satisfies WarClientMessage));
         const room = new URLSearchParams(location.search).get("match")?.trim().toUpperCase();
         const savedName = localStorage.getItem("stigsim-player-name")?.trim();
         const reconnectToken = room ? storedToken(room) : null;
@@ -340,6 +344,10 @@ export default function OnlineWarMode() {
       socket.onerror = () => setConnection("Server unavailable");
       socket.onclose = event => {
         if (stopped) return;
+        if (event.code === AUTH_REQUIRED_CLOSE_CODE) {
+          window.dispatchEvent(new Event("stigsim-auth-expired"));
+          return;
+        }
         const closeAction = warCloseAction(event.code);
         if (closeAction === "stop") {
           setConnection("Disconnected");
@@ -372,7 +380,7 @@ export default function OnlineWarMode() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socketRef.current?.close();
     };
-  }, [initialInvite]);
+  }, [initialInvite, token]);
 
   useEffect(() => {
     let frame = 0;

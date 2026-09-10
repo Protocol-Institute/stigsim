@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import { connect as connectTcp } from "node:net";
 import test from "node:test";
 import WebSocket from "ws";
+import { issueCode, verifyCode } from "./auth";
+import { AUTH_REQUIRED_CLOSE_CODE } from "../../shared/auth-contract";
 
 type Message = Record<string, unknown>;
 
@@ -39,6 +41,10 @@ async function connect(url: string, initialType = "init"): Promise<MessageInbox>
     ws.once("open", resolve);
     ws.once("error", reject);
   });
+  const email = `ws-${Math.random()}@test.local`;
+  const token = verifyCode(email, issueCode(email).code);
+  assert.ok(token);
+  ws.send(JSON.stringify({ type: "authenticate", token }));
   await inbox.waitFor(message => message.type === initialType);
   return inbox;
 }
@@ -47,6 +53,17 @@ async function closeServer(server: Server) {
   await new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
   });
+}
+
+async function expectAuthenticationClose(url: string): Promise<void> {
+  const ws = new WebSocket(url, { origin: TEST_ORIGIN });
+  await new Promise<void>((resolve, reject) => { ws.once("open", resolve); ws.once("error", reject); });
+  ws.send(JSON.stringify({ type: "not-authentication" }));
+  const code = await new Promise<number>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Unauthenticated socket stayed open")), 2_000);
+    ws.once("close", value => { clearTimeout(timeout); resolve(value); });
+  });
+  assert.equal(code, AUTH_REQUIRED_CLOSE_CODE);
 }
 
 async function requestUnknownUpgrade(port: number): Promise<string> {
@@ -90,6 +107,8 @@ test("two clients share edits without claiming or deleting each other's colony",
   assert(address && typeof address === "object");
   const url = `ws://127.0.0.1:${address.port}/api/infinite/ws`;
   const warUrl = `ws://127.0.0.1:${address.port}/api/war/ws`;
+  await expectAuthenticationClose(url);
+  await expectAuthenticationClose(warUrl);
   const owner = await connect(url);
   const observer = await connect(url);
   const warLobby = await connect(warUrl, "lobby-state");

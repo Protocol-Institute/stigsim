@@ -20,6 +20,8 @@ import { db, worldStateTable, colonyRecordsTable } from "./db";
 import { InfiniteSimulation, type PersistedColony, type PersistedWorld } from "./sim";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
+import { verifySession } from "./auth";
+import { AUTH_REQUIRED_CLOSE_CODE } from "../../shared/auth-contract";
 import {
   foodUpsertMessage,
   makeIdempotentCleanup,
@@ -349,21 +351,21 @@ export async function attachInfiniteWs(
       ws.close(1008, "Origin not allowed");
       return;
     }
-    console.log(`[ws] Client connected: ${req.url}`);
-    clients.add(ws);
-    liveClients.add(ws);
+    let authenticated = false;
     let messageCount = 0;
     const ownedColonies = new Set<number>();
     const foodEditLimiter = new TokenBucket(FOOD_EDIT_BURST, FOOD_EDITS_PER_SECOND);
     const rateWindow = setInterval(() => { messageCount = 0; }, 1_000);
+    const authTimeout = setTimeout(() => {
+      if (!authenticated) ws.close(AUTH_REQUIRED_CLOSE_CODE, "Authentication timed out");
+    }, 5_000);
     const cleanup = makeIdempotentCleanup(() => {
       clearInterval(rateWindow);
+      clearTimeout(authTimeout);
       clients.delete(ws);
       liveClients.delete(ws);
     });
     ws.on("pong", () => liveClients.add(ws));
-
-    ws.send(JSON.stringify({ type: "init", ...sim.serializeInit() }));
 
     ws.on("message", (raw) => {
       if (++messageCount > MAX_MESSAGES_PER_SECOND) {
@@ -372,6 +374,19 @@ export async function attachInfiniteWs(
       }
       try {
         const msg = JSON.parse(raw.toString()) as Record<string, unknown>;
+        if (!authenticated) {
+          if (msg["type"] !== "authenticate" || !verifySession(msg["token"])) {
+            ws.close(AUTH_REQUIRED_CLOSE_CODE, "Authentication required");
+            return;
+          }
+          authenticated = true;
+          clearTimeout(authTimeout);
+          clients.add(ws);
+          liveClients.add(ws);
+          console.log(`[ws] Authenticated client connected: ${req.url}`);
+          ws.send(JSON.stringify({ type: "init", ...sim.serializeInit() }));
+          return;
+        }
         handleMessage(ws, ownedColonies, foodEditLimiter, msg);
       } catch (e) {
         console.warn("[ws] Message parse error", e);

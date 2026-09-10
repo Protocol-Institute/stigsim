@@ -94,7 +94,10 @@ export interface LeaderboardEntry {
 
 // ─── WebSocket messages: client → server ────────────────────────────────────
 
+import type { AuthenticateMessage } from "./auth-contract";
+
 export type ClientMessage =
+  | AuthenticateMessage
   | { type: "toggleWall"; x: number; y: number }
   | { type: "placeFood"; x: number; y: number; units?: number }
   | { type: "removeFood"; x: number; y: number }

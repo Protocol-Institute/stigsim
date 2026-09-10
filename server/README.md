@@ -86,6 +86,9 @@ and loads `seeds/infinite-world.json` without database persistence.
 ## Production variables
 
 - `DATABASE_URL`: Postgres connection string; required for durable world state.
+- `AUTH_SECRET`: long random secret used to sign 30-day online-mode sessions.
+- `RESEND_API_KEY`: API credential used to deliver six-digit sign-in codes.
+- `AUTH_FROM_EMAIL`: verified sender address for sign-in messages.
 - `ALLOWED_ORIGINS`: comma-separated browser origins allowed to use the API and
   WebSocket, for example `https://stigsim.protocol-institute.org`.
 - `PORT`: injected by the hosting platform.

@@ -8,6 +8,8 @@ import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
+import { verifySession } from "./auth";
+import { AUTH_REQUIRED_CLOSE_CODE } from "../../shared/auth-contract";
 import { WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
 import type {
   OnlineWarSettings,
@@ -595,9 +597,12 @@ export async function attachWarWs(server: Server, allowedOrigins: string[], requ
       socket.close(1008, "Origin not allowed");
       return;
     }
+    let authenticated = false;
     let messageCount = 0;
     const rateWindow = setInterval(() => { messageCount = 0; }, 1_000);
-    send(socket, lobbyMessage());
+    const authTimeout = setTimeout(() => {
+      if (!authenticated) socket.close(AUTH_REQUIRED_CLOSE_CODE, "Authentication timed out");
+    }, 5_000);
     socket.on("message", raw => {
       messageCount++;
       if (messageCount > MAX_MESSAGES_HARD_LIMIT) {
@@ -609,6 +614,16 @@ export async function attachWarWs(server: Server, allowedOrigins: string[], requ
       if (!message) {
         if (overLimit) socket.close(1008, "Rate limit exceeded");
         else send(socket, { type: "error", message: "Invalid JSON message" });
+        return;
+      }
+      if (!authenticated) {
+        if (message.type !== "authenticate" || !verifySession(message.token)) {
+          socket.close(AUTH_REQUIRED_CLOSE_CODE, "Authentication required");
+          return;
+        }
+        authenticated = true;
+        clearTimeout(authTimeout);
+        send(socket, lobbyMessage());
         return;
       }
       if (overLimit) {
@@ -624,10 +639,12 @@ export async function attachWarWs(server: Server, allowedOrigins: string[], requ
     });
     socket.on("close", () => {
       clearInterval(rateWindow);
+      clearTimeout(authTimeout);
       leaveMatch(socket);
     });
     socket.on("error", () => {
       clearInterval(rateWindow);
+      clearTimeout(authTimeout);
       leaveMatch(socket);
     });
   });

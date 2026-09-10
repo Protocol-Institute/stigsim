@@ -8,6 +8,8 @@ import {
   type ColonyInfo,
   type LeaderboardEntry,
 } from "../../shared/infinite-contract";
+import { useOnlineAuth } from "../auth/OnlineAuth";
+import { AUTH_REQUIRED_CLOSE_CODE } from "../../shared/auth-contract";
 
 const INFINITE_SERVER_URL = (import.meta.env.VITE_INFINITE_SERVER_URL ?? "").replace(/\/$/, "");
 const infiniteApiUrl = (path: string) => `${INFINITE_SERVER_URL}${path}`;
@@ -927,6 +929,7 @@ function SurviveGameOver({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function InfiniteSim({ simulationsHref }: { simulationsHref: string }) {
+  const { token } = useOnlineAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const worldRef = useRef<WorldState>({
@@ -1010,11 +1013,11 @@ export default function InfiniteSim({ simulationsHref }: { simulationsHref: stri
 
   // ── Leaderboard fetch ──────────────────────────────────────────────────────
   const fetchLeaderboard = useCallback(() => {
-    fetch(infiniteApiUrl("/api/infinite/leaderboard"))
+    fetch(infiniteApiUrl("/api/infinite/leaderboard"), { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then((data: LeaderboardEntry[]) => setLeaderboard(data))
       .catch(() => {});
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -1034,9 +1037,17 @@ export default function InfiniteSim({ simulationsHref }: { simulationsHref: stri
       if (stopped) return;
       ws = new WebSocket(url);
       wsRef.current = ws;
-      ws.onopen = () => { attempt = 0; setConnected(true); };
-      ws.onclose = () => {
+      ws.onopen = () => {
+        attempt = 0;
+        ws.send(JSON.stringify({ type: "authenticate", token }));
+        setConnected(true);
+      };
+      ws.onclose = event => {
         setConnected(false);
+        if (event.code === AUTH_REQUIRED_CLOSE_CODE) {
+          window.dispatchEvent(new Event("stigsim-auth-expired"));
+          return;
+        }
         if (!stopped) retry = setTimeout(connect, Math.min(30_000, 1_000 * 2 ** attempt++));
       };
       ws.onerror = () => ws.close();
@@ -1161,7 +1172,7 @@ export default function InfiniteSim({ simulationsHref }: { simulationsHref: stri
 
     connect();
     return () => { stopped = true; clearTimeout(retry); ws?.close(); };
-  }, [syncColonies, fetchLeaderboard]);
+  }, [syncColonies, fetchLeaderboard, token]);
 
   // ── Canvas resize ─────────────────────────────────────────────────────────
   useEffect(() => {
