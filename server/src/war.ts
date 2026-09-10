@@ -23,6 +23,7 @@ const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const EMPTY_ROOM_TTL_MS = 30 * 60 * 1_000;
 const MAX_MATCHES = 100;
 const MAX_MESSAGES_PER_SECOND = 30;
+const MAX_MESSAGES_HARD_LIMIT = MAX_MESSAGES_PER_SECOND * 10;
 const MAX_BUFFERED_BYTES = 512 * 1_024;
 
 interface PlayerSlot {
@@ -574,7 +575,12 @@ export async function attachWarWs(server: Server, allowedOrigins: string[], requ
     const rateWindow = setInterval(() => { messageCount = 0; }, 1_000);
     send(socket, lobbyMessage());
     socket.on("message", raw => {
-      const overLimit = ++messageCount > MAX_MESSAGES_PER_SECOND;
+      messageCount++;
+      if (messageCount > MAX_MESSAGES_HARD_LIMIT) {
+        socket.close(1008, "Rate limit exceeded");
+        return;
+      }
+      const overLimit = messageCount > MAX_MESSAGES_PER_SECOND;
       const message = parseMessage(raw);
       if (!message) {
         if (overLimit) socket.close(1008, "Rate limit exceeded");

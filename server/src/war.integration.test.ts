@@ -330,6 +330,35 @@ test("a burst of doctrine updates is dropped without disconnecting the player", 
   assert.equal(player.ws.readyState, WebSocket.OPEN);
 });
 
+test("an extreme doctrine flood closes before unlimited parsing", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const player = await connect(`ws://127.0.0.1:${address.port}/api/war/ws`);
+  t.after(async () => {
+    player.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const closed = new Promise<{ code: number; reason: string }>(resolve => {
+    player.ws.once("close", (code, reason) => resolve({ code, reason: reason.toString() }));
+  });
+  const payload = JSON.stringify({
+    type: "set-doctrine",
+    doctrine: { evapRate: 0.005, trailPower: 5, tankMax: 6_400, cautionary: false, padding: "x".repeat(14_000) },
+  });
+  for (let index = 0; index < 301; index++) player.ws.send(payload);
+
+  const result = await closed;
+  assert.equal(result.code, 1008);
+  assert.equal(result.reason, "Rate limit exceeded");
+});
+
 test("a random-opponent game seats its creator and starts immediately", async t => {
   const { attachWarWs, shutdownWar } = await import("./war");
   const server = createServer();
