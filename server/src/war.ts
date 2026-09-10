@@ -286,7 +286,7 @@ function broadcastLobby(): void {
   if (!activeWss) return;
   const encoded = JSON.stringify(lobbyMessage());
   for (const socket of activeWss.clients) {
-    if (socket.readyState === WebSocket.OPEN) socket.send(encoded);
+    if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < MAX_BUFFERED_BYTES) socket.send(encoded);
   }
 }
 
