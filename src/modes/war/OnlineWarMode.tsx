@@ -15,6 +15,7 @@ import { COLONY_COLORS } from "../../render";
 import { appHref } from "../../routes";
 import { WAR_RULES } from "./war-simulation";
 import { terminalWarCloseMessage } from "./online-war-connection";
+import { sameWarDoctrine } from "./online-war-doctrine";
 import {
   DEFAULT_ONLINE_WAR_SETTINGS,
   type OnlineWarSettings,
@@ -253,6 +254,7 @@ export default function OnlineWarMode() {
   const socketRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const doctrineSendRef = useRef<{ pending: SimParams | null; timer: ReturnType<typeof setTimeout> | null; lastSentAt: number }>({ pending: null, timer: null, lastSentAt: 0 });
+  const pendingDoctrineRef = useRef<{ colonyId: number; doctrine: SimParams } | null>(null);
   const renderSnapshotsRef = useRef<{ previous: { snapshot: WarSnapshot; receivedAt: number } | null; current: { snapshot: WarSnapshot; receivedAt: number } | null }>({ previous: null, current: null });
   const [initialInvite] = useState(() => new URLSearchParams(location.search).get("match")?.trim().toUpperCase() ?? "");
   const [playerName, setPlayerName] = useState(() => localStorage.getItem("stigsim-player-name") ?? "");
@@ -263,6 +265,7 @@ export default function OnlineWarMode() {
   const [matchId, setMatchId] = useState("");
   const [colonyId, setColonyId] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<WarSnapshot | null>(null);
+  const [pendingDoctrine, setPendingDoctrine] = useState<{ colonyId: number; doctrine: SimParams } | null>(null);
   const [connected, setConnected] = useState([false, false]);
   const [ready, setReady] = useState([false, false]);
   const [names, setNames] = useState<Array<string | null>>([null, null]);
@@ -305,6 +308,8 @@ export default function OnlineWarMode() {
           if (savedName) socket.send(JSON.stringify({ type: "join-room", matchId: message.matchId, playerName: savedName, reconnectToken: message.reconnectToken } satisfies WarClientMessage));
           setError("");
         } else if (message.type === "joined") {
+          pendingDoctrineRef.current = null;
+          setPendingDoctrine(null);
           setMatchId(message.matchId);
           setColonyId(message.colonyId);
           if (message.reconnectToken) storeToken(message.matchId, message.reconnectToken);
@@ -314,6 +319,12 @@ export default function OnlineWarMode() {
         } else if (message.type === "player-state") {
           setConnected(message.connected); setReady(message.ready); setNames(message.names); setSpectators(message.spectators);
         } else if (message.type === "snapshot") {
+          const pending = pendingDoctrineRef.current;
+          const serverDoctrine = pending ? message.snapshot.colonies[pending.colonyId]?.doctrine : null;
+          if (pending && serverDoctrine && sameWarDoctrine(pending.doctrine, serverDoctrine)) {
+            pendingDoctrineRef.current = null;
+            setPendingDoctrine(null);
+          }
           renderSnapshotsRef.current.previous = renderSnapshotsRef.current.current;
           renderSnapshotsRef.current.current = { snapshot: message.snapshot, receivedAt: performance.now() };
           setSnapshot(message.snapshot);
@@ -355,7 +366,9 @@ export default function OnlineWarMode() {
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const doctrine = (id: number) => snapshot?.colonies[id]?.doctrine ?? DEFAULT_PARAMS;
+  const doctrine = (id: number) => pendingDoctrine?.colonyId === id
+    ? pendingDoctrine.doctrine
+    : snapshot?.colonies[id]?.doctrine ?? DEFAULT_PARAMS;
   const flushDoctrine = () => {
     const queued = doctrineSendRef.current;
     if (queued.timer) clearTimeout(queued.timer);
@@ -376,7 +389,9 @@ export default function OnlineWarMode() {
   const changeDoctrine = <K extends keyof SimParams>(id: number, key: K, value: SimParams[K]) => {
     if (id !== colonyId || !snapshot) return;
     const nextDoctrine = { ...doctrine(id), [key]: value };
-    setSnapshot({ ...snapshot, colonies: snapshot.colonies.map(colony => colony.id === id ? { ...colony, doctrine: nextDoctrine } : colony) });
+    const pending = { colonyId: id, doctrine: nextDoctrine };
+    pendingDoctrineRef.current = pending;
+    setPendingDoctrine(pending);
     queueDoctrine(nextDoctrine);
   };
   useEffect(() => () => {
