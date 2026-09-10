@@ -16,6 +16,7 @@ import { appHref } from "../../routes";
 import { WAR_RULES } from "./war-simulation";
 import { terminalWarCloseMessage } from "./online-war-connection";
 import { sameWarDoctrine } from "./online-war-doctrine";
+import { settingsForOnlineWarSetup } from "./online-war-setup";
 import {
   DEFAULT_ONLINE_WAR_SETTINGS,
   type OnlineWarSettings,
@@ -275,6 +276,11 @@ export default function OnlineWarMode() {
   const [error, setError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
 
+  const openSetup = (mode: "human" | "random") => {
+    setSettings(current => settingsForOnlineWarSetup(mode, current));
+    setSetupMode(mode);
+  };
+
   const send = useCallback((message: WarClientMessage) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify(message));
   }, []);
@@ -410,7 +416,7 @@ export default function OnlineWarMode() {
 
   if (!matchId) return <main className="mp-page mp-room-page"><div className="mp-directory-shell">
     <header className="mp-directory-header"><div><h1>Online War Mode</h1><p>Find a match, watch one in progress, or create a new challenge.</p></div>
-      <div className="mp-directory-actions"><div className="mp-saved-identity"><span>Playing as</span><strong>{playerName}</strong><button onClick={() => { localStorage.removeItem("stigsim-player-name"); setPlayerName(""); setNameConfirmed(false); }}>Change</button></div><button disabled={connection !== "Connected"} className="mp-create-room" onClick={() => setSetupMode("human")}>New game</button><button disabled={connection !== "Connected"} className="mp-random-room" onClick={() => setSetupMode("random")}>Play against random</button></div></header>
+      <div className="mp-directory-actions"><div className="mp-saved-identity"><span>Playing as</span><strong>{playerName}</strong><button onClick={() => { localStorage.removeItem("stigsim-player-name"); setPlayerName(""); setNameConfirmed(false); }}>Change</button></div><button disabled={connection !== "Connected"} className="mp-create-room" onClick={() => openSetup("human")}>New game</button><button disabled={connection !== "Connected"} className="mp-random-room" onClick={() => openSetup("random")}>Play against random</button></div></header>
     {error && <div className="online-war-error">{error}</div>}
     {initialInvite && <section className="mp-invite-join"><span>Invitation to room <strong>{initialInvite}</strong></span><button onClick={() => join(initialInvite)}>Join room</button></section>}
     <div className="mp-directory-sections">
