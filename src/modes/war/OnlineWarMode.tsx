@@ -14,7 +14,7 @@ import {
 import { COLONY_COLORS } from "../../render";
 import { appHref } from "../../routes";
 import { WAR_RULES } from "./war-simulation";
-import { terminalWarCloseMessage } from "./online-war-connection";
+import { terminalWarCloseMessage, warCloseAction } from "./online-war-connection";
 import { sameWarDoctrine } from "./online-war-doctrine";
 import { settingsForOnlineWarSetup } from "./online-war-setup";
 import {
@@ -340,11 +340,27 @@ export default function OnlineWarMode() {
       socket.onerror = () => setConnection("Server unavailable");
       socket.onclose = event => {
         if (stopped) return;
-        const terminalMessage = terminalWarCloseMessage(event.code);
-        if (terminalMessage) {
+        const closeAction = warCloseAction(event.code);
+        if (closeAction === "stop") {
           setConnection("Disconnected");
-          setError(terminalMessage);
+          setError(terminalWarCloseMessage(event.code) ?? "Disconnected");
           return;
+        }
+        if (closeAction === "return-to-lobby") {
+          const room = new URLSearchParams(location.search).get("match")?.trim().toUpperCase();
+          if (room) removeStoredToken(room);
+          pendingDoctrineRef.current = null;
+          renderSnapshotsRef.current = { previous: null, current: null };
+          setMatchId("");
+          setColonyId(null);
+          setSnapshot(null);
+          setPendingDoctrine(null);
+          setConnected([false, false]);
+          setReady([false, false]);
+          setNames([null, null]);
+          setSpectators([]);
+          history.replaceState(null, "", appHref("/multiplayer", import.meta.env.BASE_URL));
+          setError("That match is no longer available.");
         }
         setConnection("Reconnecting…");
         reconnectTimer = setTimeout(connect, 1_500);

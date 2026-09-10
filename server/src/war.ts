@@ -8,7 +8,7 @@ import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
-import { WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
+import { WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
 import type {
   OnlineWarSettings,
   WarClientMessage,
@@ -178,7 +178,7 @@ function evictMatch(match: WarMatch, closeReason = "Match room expired"): void {
   for (const socket of sockets(match)) {
     socketMatches.delete(socket);
     socketNames.delete(socket);
-    socket.close(1001, closeReason);
+    socket.close(WAR_MATCH_REMOVED_CODE, closeReason);
   }
   match.spectators.clear();
   for (const player of match.players) if (player) player.socket = null;

@@ -1,6 +1,7 @@
 import type { SimParams } from "@stigsim/sim-core";
 
 export const WAR_RECONNECTED_ELSEWHERE_CODE = 4001;
+export const WAR_MATCH_REMOVED_CODE = 4002;
 
 export type WarMatchPhase = "waiting" | "running" | "finished";
 
