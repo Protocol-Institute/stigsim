@@ -390,6 +390,16 @@ test("a random-opponent game seats its creator and starts immediately", async t 
   );
   assert.equal((running.snapshot as { colonies: Array<{ doctrine: unknown }> }).colonies.length, 2);
   assert.equal(player.messages.slice(start).some(message => message.type === "error"), false);
+
+  const rejoinStart = player.messages.length;
+  player.ws.send(JSON.stringify({ type: "join-room", matchId: joined.matchId, playerName: "Alpha" }));
+  const rejoined = await player.waitFor(message => message.type === "joined", rejoinStart);
+  assert.equal(rejoined.colonyId, 0);
+  assert.equal(rejoined.reconnectToken, joined.reconnectToken);
+  const playerState = await player.waitFor(message => message.type === "player-state", rejoinStart);
+  assert.deepEqual(playerState.spectators, []);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(player.messages.slice(rejoinStart).filter(message => message.type === "player-state").length, 1);
 });
 
 test("one connection cannot accumulate waiting rooms", async t => {

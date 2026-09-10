@@ -371,9 +371,10 @@ function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectT
   socketNames.set(socket, name);
   match.emptySince = null;
 
-  let colonyId = reconnectToken
-    ? match.players.findIndex(player => player?.token === reconnectToken && !player.isBot)
-    : -1;
+  let colonyId = playerIndex(match, socket);
+  if (colonyId < 0 && reconnectToken) {
+    colonyId = match.players.findIndex(player => player?.token === reconnectToken && !player.isBot);
+  }
   if (colonyId >= 0) {
     const previousSocket = match.players[colonyId]!.socket;
     if (previousSocket && previousSocket !== socket) previousSocket.close(WAR_RECONNECTED_ELSEWHERE_CODE, "Reconnected elsewhere");
