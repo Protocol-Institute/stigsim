@@ -51,6 +51,7 @@ interface WarMatch {
 const matches = new Map<string, WarMatch>();
 const socketMatches = new Map<WebSocket, WarMatch>();
 const socketNames = new Map<WebSocket, string>();
+const roomCreatedBySocket = new WeakSet<WebSocket>();
 const matchHistory: WarMatchRecord[] = [];
 let activeWss: WebSocketServer | null = null;
 let unregisterUpgradeRoute: (() => void) | null = null;
@@ -170,12 +171,17 @@ function evictMatch(match: WarMatch): void {
   for (const player of match.players) if (player) player.socket = null;
 }
 
-function releaseCompletedRoomForCapacity(): void {
+function releaseRoomForCapacity(): void {
   if (matches.size < MAX_MATCHES) return;
+  const emptyWaiting = [...matches.values()]
+    .filter(match => match.phase === "waiting"
+      && !sockets(match).some(socket => socket.readyState === WebSocket.OPEN))
+    .sort((a, b) => a.createdAt - b.createdAt)[0];
   const completed = [...matches.values()]
     .filter(match => match.phase === "finished")
     .sort((a, b) => (a.finishedAt ?? a.createdAt) - (b.finishedAt ?? b.createdAt))[0];
-  if (completed) evictMatch(completed);
+  const reclaimable = emptyWaiting ?? completed;
+  if (reclaimable) evictMatch(reclaimable);
 }
 
 function send(socket: WebSocket, message: WarServerMessage): void {
@@ -463,8 +469,12 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     if (!validOnlineWarSettings(message.settings)) {
       return send(socket, { type: "error", message: "Match settings are outside the allowed range" });
     }
-    releaseCompletedRoomForCapacity();
+    if (roomCreatedBySocket.has(socket)) {
+      return send(socket, { type: "error", message: "This connection has already created a match" });
+    }
+    releaseRoomForCapacity();
     if (matches.size >= MAX_MATCHES) return send(socket, { type: "error", message: "The server is at match capacity" });
+    roomCreatedBySocket.add(socket);
     if (!message.randomOpponent) {
       leaveMatch(socket);
       const { match, token } = createWaitingMatch(socket, name, message.settings);

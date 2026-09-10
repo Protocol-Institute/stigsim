@@ -362,3 +362,77 @@ test("a random-opponent game seats its creator and starts immediately", async t 
   assert.equal((running.snapshot as { colonies: Array<{ doctrine: unknown }> }).colonies.length, 2);
   assert.equal(player.messages.slice(start).some(message => message.type === "error"), false);
 });
+
+test("one connection cannot accumulate waiting rooms", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}/api/war/ws`;
+  const attacker = await connect(url);
+  const legitimate = await connect(url);
+  t.after(async () => {
+    attacker.ws.close();
+    legitimate.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const firstStart = attacker.messages.length;
+  attacker.ws.send(JSON.stringify({ type: "create-room", playerName: "Attacker", settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+  await attacker.waitFor(message => message.type === "room-created", firstStart);
+
+  const repeatStart = attacker.messages.length;
+  for (let index = 0; index < 10; index++) {
+    attacker.ws.send(JSON.stringify({ type: "create-room", playerName: "Attacker", settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+  }
+  const rejected = await attacker.waitFor(message => message.type === "error", repeatStart);
+  assert.equal(rejected.message, "This connection has already created a match");
+  assert.equal(attacker.messages.slice(repeatStart).some(message => message.type === "room-created"), false);
+
+  const legitimateStart = legitimate.messages.length;
+  legitimate.ws.send(JSON.stringify({ type: "create-room", playerName: "Legitimate", settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+  const created = await legitimate.waitFor(message => message.type === "room-created", legitimateStart);
+  assert.equal(typeof created.matchId, "string");
+});
+
+test("capacity pressure reclaims an empty waiting room", { timeout: 20_000 }, async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}/api/war/ws`;
+  const clients: MessageInbox[] = [];
+  t.after(async () => {
+    for (const client of clients) client.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  for (let index = 0; index < 100; index++) {
+    const client = await connect(url);
+    clients.push(client);
+    const start = client.messages.length;
+    client.ws.send(JSON.stringify({ type: "create-room", playerName: `Player ${index}`, settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+    await client.waitFor(message => message.type === "room-created", start);
+    client.ws.close();
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  const legitimate = await connect(url);
+  clients.push(legitimate);
+  const start = legitimate.messages.length;
+  legitimate.ws.send(JSON.stringify({ type: "create-room", playerName: "Legitimate", settings: DEFAULT_ONLINE_WAR_SETTINGS }));
+  const created = await legitimate.waitFor(message => message.type === "room-created", start);
+  assert.equal(typeof created.matchId, "string");
+  assert.equal(legitimate.messages.slice(start).some(
+    message => message.type === "error" && message.message === "The server is at match capacity",
+  ), false);
+});
