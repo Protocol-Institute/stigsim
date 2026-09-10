@@ -378,7 +378,7 @@ test("a random-opponent game seats its creator and starts immediately", async t 
   player.ws.send(JSON.stringify({
     type: "create-room",
     playerName: "Alpha",
-    settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "random-match-test" },
+    settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "random-match-test", ignored: "client data" },
     randomOpponent: true,
   }));
   const joined = await player.waitFor(message => message.type === "joined", start);
@@ -389,6 +389,10 @@ test("a random-opponent game seats its creator and starts immediately", async t 
     start,
   );
   assert.equal((running.snapshot as { colonies: Array<{ doctrine: unknown }> }).colonies.length, 2);
+  assert.deepEqual((running.snapshot as { settings: unknown }).settings, {
+    ...DEFAULT_ONLINE_WAR_SETTINGS,
+    masterSeed: "random-match-test",
+  });
   assert.equal(player.messages.slice(start).some(message => message.type === "error"), false);
 
   const rejoinStart = player.messages.length;

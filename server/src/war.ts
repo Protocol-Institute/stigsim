@@ -109,6 +109,17 @@ function warDoctrine(value: SimParams): SimParams {
   };
 }
 
+function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
+  return {
+    masterSeed: value.masterSeed.trim() || generateMasterSeed(),
+    stepsPerSecond: value.stepsPerSecond,
+    startingAnts: value.startingAnts,
+    foodSources: value.foodSources,
+    foodPerSource: value.foodPerSource,
+    loopRate: value.loopRate,
+  };
+}
+
 function makeWar(settings: OnlineWarSettings, doctrines?: SimParams[]): WarSimulation {
   return new WarSimulation({
     masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
@@ -130,7 +141,7 @@ export function randomOpponentDoctrine(masterSeed: string): SimParams {
 }
 
 function createMatch(settings: OnlineWarSettings): WarMatch {
-  const normalized = { ...settings, masterSeed: settings.masterSeed.trim() || generateMasterSeed() };
+  const normalized = onlineWarSettings(settings);
   const match: WarMatch = {
     id: roomCode(),
     settings: normalized,
