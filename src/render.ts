@@ -1,4 +1,4 @@
-import { COLS, ROWS, CELL, W, H, NEST_SEED, cellCenter, DenseField } from "@stigsim/sim-core";
+import { COLS, ROWS, CELL, W, H, cellCenter, DenseField } from "@stigsim/sim-core";
 import type { Colony, Simulation } from "@stigsim/sim-core";
 
 /**
@@ -12,11 +12,7 @@ import type { Colony, Simulation } from "@stigsim/sim-core";
  */
 function layersOf(colony: Colony) {
   const field = colony.field as DenseField;
-  return {
-    home: field.layer("home"),
-    food: field.layer("food"),
-    caut: field.layer("caut"),
-  };
+  return { home: field.layer("home"), food: field.layer("food") };
 }
 
 // ─── One-ant view: half-size of the source window in pixels ─────────────────
@@ -33,11 +29,6 @@ export const COLONY_COLORS = [
 export type ViewMode = "all" | "one";
 export type EditMode = "none" | "wall" | "food";
 
-export interface RenderOverrides {
-  showCautionaryForColony?: (colony: Colony) => boolean;
-  antOpacity?: (ant: Colony["ants"][number], colony: Colony) => number;
-}
-
 export function render(
   ctx: CanvasRenderingContext2D,
   sim: Simulation,
@@ -45,7 +36,6 @@ export function render(
   watchedAntIdx: number = 0,
   editMode: EditMode = "none",
   hoverCell: { x: number; y: number } | null = null,
-  overrides: RenderOverrides = {},
 ) {
   const allAnts = sim.allAnts;
   const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
@@ -65,20 +55,16 @@ export function render(
   }
 
   // Compute per-colony phero maxima for normalization
+  const TRAIL_FLOOR = 100;
   const layers = sim.colonies.map(layersOf);
   const maxH = layers.map(l => {
-    let m = NEST_SEED;
+    let m = TRAIL_FLOOR;
     for (let i = 0; i < l.home.length; i++) if (l.home[i] > m) m = l.home[i];
     return m;
   });
   const maxF = layers.map(l => {
-    let m = NEST_SEED;
+    let m = TRAIL_FLOOR;
     for (let i = 0; i < l.food.length; i++) if (l.food[i] > m) m = l.food[i];
-    return m;
-  });
-  const maxCH = layers.map(l => {
-    let m = 1;
-    for (let i = 0; i < l.caut.length; i++) if (l.caut[i] > m) m = l.caut[i];
     return m;
   });
 
@@ -116,19 +102,34 @@ export function render(
           ctx.fillStyle = `rgba(${colors.foodRGB},${alpha.toFixed(3)})`;
           ctx.fillRect(px, py, CELL, CELL);
         }
-        const showCautionary = overrides.showCautionaryForColony?.(sim.colonies[ci])
-          ?? sim.params.cautionary;
-        if (showCautionary) {
-          const ci2 = layer.caut[idx];
-          if (ci2 > 0.5) {
-            const alpha = Math.min(0.45, (ci2 / maxCH[ci]) * 0.45);
-            ctx.fillStyle = `rgba(220,60,40,${alpha.toFixed(3)})`;
-            ctx.fillRect(px, py, CELL, CELL);
-          }
+      }
+    }
+  }
+
+  // What other colonies laid into each colony, in the spoiler's colour and
+  // inset so it reads as a mark on the trail rather than the trail itself.
+  // Players' ants see their own chemical; this is the spectator's view.
+  const INSET = 4;
+  for (const target of sim.colonies) {
+    for (const [from, sub] of target.received) {
+      const dense = sub as DenseField;
+      const food = dense.layer("food");
+      const home = dense.layer("home");
+      const rgb = COLONY_COLORS[from].primary;
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const idx = y * COLS + x;
+          const v = food[idx] + home[idx];
+          if (v <= 0.5) continue;
+          const alpha = Math.min(0.9, 0.3 + v / 100);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = rgb;
+          ctx.fillRect(x * CELL + INSET, y * CELL + INSET, CELL - 2 * INSET, CELL - 2 * INSET);
         }
       }
     }
   }
+  ctx.globalAlpha = 1;
 
   // Draw nests
   ctx.font = `${CELL - 4}px serif`;
@@ -173,16 +174,20 @@ export function render(
       const flatIdx = sim.colonies.slice(0, colony.id).reduce((s, c) => s + c.ants.length, 0) + i;
       const isWatched = viewMode === "one" && flatIdx === safeIdx;
 
-      const defaultOpacity = 0.25 + 0.75 * Math.min(1, ant.tank / sim.params.tankMax);
-      ctx.globalAlpha = Math.max(0, Math.min(1,
-        overrides.antOpacity?.(ant, colony) ?? defaultOpacity
-      ));
+      const tankFrac = Math.min(1, ant.tank / sim.params.tankMax);
+      ctx.globalAlpha = 0.25 + 0.75 * tankFrac;
 
       const r = ant.hasFood ? 4.5 : 3.5;
       ctx.beginPath();
       ctx.arc(ant.x, ant.y, r, 0, Math.PI * 2);
       ctx.fillStyle = ant.hasFood ? "#facc15" : colColor;
       ctx.fill();
+
+      if (ant.role === "spoiler") {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+      }
 
       // Direction dot
       const { px: tpx, py: tpy } = cellCenter(ant.tx, ant.ty);

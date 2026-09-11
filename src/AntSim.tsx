@@ -1,11 +1,12 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import {
   Simulation,
-  COLS, ROWS, CELL, W, H, V, DEPOSIT_RATE, DEFAULT_NUM_ANTS,
+  COLS, ROWS, CELL, W, H, DEPOSIT_RATE, DEPOSITS_PER_CELL, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
-  DEFAULT_FOOD_PER_SOURCE, makeSeeds, generateMasterSeed,
+  DEFAULT_FOOD_PER_SOURCE, DEFAULT_DOCTRINE, MAX_COLONIES,
+  cloneDoctrine, makeSeeds, generateMasterSeed,
 } from "@stigsim/sim-core";
-import type { SimParams, Command } from "@stigsim/sim-core";
+import type { Command, Doctrine } from "@stigsim/sim-core";
 import {
   MetricsRecorder, metricsToCsv, RATE_WINDOW_TICKS,
   buildTrace, serializeTrace, traceFilename,
@@ -14,49 +15,10 @@ import {
 import type { MetricsSample } from "@stigsim/sim-trace";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
-
-// ─── Param card ──────────────────────────────────────────────────────────────
-function ParamCard({
-  label, description, value, displayValue, min, max, step, onChange, onPointerUp, disabled,
-}: {
-  label: string;
-  description: string;
-  value: number;
-  displayValue: string;
-  min: number; max: number; step: number;
-  onChange: (v: number) => void;
-  onPointerUp?: (v: number) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div style={{
-      background: "#0f0a04",
-      border: "1px solid #3d2e18",
-      borderRadius: 10,
-      padding: "14px 16px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 8,
-      flex: "1 1 270px",
-      minWidth: 0,
-      opacity: disabled ? 0.4 : 1,
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>{label}</span>
-        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>{displayValue}</span>
-      </div>
-      <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>{description}</p>
-      <input
-        type="range"
-        min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        onPointerUp={onPointerUp ? e => onPointerUp(Number((e.target as HTMLInputElement).value)) : undefined}
-        disabled={disabled}
-        style={{ width: "100%", accentColor: "#f59e0b", cursor: disabled ? "not-allowed" : "pointer", margin: "2px 0" }}
-      />
-    </div>
-  );
-}
+import { ParamCard } from "./ParamCard";
+import { DoctrinePanel } from "./DoctrinePanel";
+import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "./topology-choices";
+import type { TopologyChoice } from "./topology-choices";
 
 // ─── Simple control row ───────────────────────────────────────────────────────
 function ControlCard({
@@ -183,7 +145,16 @@ export default function AntSim() {
   const [latestFingerprint, setLatestFingerprint] = useState<{ t: number; h: string } | null>(null);
   const [framesPerTick, setFramesPerTick] = useState(4);
   const [numAnts, setNumAnts] = useState(DEFAULT_NUM_ANTS);
-  const [params, setParams] = useState<SimParams>(DEFAULT_PARAMS);
+  const [tankMax, setTankMax] = useState(DEFAULT_PARAMS.tankMax);
+  const [tankDraft, setTankDraft] = useState(DEFAULT_PARAMS.tankMax);
+  const [doctrines, setDoctrines] = useState<Doctrine[]>(
+    () => Array.from({ length: MAX_COLONIES }, () => cloneDoctrine(DEFAULT_DOCTRINE)),
+  );
+  const [selectedColony, setSelectedColony] = useState(0);
+  const [topologyChoice, setTopologyChoice] = useState<TopologyChoice>(TOPOLOGY_CHOICES[0]);
+  const topologyRef = useRef(topologyChoice);
+  topologyRef.current = topologyChoice;
+  const [adopted, setAdopted] = useState<number[]>([1]);
   const [canvasScale, setCanvasScale] = useState(1);
   const [watchedAntIdx, setWatchedAntIdx] = useState(0);
   const [manualControl, setManualControl] = useState(false);
@@ -206,8 +177,10 @@ export default function AntSim() {
 
   const viewMode: ViewMode = manualControl ? "one" : "all";
 
-  const paramsRef = useRef(params);
-  paramsRef.current = params;
+  const tankMaxRef = useRef(tankMax);
+  tankMaxRef.current = tankMax;
+  const doctrinesRef = useRef(doctrines);
+  doctrinesRef.current = doctrines;
   const framesPerTickRef = useRef(framesPerTick);
   framesPerTickRef.current = framesPerTick;
   const numAntsRef = useRef(numAnts);
@@ -250,6 +223,10 @@ export default function AntSim() {
     if (!r) return;
 
     setColonyScores(r.sim.colonies.map(c => c.foodCollected));
+    setDoctrines(prev => prev.map((d, i) => (r.sim.colonies[i] ? cloneDoctrine(r.sim.colonies[i].doctrine) : d)));
+    setAdopted(r.sim.colonies.map(c => c.ants.length === 0 ? 1
+      : c.ants.filter(a => a.doctrineVersion === c.doctrineVersion).length / c.ants.length));
+    setTopologyChoice(choiceFor(r.sim.topology));
     setLatestFingerprint(r.sim.fingerprints[r.sim.fingerprints.length - 1] ?? null);
 
     // The metrics recorder only runs for the live simulation, so the rate
@@ -297,28 +274,20 @@ export default function AntSim() {
     if (replayRef.current) return;
     const sim = simRef.current;
     if (!sim) return;
-    sim.enqueue(cmd);
+    if (!sim.enqueue(cmd)) {
+      setTraceMessage("That change was refused: a value was outside the range the simulation accepts.");
+      return;
+    }
     if (!runningRef.current) {
       sim.flushPending();
       forceRender();
     }
   }, [forceRender]);
 
-  useEffect(() => {
-    send({ kind: "setParam", key: "evapRate", value: params.evapRate });
-  }, [params.evapRate, send]);
-
-  useEffect(() => {
-    send({ kind: "setParam", key: "trailPower", value: params.trailPower });
-  }, [params.trailPower, send]);
-
-  useEffect(() => {
-    send({ kind: "setParam", key: "tankMax", value: params.tankMax });
-  }, [params.tankMax, send]);
-
-  useEffect(() => {
-    send({ kind: "setCautionary", value: params.cautionary });
-  }, [params.cautionary, send]);
+  const commitDoctrine = useCallback((colony: number, doctrine: Doctrine) => {
+    setDoctrines(prev => prev.map((d, i) => (i === colony ? doctrine : d)));
+    send({ kind: "setDoctrine", colony, doctrine });
+  }, [send]);
 
   useEffect(() => {
     send({ kind: "setAntCount", n: numAnts });
@@ -443,23 +412,27 @@ export default function AntSim() {
     forceRender();
   }, [forceRender]);
 
-  const updateParam = <K extends keyof SimParams>(key: K, value: SimParams[K]) => {
-    setParams(p => ({ ...p, [key]: value }));
-  };
-
   const initSim = useCallback(() => {
     const master = seedInputRef.current.trim() || generateMasterSeed();
     setActiveSeed(master);
-    simRef.current = new Simulation({
+    const sim = new Simulation({
       seeds: makeSeeds(master),
       numAnts: numAntsRef.current,
-      params: paramsRef.current,
+      params: { ...DEFAULT_PARAMS, tankMax: tankMaxRef.current },
       loopRate: loopRateRef.current,
       numColonies: numColoniesRef.current,
       numFoodSources: numFoodSourcesRef.current,
       foodPerSource: foodPerSourceRef.current,
     });
-    setColonyScores(simRef.current.colonies.map(() => 0));
+    // The run's settings travel as commands, applied before the first
+    // physics step and recorded at tick 1, so a trace carries them.
+    sim.enqueue({ kind: "setAdoption", mode: "instant" });
+    sim.enqueue({ kind: "setTopology", topology: topologyRef.current.topology });
+    sim.colonies.forEach((_, i) => sim.enqueue({ kind: "setDoctrine", colony: i, doctrine: doctrinesRef.current[i] }));
+    sim.flushPending();
+    simRef.current = sim;
+    setAdopted(sim.colonies.map(() => 1));
+    setColonyScores(sim.colonies.map(() => 0));
     setFoodRate(0);
     setLatestFingerprint(null);
     metricsRef.current.reset();
@@ -497,7 +470,7 @@ export default function AntSim() {
     // above.
     const cfg = result.trace.run.config;
     setNumAnts(cfg.numAnts);
-    setParams(cfg.params);
+    setTankMax(cfg.params.tankMax); setTankDraft(cfg.params.tankMax);
     setLoopRate(cfg.loopRate);
     setNumColonies(cfg.numColonies);
     setNumFoodSources(cfg.numFoodSources);
@@ -534,7 +507,7 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource]);
+  }, [loopRate, numColonies, numFoodSources, foodPerSource, tankMax, topologyChoice]);
 
   useEffect(() => {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
@@ -558,6 +531,8 @@ export default function AntSim() {
           sim.step();
           metricsRef.current.maybeSample(sim);
           setColonyScores(sim.colonies.map(c => c.foodCollected));
+          setAdopted(sim.colonies.map(c => c.ants.length === 0 ? 1
+            : c.ants.filter(a => a.doctrineVersion === c.doctrineVersion).length / c.ants.length));
           const fp = sim.fingerprints[sim.fingerprints.length - 1];
           if (fp) setLatestFingerprint(fp);
           const latest = metricsRef.current.samples[metricsRef.current.samples.length - 1];
@@ -596,7 +571,9 @@ export default function AntSim() {
 
   const stepsPerSec = Math.round(60 / framesPerTick);
   const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
-  const tankCells = Math.round(params.tankMax / (DEPOSIT_RATE * (CELL / V)));
+  const tankCells = Math.round(tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL));
+  const colonyIdx = Math.min(selectedColony, numColonies - 1);
+  const spoilerIdx = doctrines.slice(0, numColonies).findIndex(d => d.spoilerFraction > 0);
   const loopPct = Math.round(loopRate * 100);
   const loopLabel = loopRate === 0 ? "None (tree)" : loopRate < 0.05 ? "Very few" : loopRate < 0.15 ? "Some" : loopRate < 0.3 ? "Many" : "Lots";
 
@@ -781,7 +758,6 @@ export default function AntSim() {
             {[
               { color: `rgba(${COLONY_COLORS[0].homeRGB},0.85)`, label: "Home trail" },
               { color: `rgba(${COLONY_COLORS[0].foodRGB},0.85)`, label: "Food trail" },
-              ...(params.cautionary ? [{ color: "rgba(220,60,40,0.85)", label: "Cautionary" }] : []),
               { color: COLONY_COLORS[0].primary, label: "Searching" },
               { color: "#facc15", label: "Carrying" },
             ].map(item => (
@@ -807,10 +783,18 @@ export default function AntSim() {
               <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#facc15", flexShrink: 0 }} />
               <span>Carrying food</span>
             </div>
-            {params.cautionary && (
+            {spoilerIdx >= 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", opacity: 0.7 }}>
-                <div style={{ width: 9, height: 9, borderRadius: "50%", background: "rgba(220,60,40,0.85)", flexShrink: 0 }} />
-                <span>Cautionary</span>
+                <div style={{ width: 9, height: 9, borderRadius: "50%", background: "transparent", border: "1.5px solid #fff", flexShrink: 0 }} />
+                <span>Spoiler</span>
+              </div>
+            )}
+            {topologyChoice.topology.provenance && spoilerIdx >= 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", opacity: 0.7 }}>
+                <div style={{ width: 12, height: 12, borderRadius: 2, background: "#2a1e0e", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 5, height: 5, background: COLONY_COLORS[spoilerIdx].primary }} />
+                </div>
+                <span>False trail (in the spoiler's colour)</span>
               </div>
             )}
           </>
@@ -985,6 +969,40 @@ export default function AntSim() {
             style={{ flex: "1 1 270px" }}
             disabled={replaying}
           />
+
+          <div style={{
+            background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 10, padding: "14px 16px",
+            display: "flex", flexDirection: "column", gap: 8, flex: "1 1 270px", minWidth: 0,
+            opacity: replaying ? 0.4 : 1,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Field topology</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b" }}>{topologyChoice.label}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
+              {topologyChoice.description} <strong style={{ color: "#e5d5b5" }}>Changing this restarts the simulation.</strong>
+            </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {TOPOLOGY_CHOICES.map(c => (
+                <button
+                  key={c.name}
+                  onClick={() => {
+                    setDoctrines(prev => prev.map(d => conformDoctrine(d, c.topology)));
+                    setTopologyChoice(c);
+                  }}
+                  disabled={replaying || numColonies < 2}
+                  style={{
+                    padding: "5px 10px", borderRadius: 8, fontSize: "0.72rem", cursor: replaying ? "not-allowed" : "pointer",
+                    border: "1px solid #3d2e18",
+                    background: c.name === topologyChoice.name ? "#f59e0b" : "#1a1208",
+                    color: c.name === topologyChoice.name ? "#000" : "#e5d5b5",
+                  }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
         </div>
 
@@ -1199,86 +1217,34 @@ export default function AntSim() {
         </div>
       </div>
 
+      {/* ── Doctrine ──────────────────────────────────────────────────────────── */}
+      <DoctrinePanel
+        numColonies={numColonies}
+        selected={colonyIdx}
+        onSelect={setSelectedColony}
+        doctrine={doctrines[colonyIdx]}
+        adopted={adopted[colonyIdx] ?? 1}
+        topology={topologyChoice.topology}
+        disabled={replaying}
+        onCommit={commitDoctrine}
+      />
+
       {/* ── Ant settings ───────────────────────────────────────────────────────── */}
       <div style={{ width: "100%", maxWidth: 600 }}>
         <p style={{ margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
           Ant settings
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
-
-          <ParamCard
-            label="Evaporation rate"
-            description="How quickly pheromone trails fade away. Higher = trails vanish faster, forcing re-exploration. Lower = old paths persist, ants stay focused on established routes."
-            value={params.evapRate}
-            displayValue={`${(params.evapRate * 1000).toFixed(0)}‰ / step`}
-            min={0.001} max={0.02} step={0.001}
-            onChange={v => updateParam("evapRate", v)}
-            disabled={replaying}
-          />
-
-          <ParamCard
-            label="Trail bias"
-            description="How strongly ants prefer stronger trails. Power 1 = nearly random exploration. Power 10 = ants almost always follow the most-travelled path."
-            value={params.trailPower}
-            displayValue={`power ${params.trailPower}`}
-            min={1} max={10} step={0.5}
-            onChange={v => updateParam("trailPower", v)}
-            disabled={replaying}
-          />
-
           <ParamCard
             label="Gland size"
-            description="How much pheromone each ant can carry. Larger glands mark longer paths before running dry. Smaller glands mean only short routes get reinforced."
-            value={params.tankMax}
+            description="How much pheromone each ant carries. Fixed for the run and the same for every colony; releasing the slider restarts the simulation."
+            value={tankDraft}
             displayValue={`~${tankCells} cells`}
             min={1600} max={16000} step={800}
-            onChange={v => updateParam("tankMax", v)}
+            onChange={setTankDraft}
+            onPointerUp={setTankMax}
             disabled={replaying}
           />
-
-          {/* Cautionary pheromone toggle */}
-          <div style={{
-            background: "#0f0a04",
-            border: "1px solid #3d2e18",
-            borderRadius: 10,
-            padding: "14px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            flex: "1 1 270px",
-            minWidth: 0,
-            opacity: replaying ? 0.4 : 1,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Cautionary</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>
-                {params.cautionary ? "on" : "off"}
-              </span>
-            </div>
-            <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-              Ants whose gland runs dry mark those cells red. Others avoid them, pruning routes too long to sustain.
-            </p>
-            <div style={{ display: "flex", background: "#1a1208", border: "1px solid #3d2e18", borderRadius: 8, padding: 3, gap: 3 }}>
-              {([false, true] as const).map(val => (
-                <button
-                  key={String(val)}
-                  onClick={() => { updateParam("cautionary", val); }}
-                  disabled={replaying}
-                  style={{
-                    flex: 1, padding: "7px 0", border: "none", borderRadius: 7,
-                    cursor: replaying ? "not-allowed" : "pointer",
-                    fontWeight: 600, fontSize: "0.78rem", transition: "background 0.15s, color 0.15s",
-                    letterSpacing: "0.02em",
-                    background: params.cautionary === val ? "#f59e0b" : "transparent",
-                    color: params.cautionary === val ? "#000" : "#a08060",
-                  }}
-                >
-                  {val ? "On" : "Off"}
-                </button>
-              ))}
-            </div>
-          </div>
-
         </div>
       </div>
 
