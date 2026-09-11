@@ -78,27 +78,6 @@ test("spawnAnt adds one ant to only the requested colony", () => {
   assert.equal(sim.spawnAnt(99), null);
 });
 
-test("mode policies can resolve doctrine per ant without changing defaults", () => {
-  let paramsResolved = 0;
-  let evaporationResolved = 0;
-  const sim = new Simulation(config({ numAnts: 1 }), {
-    policy: {
-      paramsForAnt: (_ant, _colony, defaults) => {
-        paramsResolved++;
-        return { ...defaults, trailPower: 1 };
-      },
-      evapRateForColony: (_colony, defaultRate) => {
-        evaporationResolved++;
-        return defaultRate;
-      },
-    },
-  });
-  sim.step();
-  assert.equal(paramsResolved, 1);
-  assert.equal(evaporationResolved, 1);
-  assert.deepEqual(sim.params, DEFAULT_PARAMS);
-});
-
 test("a foodless returning ant neither lays a food trail nor records a delivery", () => {
   const sim = new Simulation(config({ numAnts: 1 }));
   const colony = sim.colonies[0];

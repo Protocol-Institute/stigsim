@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CELL, DEFAULT_PARAMS, fingerprint, type Ant, type Colony } from "@stigsim/sim-core";
+import {
+  CELL, DEFAULT_DOCTRINE, DEFAULT_PARAMS, TOPOLOGY_MIMICRY,
+  cloneDoctrine, fingerprint, type Ant, type Colony,
+} from "@stigsim/sim-core";
 import { WarSimulation } from "./war-simulation";
 
 function forceAtNest(ant: Ant, colony: Colony) {
@@ -12,6 +15,21 @@ function forceAtNest(ant: Ant, colony: Colony) {
   ant.y = colony.nestY * CELL + CELL / 2;
   ant.state = "returning";
 }
+
+test("a War match starts with its selected topology and full per-colony doctrines", () => {
+  const saboteur = cloneDoctrine(DEFAULT_DOCTRINE);
+  saboteur.spoilerFraction = 0.25;
+  saboteur.mimicRate = 0.5;
+  const war = new WarSimulation(
+    { masterSeed: "full-doctrine", startingAnts: 8, topology: TOPOLOGY_MIMICRY },
+    [saboteur, DEFAULT_DOCTRINE],
+  );
+
+  assert.deepEqual(war.simulation.topology, TOPOLOGY_MIMICRY);
+  assert.equal(war.getFullDoctrine(0).spoilerFraction, 0.25);
+  assert.equal(war.simulation.colonies[0].ants.filter(ant => ant.role === "spoiler").length, 2);
+  assert.ok(war.simulation.colonies[1].ants.every(ant => ant.role === "forager"));
+});
 
 test("doctrine changes wait until an ant returns to its nest", () => {
   const war = new WarSimulation(

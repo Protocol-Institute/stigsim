@@ -7,7 +7,7 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { Simulation, DEFAULT_PARAMS, makeSeeds } from "@stigsim/sim-core";
+import { Simulation, DEFAULT_PARAMS, DEFAULT_DOCTRINE, cloneDoctrine, makeSeeds } from "@stigsim/sim-core";
 import { MetricsRecorder, buildTrace, serializeTrace } from "../index";
 
 const sim = new Simulation({
@@ -23,17 +23,23 @@ const rec = new MetricsRecorder();
 
 const advance = (n: number) => { for (let i = 0; i < n; i++) { sim.step(); rec.maybeSample(sim); } };
 
+const highway = cloneDoctrine(DEFAULT_DOCTRINE);
+highway.forager.follow.searching.food.own = 7;
+highway.forager.follow.returning.home.own = 7;
+const volatile = cloneDoctrine(DEFAULT_DOCTRINE);
+volatile.evapRate = 0.01;
+
 advance(600);
 sim.enqueue({ kind: "setWall", x: 15, y: 15, open: false });
 advance(400);
-sim.enqueue({ kind: "setParam", key: "trailPower", value: 7 });
-sim.enqueue({ kind: "setCautionary", value: true });
+sim.enqueue({ kind: "setDoctrine", colony: 0, doctrine: highway });
+sim.enqueue({ kind: "setAdoption", mode: "nest" });
 advance(400);
 // A paused edit: flushPending applies immediately instead of waiting for the
 // next step(), exercising the tick+1 recording path a live pause uses. Every
 // other edit here goes through enqueue, which never touched this path — the
 // exact gap that let the C1 replay-off-by-one bug through seven reviews.
-sim.enqueue({ kind: "setParam", key: "evapRate", value: 0.01 });
+sim.enqueue({ kind: "setDoctrine", colony: 1, doctrine: volatile });
 sim.flushPending();
 advance(200);
 sim.enqueue({ kind: "setAntCount", n: 40 });

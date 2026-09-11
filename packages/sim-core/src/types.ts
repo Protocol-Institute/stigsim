@@ -1,3 +1,7 @@
+import type { AdoptionMode, Doctrine, Role } from "./doctrine";
+import type { Topology } from "./topology";
+
+/** What is fixed at construction and the same for every colony. Live behaviour lives in each colony's Doctrine. */
 export interface SimParams {
   evapRate: number;
   trailPower: number;
@@ -100,8 +104,12 @@ export interface SimulationOptions {
    * nothing moves.
    */
   world?: WorldSpec;
-  /** Mode-specific parameter policy. Omitted by the ordinary simulator. */
-  policy?: SimulationPolicy;
+  /** Initial per-colony doctrines; omitted colonies use the default doctrine. */
+  doctrines?: readonly Doctrine[];
+  /** Initial field topology. */
+  topology?: Topology;
+  /** How later doctrine changes reach ants. */
+  adoption?: AdoptionMode;
 }
 
 export interface FoodSource {
@@ -121,6 +129,21 @@ export interface Colony {
   discoveredSources: Set<number>;
   /** A trailing window of completed round trips, newest last. */
   recentTrips: { steps: number; sx: number; sy: number }[];
+  /** The doctrine new arrivals adopt. Colony-level atoms take effect from here. */
+  doctrine: Doctrine;
+  /** Monotonic; incremented by every setDoctrine. */
+  doctrineVersion: number;
+  /** Every version some ant still holds, plus the current one. */
+  doctrines: Map<number, Doctrine>;
+  /** Ants holding each version. A version with no holders that is not current is dropped. */
+  doctrineRefs: Map<number, number>;
+  /**
+   * What each other colony laid into this one, by that colony's id, kept only
+   * when the topology asks for provenance. Spectator and metrics data; ants
+   * never read it, so it is not fingerprinted: it is derived from deposits
+   * the real layer already carries.
+   */
+  received: Map<number, FieldSet>;
 }
 
 export interface Ant {
@@ -132,6 +155,9 @@ export interface Ant {
   hasFood: boolean;
   tank: number;
   colonyId: number;
+  role: Role;
+  /** Which of the colony's doctrines this ant runs. Re-stamped at the nest event. */
+  doctrineVersion: number;
   manual?: boolean;
   /** Cells traversed since the ant last left the nest. Observation only. */
   stepsSinceNest: number;
@@ -156,14 +182,4 @@ export interface RunConfig {
   numColonies: number;
   numFoodSources: number;
   foodPerSource: number;
-}
-
-/**
- * Optional policies for modes which share the core physics but vary a
- * colony's live parameters. The ordinary simulator omits this policy and
- * retains its existing single-doctrine behaviour.
- */
-export interface SimulationPolicy {
-  paramsForAnt?: (ant: Ant, colony: Colony, defaults: SimParams) => SimParams;
-  evapRateForColony?: (colony: Colony, defaultRate: number) => number;
 }

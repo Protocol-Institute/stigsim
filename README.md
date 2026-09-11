@@ -48,10 +48,23 @@ and your experiment is not visible to anyone else.
 You can:
 
 - Adjust maze loops and food sources
-- Tune colony size, simulation speed, evaporation, trail bias, and gland size
-- Enable cautionary pheromones that discourage unsustainable routes
+- Give each colony a doctrine: pick a preset or move its sliders — trail bias,
+  evaporation, and, when the topology allows, the share of ants that act as
+  spoilers, how strongly they mimic the other colony's chemical, and how the
+  colony treats the other colony's trails
+- Choose the field topology for a run: private trails, sensing the other
+  colony's trails, mimicry, or one open food trail
+- Set colony size and gland size for the run
 - Edit walls and food sources while the simulation is running
 - Observe whole colonies or control an individual ant
+
+A doctrine is a small table of numbers per colony: how strongly ants of each
+role follow each pheromone from each origin, and how much they lay. Today's
+model is one point in that table, and the presets are a handful of others.
+Every change is recorded in the run's trace, so a replay shows the same
+colony reacting to the same doctrine at the same tick. Nest and food are
+smells computed at read time rather than pheromone written into the field, so
+the trails contain only what ants laid.
 
 Every run is reproducible from a seed. The Run panel shows the current run's
 seed, lets you generate a new one, and saves a trace file that captures the
@@ -93,6 +106,11 @@ War Mode is a bounded two-colony survival match powered by the shared
 simulation core. It can run locally in one browser or authoritatively on the
 server. The server owns the clock, validates doctrine changes, and persists
 compact completed-match results. Replay checkpoints and playback are deferred.
+
+The experimental local match setup also exposes the four field topologies and
+Patrick's full doctrine presets and controls. Doctrine changes are adopted when
+ants return to their nest. War tracing remains deliberately deferred; the goal
+of this branch is to make disruption, mimicry, and poaching directly playable.
 
 ## How the shared world works
 
