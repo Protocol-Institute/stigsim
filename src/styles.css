@@ -868,11 +868,18 @@ textarea {
 
 .war-setting--topology {
   grid-column: 1 / -1;
-  gap: 8px;
+  display: grid;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.war-setting--topology > span {
+  margin-bottom: 0;
 }
 
 .war-setting--topology p {
   margin: 0;
+  max-width: 72ch;
   color: #927e5f;
   font-size: .72rem;
   line-height: 1.45;
@@ -880,12 +887,13 @@ textarea {
 
 .war-topology-options {
   display: flex;
-  gap: 6px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .war-topology-options button {
-  padding: 6px 11px;
+  min-width: 92px;
+  padding: 8px 14px;
   border: 1px solid #3d2e18;
   border-radius: 8px;
   color: #cdbb9d;
