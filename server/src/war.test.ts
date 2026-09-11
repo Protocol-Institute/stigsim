@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DenseField } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
+import { DEFAULT_WAR_DOCTRINE } from "../../shared/war-doctrine";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
 import { completedWarRecord, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
 
@@ -13,9 +14,10 @@ test("online match settings enforce bounded server workloads", () => {
 });
 
 test("online doctrine validation matches the controls exposed to players", () => {
-  assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.5, tankMax: 8_000, cautionary: true }), true);
-  assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.25, tankMax: 8_000, cautionary: true }), false);
-  assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.5, tankMax: 8_001, cautionary: true }), false);
+  assert.equal(validWarDoctrine({ ...DEFAULT_WAR_DOCTRINE, trailPower: 2.5, tankMax: 8_000, cautionary: true }), true);
+  assert.equal(validWarDoctrine({ ...DEFAULT_WAR_DOCTRINE, trailPower: 2.25, tankMax: 8_000, cautionary: true }), false);
+  assert.equal(validWarDoctrine({ ...DEFAULT_WAR_DOCTRINE, trailPower: 2.5, tankMax: 8_001, cautionary: true }), false);
+  assert.equal(validWarDoctrine({ ...DEFAULT_WAR_DOCTRINE, spoilerFraction: 0.53 }), false);
 });
 
 test("random-opponent doctrine is deterministic from the match seed", () => {
@@ -45,6 +47,8 @@ test("wire snapshots contain the shared WarSimulation state", () => {
   assert.equal(snapshot.grid.length > 0, true);
   assert.equal(snapshot.colonies[0].homePhero.length, snapshot.grid.length * snapshot.grid[0].length);
   assert.equal(snapshot.colonies[0].ants.length, 2);
+  assert.equal(snapshot.colonies[0].mimicPhero.length, snapshot.colonies[0].foodPhero.length);
+  assert.equal(snapshot.colonies[0].ants[0].role, "forager");
 });
 
 test("wire snapshots round pheromones without changing simulation precision", () => {

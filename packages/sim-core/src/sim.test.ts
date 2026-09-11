@@ -99,6 +99,31 @@ test("mode policies can resolve doctrine per ant without changing defaults", () 
   assert.deepEqual(sim.params, DEFAULT_PARAMS);
 });
 
+test("mode policies can redirect navigation reads and deposits", () => {
+  const redirected = new DenseField(COLS, ROWS);
+  let navigationResolved = 0;
+  const sim = new Simulation(config({ numAnts: 1 }), {
+    policy: {
+      navigationForAnt: (_ant, _colony, defaults) => {
+        navigationResolved++;
+        return defaults;
+      },
+      depositForAnt: (ant, _colony, defaults) => {
+        const spent = defaults.amount / 2;
+        redirected.add(defaults.channel, ant.cx, ant.cy, spent);
+        return spent;
+      },
+    },
+  });
+  const colony = sim.colonies[0];
+  const ant = colony.ants[0];
+  sim.step();
+  assert.equal(navigationResolved, 1);
+  sim.step();
+  assert.equal(redirected.get("home", colony.nestX, colony.nestY), DEPOSIT_RATE / 2);
+  assert.equal(ant.tank, DEFAULT_PARAMS.tankMax - DEPOSIT_RATE / 2);
+});
+
 test("a foodless returning ant neither lays a food trail nor records a delivery", () => {
   const sim = new Simulation(config({ numAnts: 1 }));
   const colony = sim.colonies[0];

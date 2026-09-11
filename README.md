@@ -94,6 +94,13 @@ simulation core. It can run locally in one browser or authoritatively on the
 server. The server owns the clock, validates doctrine changes, and persists
 compact completed-match results. Replay checkpoints and playback are deferred.
 
+A colony may dedicate some ants to disruption. These spoiler ants follow the
+opposing colony's home trail and spend their finite pheromone supply laying a
+false food trail that the opponent cannot distinguish from its own. Spoilers
+are marked with white rings, while small colored insets reveal false-trail
+provenance to players and spectators. Allocating spoilers trades away ordinary
+foragers, and doctrine changes remain nest-gated like the other War controls.
+
 ## How the shared world works
 
 The website is a static React/Vite application hosted on GitHub Pages. Infinite

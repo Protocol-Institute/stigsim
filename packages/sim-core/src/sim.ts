@@ -366,6 +366,9 @@ export class Simulation {
     this.tick++;
     this._runCommandsFor(this.tick);
 
+    // Decay every field before any ant moves. This is equivalent while fields
+    // are private, and avoids colony-order bias for policies that let an ant
+    // deposit into another colony's field.
     for (const colony of this.colonies) {
       const evapRate = this.policy.evapRateForColony?.(colony, this.params.evapRate) ?? this.params.evapRate;
       const decay = 1 - evapRate;
@@ -378,6 +381,8 @@ export class Simulation {
           colony.field.set("food", src.x, src.y, NEST_SEED);
         }
       }
+    }
+    for (const colony of this.colonies) {
       for (const ant of colony.ants) this._moveAnt(ant, colony);
     }
 
@@ -396,13 +401,20 @@ export class Simulation {
     if (dist > ARRIVE_THRESH) {
       // Deposit lands in the cell being left, not the one being approached.
       if (ant.tank > 0) {
-        const deposit = Math.min(ant.tank, DEPOSIT_RATE);
+        const proposed = Math.min(ant.tank, DEPOSIT_RATE);
+        let deposit = proposed;
         if (ant.state === "searching") {
-          colony.field.add("home", ant.cx, ant.cy, deposit);
+          deposit = this.policy.depositForAnt?.(ant, colony, {
+            field: colony.field, channel: "home", amount: proposed,
+          }) ?? proposed;
+          if (!this.policy.depositForAnt) colony.field.add("home", ant.cx, ant.cy, deposit);
         } else if (ant.hasFood) {
-          colony.field.add("food", ant.cx, ant.cy, deposit);
+          deposit = this.policy.depositForAnt?.(ant, colony, {
+            field: colony.field, channel: "food", amount: proposed,
+          }) ?? proposed;
+          if (!this.policy.depositForAnt) colony.field.add("food", ant.cx, ant.cy, deposit);
         }
-        ant.tank -= deposit;
+        ant.tank -= Math.max(0, Math.min(proposed, deposit));
       } else if (params.cautionary) {
         colony.field.add("caut", ant.cx, ant.cy, DEPOSIT_RATE);
       }
@@ -474,8 +486,12 @@ export class Simulation {
     if (candidates.length === 0) return;
 
     const ch: Channel = ant.state === "searching" ? "food" : "home";
+    const navigation = this.policy.navigationForAnt?.(ant, colony, {
+      field: colony.field,
+      channel: ch,
+    }) ?? { field: colony.field, channel: ch };
     const next = powerChoice(
-      candidates, colony.field, ch, trailPower, this.antsRng,
+      candidates, navigation.field, navigation.channel, trailPower, this.antsRng,
       params.cautionary ? "caut" : null, trailPower,
     );
 

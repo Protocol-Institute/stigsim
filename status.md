@@ -2,7 +2,7 @@
 
 ## Active
 
-- Integrate the shared `WarSimulation` as an authoritative Online War experience with create, join, spectate, reconnect, rematch, and compact completed-match history. Replay remains a follow-up.
+- Playtest the focused War disruption experiment: nest-gated spoiler allocation, enemy-home sensing, tank-limited false-food mimicry, and spectator-visible provenance. The broader doctrine/topology system explored in PR #13 remains a follow-up.
 - Point `stigsim.protocol-institute.org` (Cloudflare DNS) at GitHub Pages — repo side done, needs a CNAME DNS record added in Cloudflare.
 - Integrate and deploy Infinite Mode using one Railway simulation server and Neon Postgres.
 
@@ -13,6 +13,7 @@
 
 ## Done
 
+- **2026-09-09** — Integrated the shared `WarSimulation` as an authoritative Online War experience with create, join, spectate, reconnect, rematch, and compact completed-match history. Replay remains a follow-up. (PR #15)
 - **2026-09-07** — Ported local two-player War Mode onto `@stigsim/sim-core`, preserving its survival behavior in a separately tested mode layer. (PR #11)
 - **2026-08-27** — Made Maze Simulator runs reproducible from a seed: seeded PRNG streams, a command bus every mutation routes through, periodic state fingerprints, and a downloadable trace file that replays exactly with seek and divergence reporting. Added a Run panel (seed, save trace, load trace, replay bar, CSV export) and automated tests for core simulation behavior, including a golden-trace regression fixture (`pnpm golden`). Closes the "Add automated tests for core simulation behavior" item that was under Upcoming. (Patrick)
 - **2026-08-03** — Project container scaffolded and registered (`CLAUDE.md`, `status.md`, `README.md`, `.gitignore`); GitHub repo `Protocol-Institute/stigsim` created (public), initial commit pushed. (Venkat)

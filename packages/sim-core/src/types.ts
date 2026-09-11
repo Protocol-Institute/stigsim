@@ -166,4 +166,19 @@ export interface RunConfig {
 export interface SimulationPolicy {
   paramsForAnt?: (ant: Ant, colony: Colony, defaults: SimParams) => SimParams;
   evapRateForColony?: (colony: Colony, defaultRate: number) => number;
+  /** Override the field/channel an ant reads when choosing its next cell. */
+  navigationForAnt?: (
+    ant: Ant,
+    colony: Colony,
+    defaults: { field: FieldSet; channel: Channel },
+  ) => { field: FieldSet; channel: Channel };
+  /**
+   * Override where an ant deposits. Return the amount spent from its tank.
+   * The proposed amount is already capped by the available tank.
+   */
+  depositForAnt?: (
+    ant: Ant,
+    colony: Colony,
+    defaults: { field: FieldSet; channel: Channel; amount: number },
+  ) => number;
 }

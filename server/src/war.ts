@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
-import { DEFAULT_PARAMS, DenseField, DenseGrid, deriveStreamSeed, generateMasterSeed, makeRng, type SimParams } from "@stigsim/sim-core";
+import { DenseField, DenseGrid, deriveStreamSeed, generateMasterSeed, makeRng } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
@@ -9,6 +9,7 @@ import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
 import { WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
+import { DEFAULT_WAR_DOCTRINE, type WarDoctrine } from "../../shared/war-doctrine";
 import type {
   OnlineWarSettings,
   WarClientMessage,
@@ -73,17 +74,24 @@ export function validOnlineWarSettings(value: unknown): value is OnlineWarSettin
     && settings.loopRate >= 0 && settings.loopRate <= 0.5;
 }
 
-export function validWarDoctrine(value: unknown): value is SimParams {
+export function validWarDoctrine(value: unknown): value is WarDoctrine {
   if (!value || typeof value !== "object") return false;
-  const doctrine = value as Partial<SimParams>;
-  return typeof doctrine.evapRate === "number" && Number.isFinite(doctrine.evapRate)
+  const doctrine = value as Partial<WarDoctrine>;
+  return doctrine.v === 1
+    && typeof doctrine.evapRate === "number" && Number.isFinite(doctrine.evapRate)
     && doctrine.evapRate >= 0.001 && doctrine.evapRate <= 0.02
     && typeof doctrine.trailPower === "number" && Number.isFinite(doctrine.trailPower)
     && doctrine.trailPower >= 1 && doctrine.trailPower <= 10
     && doctrine.trailPower * 2 === Math.round(doctrine.trailPower * 2)
     && Number.isInteger(doctrine.tankMax) && doctrine.tankMax! >= 1_600 && doctrine.tankMax! <= 16_000
     && doctrine.tankMax! % 800 === 0
-    && typeof doctrine.cautionary === "boolean";
+    && typeof doctrine.cautionary === "boolean"
+    && typeof doctrine.spoilerFraction === "number" && Number.isFinite(doctrine.spoilerFraction)
+    && doctrine.spoilerFraction >= 0 && doctrine.spoilerFraction <= 0.5
+    && Math.abs(doctrine.spoilerFraction * 20 - Math.round(doctrine.spoilerFraction * 20)) < Number.EPSILON * 20
+    && typeof doctrine.mimicRate === "number" && Number.isFinite(doctrine.mimicRate)
+    && doctrine.mimicRate >= 0 && doctrine.mimicRate <= 1
+    && Math.abs(doctrine.mimicRate * 10 - Math.round(doctrine.mimicRate * 10)) < Number.EPSILON * 10;
 }
 
 function cleanName(value: unknown): string | null {
@@ -100,12 +108,15 @@ function roomCode(): string {
   }
 }
 
-function warDoctrine(value: SimParams): SimParams {
+function warDoctrine(value: WarDoctrine): WarDoctrine {
   return {
+    v: 1,
     evapRate: value.evapRate,
     trailPower: value.trailPower,
     tankMax: value.tankMax,
     cautionary: value.cautionary,
+    spoilerFraction: value.spoilerFraction,
+    mimicRate: value.mimicRate,
   };
 }
 
@@ -120,7 +131,7 @@ function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
   };
 }
 
-function makeWar(settings: OnlineWarSettings, doctrines?: SimParams[]): WarSimulation {
+function makeWar(settings: OnlineWarSettings, doctrines?: WarDoctrine[]): WarSimulation {
   return new WarSimulation({
     masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
     startingAnts: settings.startingAnts,
@@ -130,13 +141,16 @@ function makeWar(settings: OnlineWarSettings, doctrines?: SimParams[]): WarSimul
   }, doctrines);
 }
 
-export function randomOpponentDoctrine(masterSeed: string): SimParams {
+export function randomOpponentDoctrine(masterSeed: string): WarDoctrine {
   const rng = makeRng(deriveStreamSeed(masterSeed, "war-random-opponent-doctrine"));
   return {
+    v: 1,
     evapRate: (1 + Math.floor(rng() * 20)) / 1_000,
     trailPower: 1 + Math.floor(rng() * 19) * 0.5,
     tankMax: 1_600 + Math.floor(rng() * 19) * 800,
     cautionary: rng() >= 0.5,
+    spoilerFraction: Math.floor(rng() * 6) / 20,
+    mimicRate: Math.floor(rng() * 11) / 10,
   };
 }
 
@@ -329,6 +343,7 @@ export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settin
         homePhero: pheromoneWireValues(colony.field.layer("home")),
         foodPhero: pheromoneWireValues(colony.field.layer("food")),
         cautPhero: pheromoneWireValues(colony.field.layer("caut")),
+        mimicPhero: pheromoneWireValues(match.war.getMimicLayer(colony.id)),
         ants: colony.ants.map(ant => {
           const runtime = match.war.getAntSnapshot(ant);
           if (!runtime) throw new Error("War ant is missing runtime state");
@@ -341,6 +356,7 @@ export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settin
             hasFood: ant.hasFood,
             phase: runtime.phase,
             energy: runtime.energy,
+            role: runtime.role,
           };
         }),
         metrics: match.war.getMetrics(colony.id),
@@ -449,7 +465,7 @@ function standUp(socket: WebSocket, match: WarMatch): void {
 function resetMatch(match: WarMatch): void {
   const doctrines = match.players.map(player => player?.isBot
     ? randomOpponentDoctrine(match.settings.masterSeed)
-    : DEFAULT_PARAMS);
+    : DEFAULT_WAR_DOCTRINE);
   match.war = makeWar(match.settings, doctrines);
   match.phase = "waiting";
   match.finishedAt = null;
@@ -500,7 +516,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     const { match, token } = createWaitingMatch(socket, name, message.settings);
     match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
     match.players[0]!.ready = true;
-    match.war = makeWar(match.settings, [DEFAULT_PARAMS, randomOpponentDoctrine(match.settings.masterSeed)]);
+    match.war = makeWar(match.settings, [DEFAULT_WAR_DOCTRINE, randomOpponentDoctrine(match.settings.masterSeed)]);
     match.phase = "running";
     enterMatch(socket, match, name, token);
     return;

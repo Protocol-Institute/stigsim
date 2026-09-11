@@ -637,8 +637,8 @@ textarea {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  padding-bottom: 14px;
-  margin-bottom: 15px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
   border-bottom: 1px solid #2b2116;
 }
 
@@ -684,7 +684,12 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 13px;
   font-size: .7rem;
+}
+
+.war-doctrine label:last-child {
+  margin-bottom: 0;
 }
 
 .war-toggle > div {

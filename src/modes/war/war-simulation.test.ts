@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CELL, DEFAULT_PARAMS, fingerprint, type Ant, type Colony } from "@stigsim/sim-core";
-import { WarSimulation } from "./war-simulation";
+import { CELL, DEFAULT_PARAMS, DIRS4, fingerprint, type Ant, type Colony } from "@stigsim/sim-core";
+import { DEFAULT_WAR_DOCTRINE, WarSimulation } from "./war-simulation";
 
 function forceAtNest(ant: Ant, colony: Colony) {
   ant.cx = colony.nestX;
@@ -57,6 +57,8 @@ test("metrics account for every living ant and current doctrine adoption", () =>
     deaths: 0,
     doctrineChanged: false,
     doctrineAdopted: 3,
+    spoilers: 0,
+    mimicDeposited: 0,
   });
 
   war.setDoctrine(0, { ...DEFAULT_PARAMS, trailPower: 7 });
@@ -278,6 +280,86 @@ test("same-seed War Mode remains deterministic through doctrine changes", () => 
     }
   }
   assert.equal(first.result, second.result);
+});
+
+test("spoiler allocation is deterministic and nest-gated", () => {
+  const war = new WarSimulation(
+    { masterSeed: "spoiler-allocation", startingAnts: 4 },
+    undefined,
+    { maxEnergy: 3, retreatEnergy: 2, minDepartEnergy: 2 },
+  );
+  const colony = war.simulation.colonies[0];
+  war.setDoctrine(0, { ...DEFAULT_WAR_DOCTRINE, spoilerFraction: 0.5 });
+  assert.equal(war.getMetrics(0).spoilers, 0);
+
+  war.step();
+  war.step();
+  for (const ant of colony.ants) {
+    assert.equal(war.getAntSnapshot(ant)?.phase, "retreating");
+    forceAtNest(ant, colony);
+  }
+  war.step();
+
+  assert.equal(war.getMetrics(0).spoilers, 2);
+  assert.deepEqual(
+    colony.ants.map(ant => war.getAntSnapshot(ant)?.role),
+    ["spoiler", "spoiler", "forager", "forager"],
+  );
+});
+
+test("a searching spoiler reads the enemy home field and lays a tank-limited false food trail", () => {
+  const war = new WarSimulation(
+    { masterSeed: "spoiler-mimic", startingAnts: 2 },
+    [{ ...DEFAULT_WAR_DOCTRINE, spoilerFraction: 0.5, mimicRate: 0.5 }, DEFAULT_WAR_DOCTRINE],
+    { maxEnergy: 100_000, retreatEnergy: 1 },
+  );
+  const colony = war.simulation.colonies[0];
+  const opponent = war.simulation.colonies[1];
+  const ant = colony.ants[0];
+  assert.equal(war.getAntSnapshot(ant)?.role, "spoiler");
+
+  const choiceCell = (() => {
+    for (let y = 1; y < war.simulation.bounds.rows - 1; y++) {
+      for (let x = 1; x < war.simulation.bounds.cols - 1; x++) {
+        const open = DIRS4.map(([dx, dy]) => [x + dx, y + dy] as const)
+          .filter(([nx, ny]) => war.simulation.occupancy.isOpen(nx, ny));
+        const awayFromNests = war.simulation.colonies.every(candidate =>
+          Math.abs(candidate.nestX - x) + Math.abs(candidate.nestY - y) > 1
+        );
+        const awayFromFood = war.simulation.foodSources.every(source => source.x !== x || source.y !== y);
+        if (war.simulation.occupancy.isOpen(x, y) && open.length >= 2 && awayFromNests && awayFromFood) {
+          return { x, y, open };
+        }
+      }
+    }
+    throw new Error("expected a junction");
+  })();
+  ant.x = choiceCell.x * CELL + CELL / 2;
+  ant.y = choiceCell.y * CELL + CELL / 2;
+  ant.cx = choiceCell.x;
+  ant.cy = choiceCell.y;
+  ant.tx = choiceCell.x;
+  ant.ty = choiceCell.y;
+  ant.prevCx = choiceCell.x;
+  ant.prevCy = choiceCell.y;
+  const preferred = choiceCell.open[0];
+  opponent.field.set("home", preferred[0], preferred[1], 10_000);
+  war.step();
+  assert.deepEqual([ant.tx, ant.ty], preferred);
+
+  const sourceX = ant.cx;
+  const sourceY = ant.cy;
+  colony.field.set("home", sourceX, sourceY, 0);
+  opponent.field.set("food", sourceX, sourceY, 0);
+  war.getMimicLayer(0)[sourceY * war.simulation.bounds.cols + sourceX] = 0;
+  const tankBefore = ant.tank;
+  war.step();
+  assert.equal(colony.field.get("home", sourceX, sourceY), 0);
+  assert.equal(opponent.field.get("food", sourceX, sourceY), 10);
+  const sourceIndex = sourceY * war.simulation.bounds.cols + sourceX;
+  assert.equal(war.getMimicLayer(0)[sourceIndex], 10);
+  assert.equal(ant.tank, tankBefore - 10);
+  assert.equal(war.getMetrics(0).mimicDeposited, 10);
 });
 
 test("colony 0 can win and a decided match no longer advances", () => {

@@ -1,8 +1,11 @@
-import type { SimParams } from "@stigsim/sim-core";
+import type { WarDoctrine } from "../../../shared/war-doctrine";
 
-export function sameWarDoctrine(first: SimParams, second: SimParams): boolean {
-  return first.evapRate === second.evapRate
+export function sameWarDoctrine(first: WarDoctrine, second: WarDoctrine): boolean {
+  return first.v === second.v
+    && first.evapRate === second.evapRate
     && first.trailPower === second.trailPower
     && first.tankMax === second.tankMax
-    && first.cautionary === second.cautionary;
+    && first.cautionary === second.cautionary
+    && first.spoilerFraction === second.spoilerFraction
+    && first.mimicRate === second.mimicRate;
 }

@@ -1,4 +1,4 @@
-import type { SimParams } from "@stigsim/sim-core";
+import type { WarDoctrine } from "./war-doctrine";
 
 export const WAR_RECONNECTED_ELSEWHERE_CODE = 4001;
 export const WAR_MATCH_REMOVED_CODE = 4002;
@@ -42,7 +42,7 @@ export interface WarMatchRecord {
   settings: OnlineWarSettings;
   finalTick: number;
   finalMetrics: WarMetricsWire[];
-  finalDoctrines: SimParams[];
+  finalDoctrines: WarDoctrine[];
 }
 
 export interface WarMetricsWire {
@@ -59,6 +59,8 @@ export interface WarMetricsWire {
   deaths: number;
   doctrineChanged: boolean;
   doctrineAdopted: number;
+  spoilers: number;
+  mimicDeposited: number;
 }
 
 export interface WarAntWire {
@@ -70,6 +72,7 @@ export interface WarAntWire {
   hasFood: boolean;
   phase: "searching" | "returning" | "retreating" | "waiting";
   energy: number;
+  role: "forager" | "spoiler";
 }
 
 export interface WarColonyWire {
@@ -79,9 +82,11 @@ export interface WarColonyWire {
   homePhero: number[];
   foodPhero: number[];
   cautPhero: number[];
+  /** False food trail laid by this colony, for spectators only. */
+  mimicPhero: number[];
   ants: WarAntWire[];
   metrics: WarMetricsWire;
-  doctrine: SimParams;
+  doctrine: WarDoctrine;
 }
 
 export interface WarSnapshot {
@@ -100,7 +105,7 @@ export type WarClientMessage =
   | { type: "claim-seat"; colonyId: number }
   | { type: "stand-up" }
   | { type: "ready" }
-  | { type: "set-doctrine"; doctrine: SimParams }
+  | { type: "set-doctrine"; doctrine: WarDoctrine }
   | { type: "reset" };
 
 export type WarServerMessage =

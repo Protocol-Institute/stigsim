@@ -1,27 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CELL,
-  DEFAULT_PARAMS,
+  COLS,
   DEPOSIT_RATE,
   H,
   V,
   W,
   generateMasterSeed,
-  type SimParams,
 } from "@stigsim/sim-core";
 import { COLONY_COLORS, render } from "../../render";
 import {
   DEFAULT_WAR_SETTINGS,
+  DEFAULT_WAR_DOCTRINE,
   WAR_RULES,
   WarSimulation,
   type WarColonyMetrics,
   type WarMatchSettings,
+  type WarDoctrine,
 } from "./war-simulation";
 
 const EMPTY_METRICS: WarColonyMetrics = {
   population: 0, foodCollected: 0, reserve: 0, hatching: 0,
   searching: 0, carrying: 0, retreating: 0, waiting: 0,
   lowEnergy: 0, births: 0, deaths: 0, doctrineChanged: false, doctrineAdopted: 0,
+  spoilers: 0, mimicDeposited: 0,
 };
 
 type AdjustableSetting = "startingAnts" | "foodSources" | "foodPerSource" | "loopRate";
@@ -38,14 +40,34 @@ function drawWar(ctx: CanvasRenderingContext2D, war: WarSimulation) {
     },
   });
   for (const colony of war.simulation.colonies) {
+    const layer = war.getMimicLayer(colony.id);
+    const max = Math.max(1, ...layer);
+    for (let index = 0; index < layer.length; index++) {
+      if (layer[index] <= 0.5) continue;
+      const x = index % COLS;
+      const y = Math.floor(index / COLS);
+      ctx.fillStyle = `${COLONY_COLORS[colony.id].primary}${Math.round(Math.min(0.8, layer[index] / max * 0.8) * 255).toString(16).padStart(2, "0")}`;
+      ctx.fillRect(x * CELL + 5, y * CELL + 5, 6, 6);
+    }
+  }
+  for (const colony of war.simulation.colonies) {
     for (const ant of colony.ants) {
       const state = war.getAntSnapshot(ant);
-      if (!state || state.energy > war.rules.retreatEnergy) continue;
-      ctx.beginPath();
-      ctx.arc(ant.x, ant.y, 5.5, 0, Math.PI * 2);
-      ctx.strokeStyle = "#ef4444";
-      ctx.lineWidth = 1.25;
-      ctx.stroke();
+      if (!state) continue;
+      if (state.role === "spoiler") {
+        ctx.beginPath();
+        ctx.arc(ant.x, ant.y, 5.5, 0, Math.PI * 2);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+      }
+      if (state.energy <= war.rules.retreatEnergy) {
+        ctx.beginPath();
+        ctx.arc(ant.x, ant.y, state.role === "spoiler" ? 7 : 5.5, 0, Math.PI * 2);
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+      }
     }
   }
 }
@@ -63,9 +85,9 @@ function DoctrinePanel({
   colonyId, doctrine, metrics, onChange,
 }: {
   colonyId: number;
-  doctrine: SimParams;
+  doctrine: WarDoctrine;
   metrics: WarColonyMetrics;
-  onChange: <K extends keyof SimParams>(key: K, value: SimParams[K]) => void;
+  onChange: <K extends keyof WarDoctrine>(key: K, value: WarDoctrine[K]) => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
   const tankCells = Math.round(doctrine.tankMax / (DEPOSIT_RATE * (CELL / V)));
@@ -92,6 +114,8 @@ function DoctrinePanel({
         <Metric label="Low energy" value={metrics.lowEnergy} warning />
         <Metric label="Born" value={metrics.births} />
         <Metric label="Died" value={metrics.deaths} warning />
+        <Metric label="Spoilers" value={metrics.spoilers} />
+        <Metric label="False trail" value={Math.round(metrics.mimicDeposited)} />
       </div>
       <div className="war-doctrine">
         {sliders.map(control => (
@@ -115,6 +139,16 @@ function DoctrinePanel({
             ))}
           </div>
         </div>
+        <label>
+          <span><b>Spoiler ants</b><strong>{Math.round(doctrine.spoilerFraction * 100)}%</strong></span>
+          <input type="range" min="0" max="0.5" step="0.05" value={doctrine.spoilerFraction}
+            onChange={event => onChange("spoilerFraction", Number(event.target.value))} />
+        </label>
+        <label>
+          <span><b>Mimic strength</b><strong>{Math.round(doctrine.mimicRate * 100)}%</strong></span>
+          <input type="range" min="0" max="1" step="0.1" value={doctrine.mimicRate}
+            onChange={event => onChange("mimicRate", Number(event.target.value))} />
+        </label>
       </div>
       {metrics.doctrineChanged && (
         <p className="war-adoption">
@@ -207,8 +241,8 @@ export default function LocalWarMode() {
   const [draftSettings, setDraftSettings] = useState<WarMatchSettings>(initialSettings);
   const [speed, setSpeed] = useState(15);
   const speedRef = useRef(speed);
-  const [doctrines, setDoctrines] = useState<SimParams[]>([
-    { ...DEFAULT_PARAMS }, { ...DEFAULT_PARAMS },
+  const [doctrines, setDoctrines] = useState<WarDoctrine[]>([
+    { ...DEFAULT_WAR_DOCTRINE }, { ...DEFAULT_WAR_DOCTRINE },
   ]);
   const [initialWar] = useState(() => new WarSimulation(initialSettings, doctrines));
   const warRef = useRef(initialWar);
@@ -274,7 +308,7 @@ export default function LocalWarMode() {
     setSpeed(value);
   };
 
-  const updateDoctrine = <K extends keyof SimParams>(colonyId: number, key: K, value: SimParams[K]) => {
+  const updateDoctrine = <K extends keyof WarDoctrine>(colonyId: number, key: K, value: WarDoctrine[K]) => {
     setDoctrines(current => current.map((doctrine, id) => id === colonyId ? { ...doctrine, [key]: value } : doctrine));
     warRef.current.setDoctrine(colonyId, { ...doctrines[colonyId], [key]: value });
     refreshStats();
@@ -381,7 +415,7 @@ export default function LocalWarMode() {
           <DoctrinePanel colonyId={0} doctrine={doctrines[0]} metrics={metrics[0] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(0, key, value)} />
           <div className="war-maze">
             <canvas ref={canvasRef} width={W} height={H} />
-            <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div>
+            <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>White ring: spoiler</span><span>Inset: false trail</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div>
           </div>
           <DoctrinePanel colonyId={1} doctrine={doctrines[1]} metrics={metrics[1] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(1, key, value)} />
         </section>
