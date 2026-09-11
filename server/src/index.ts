@@ -1,4 +1,7 @@
 import { createServer } from "http";
+import { existsSync } from "fs";
+import { join } from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import router from "./routes";
@@ -34,6 +37,22 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "16kb" }));
 app.use("/api", router);
+
+// Railway preview environments can host the built client and authoritative
+// server together. Keeping them on one origin also makes invite URLs and
+// WebSocket origin checks work without special proxy infrastructure.
+const clientDist = fileURLToPath(new URL("../../dist", import.meta.url));
+const clientIndex = join(clientDist, "index.html");
+if (existsSync(clientIndex)) {
+  app.use(express.static(clientDist));
+  app.use((request, response, next) => {
+    if (request.method === "GET" && request.accepts("html")) {
+      response.sendFile(clientIndex);
+      return;
+    }
+    next();
+  });
+}
 
 const server = createServer(app);
 
