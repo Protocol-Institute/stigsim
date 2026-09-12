@@ -13,6 +13,7 @@ import { COLONY_COLORS, render } from "../../render";
 import { DoctrinePanel as FullDoctrinePanel } from "../../DoctrinePanel";
 import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "../../topology-choices";
 import { LAYOUT_CHOICES, layoutChoice } from "../../layout-choices";
+import { ADOPTION_CHOICES, adoptionChoice } from "../../adoption-choices";
 import {
   DEFAULT_WAR_SETTINGS,
   WAR_RULES,
@@ -57,12 +58,13 @@ function Metric({ label, value, warning = false }: { label: string; value: numbe
 }
 
 function ColonyPanel({
-  colonyId, doctrine, metrics, topology, disabled, onCommit,
+  colonyId, doctrine, metrics, topology, adoption, disabled, onCommit,
 }: {
   colonyId: number;
   doctrine: Doctrine;
   metrics: WarColonyMetrics;
   topology: WarMatchSettings["topology"];
+  adoption: WarMatchSettings["adoption"];
   disabled: boolean;
   onCommit: (colonyId: number, doctrine: Doctrine) => void;
 }) {
@@ -99,7 +101,7 @@ function ColonyPanel({
       {metrics.doctrineChanged && (
         <p className="war-adoption">
           <strong>{metrics.doctrineAdopted}/{metrics.population} ants updated.</strong>{" "}
-          Follow and lay behavior updates when each ant returns; colony-level settings apply on the next tick.
+          {adoptionChoice(adoption).note}
         </p>
       )}
     </aside>
@@ -158,6 +160,20 @@ function MatchSetup({
                   type="button"
                   className={choice.name === settings.layout ? "is-active" : ""}
                   onClick={() => onChange({ ...settings, layout: choice.name })}
+                >{choice.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="war-setting war-setting--topology">
+            <span><b>Doctrine changes apply</b><strong>{adoptionChoice(settings.adoption).label}</strong></span>
+            <p>{adoptionChoice(settings.adoption).description}</p>
+            <div className="war-topology-options">
+              {ADOPTION_CHOICES.map(choice => (
+                <button
+                  key={choice.name}
+                  type="button"
+                  className={choice.name === settings.adoption ? "is-active" : ""}
+                  onClick={() => onChange({ ...settings, adoption: choice.name })}
                 >{choice.label}</button>
               ))}
             </div>
@@ -351,6 +367,7 @@ export default function LocalWarMode() {
             <span>{Math.round(settings.loopRate * 100)}% maze loops</span>
             <span>{layoutChoice(settings.layout).label} map</span>
             <span>{choiceFor(settings.topology).label} topology</span>
+            <span>Doctrine: {adoptionChoice(settings.adoption).label.toLowerCase()}</span>
             <span className="war-matchbar__seed" title={settings.masterSeed}>Seed: {settings.masterSeed}</span>
           </div>
         </div>
@@ -393,12 +410,12 @@ export default function LocalWarMode() {
         )}
 
         <section className="war-arena">
-          <ColonyPanel colonyId={0} doctrine={doctrines[0]} metrics={metrics[0] ?? EMPTY_METRICS} topology={settings.topology} disabled={result !== null} onCommit={updateDoctrine} />
+          <ColonyPanel colonyId={0} doctrine={doctrines[0]} metrics={metrics[0] ?? EMPTY_METRICS} topology={settings.topology} adoption={settings.adoption} disabled={result !== null} onCommit={updateDoctrine} />
           <div className="war-maze">
             <canvas ref={canvasRef} width={W} height={H} />
             <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>White ring: spoiler</span><span>Inset: false-trail provenance</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div>
           </div>
-          <ColonyPanel colonyId={1} doctrine={doctrines[1]} metrics={metrics[1] ?? EMPTY_METRICS} topology={settings.topology} disabled={result !== null} onCommit={updateDoctrine} />
+          <ColonyPanel colonyId={1} doctrine={doctrines[1]} metrics={metrics[1] ?? EMPTY_METRICS} topology={settings.topology} adoption={settings.adoption} disabled={result !== null} onCommit={updateDoctrine} />
         </section>
         <p className="war-rules-note">
           Ants retreat below {Math.round(WAR_RULES.retreatEnergy / WAR_RULES.maxEnergy * 100)}% energy, refuel from their colony reserve,
