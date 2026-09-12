@@ -48,21 +48,15 @@ and your experiment is not visible to anyone else.
 You can:
 
 - Adjust maze loops and food sources
-- Give each colony a doctrine: pick a preset or move its sliders — trail bias,
-  evaporation, and, when the topology allows, the share of ants that act as
-  spoilers, how strongly they mimic the other colony's chemical, and how the
-  colony treats the other colony's trails
-- Choose the field topology for a run: private trails, sensing the other
-  colony's trails, mimicry, or one open food trail
+- Tune one evaporation rate and trail bias shared by every colony
 - Set colony size and gland size for the run
 - Edit walls and food sources while the simulation is running
 - Observe whole colonies or control an individual ant
 
-A doctrine is a small table of numbers per colony: how strongly ants of each
-role follow each pheromone from each origin, and how much they lay. Today's
-model is one point in that table, and the presets are a handful of others.
-Every change is recorded in the run's trace, so a replay shows the same
-colony reacting to the same doctrine at the same tick. Nest and food are
+Maze intentionally keeps private colony trails and a compact shared control
+surface; per-colony doctrines, topology, spoilers, and mimicry belong to War
+Mode. Every Maze change is still recorded in the run's trace, so a replay
+shows each colony reacting to the same settings at the same tick. Nest and food are
 smells computed at read time rather than pheromone written into the field, so
 the trails contain only what ants laid. Every live food source emits odor to
 every colony; discovering a source is retained for metrics but no longer gates
