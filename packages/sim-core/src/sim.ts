@@ -136,11 +136,9 @@ export class Simulation {
   }
 
   /** Applies the colony's current doctrine to an ant that is waiting at its nest. */
-  adoptAntAtNest(ant: Ant): void {
+  adoptAntAtNest(ant: Ant, index: number): void {
     const colony = this.colonies[ant.colonyId];
-    if (!colony) return;
-    const index = colony.ants.indexOf(ant);
-    if (index >= 0) this._nestEvent(ant, colony, index);
+    if (colony?.ants[index] === ant) this._nestEvent(ant, colony, index);
   }
 
   /** Spoilers are the first floor(fraction * total) ants by index. No draw is spent. */

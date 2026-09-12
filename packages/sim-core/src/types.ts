@@ -3,17 +3,11 @@ import type { Topology } from "./topology";
 
 /** What is fixed at construction and the same for every colony. Live behaviour lives in each colony's Doctrine. */
 export interface SimParams {
-  evapRate: number;
-  trailPower: number;
   tankMax: number;
-  cautionary: boolean;
 }
 
 export const DEFAULT_PARAMS: SimParams = {
-  evapRate: 0.005,
-  trailPower: 5,
   tankMax: 6400,
-  cautionary: false,
 };
 
 export type CellType = 0 | 1;

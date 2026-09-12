@@ -107,10 +107,11 @@ simulation core. It can run locally in one browser or authoritatively on the
 server. The server owns the clock, validates doctrine changes, and persists
 compact completed-match results. Replay checkpoints and playback are deferred.
 
-The experimental local match setup also exposes the four field topologies and
-Patrick's full doctrine presets and controls. Doctrine changes are adopted when
-ants return to their nest. War tracing remains deliberately deferred; the goal
-of this branch is to make disruption, mimicry, and poaching directly playable.
+Local and Online War share the same four field topologies, symmetric match-level
+gland size, and per-colony doctrine model. Colony-level atoms such as
+evaporation, spoiler allocation, and mimic rate apply at the next tick; ants
+adopt new follow and lay behavior when they return to their nest. War tracing
+remains deliberately deferred.
 
 ## How the shared world works
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import test from "node:test";
 import WebSocket from "ws";
+import { DEFAULT_DOCTRINE, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 
 // This suite dynamically imports the War server below. Clear persistence first
@@ -95,9 +96,12 @@ test("two players and a spectator can complete the authoritative lobby flow", as
   assert.equal(spectatorJoined.colonyId, null);
 
   const doctrineStart = first.messages.length;
+  const changedDoctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+  changedDoctrine.evapRate = 0.006;
+  changedDoctrine.forager.follow.searching.food.own = 3;
   first.ws.send(JSON.stringify({
     type: "set-doctrine",
-    doctrine: { evapRate: 0.006, trailPower: 3, tankMax: 7_200, cautionary: true, ignored: "client data" },
+    doctrine: changedDoctrine,
   }));
   const doctrineSnapshot = await first.waitFor(message => {
     if (message.type !== "snapshot") return false;
@@ -106,13 +110,13 @@ test("two players and a spectator can complete the authoritative lobby flow", as
   }, doctrineStart);
   assert.deepEqual(
     (doctrineSnapshot.snapshot as { colonies: Array<{ doctrine: unknown }> }).colonies[0].doctrine,
-    { evapRate: 0.006, trailPower: 3, tankMax: 7_200, cautionary: true },
+    changedDoctrine,
   );
 
   const deniedStart = spectator.messages.length;
   spectator.ws.send(JSON.stringify({
     type: "set-doctrine",
-    doctrine: { evapRate: 0.005, trailPower: 2.5, tankMax: 8_000, cautionary: false },
+    doctrine: DEFAULT_DOCTRINE,
   }));
   const denied = await spectator.waitFor(message => message.type === "error", deniedStart);
   assert.match(denied.message as string, /Only players/);
@@ -324,7 +328,7 @@ test("a burst of doctrine updates is dropped without disconnecting the player", 
   player.ws.send(JSON.stringify({ type: "join-room", matchId: created.matchId, playerName: "Alpha", reconnectToken: created.reconnectToken }));
   await player.waitFor(message => message.type === "joined", start);
 
-  const doctrine = { evapRate: 0.005, trailPower: 5, tankMax: 6_400, cautionary: false };
+  const doctrine = DEFAULT_DOCTRINE;
   for (let index = 0; index < 40; index++) player.ws.send(JSON.stringify({ type: "set-doctrine", doctrine }));
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(player.ws.readyState, WebSocket.OPEN);
@@ -350,7 +354,7 @@ test("an extreme doctrine flood closes before unlimited parsing", async t => {
   });
   const payload = JSON.stringify({
     type: "set-doctrine",
-    doctrine: { evapRate: 0.005, trailPower: 5, tankMax: 6_400, cautionary: false, padding: "x".repeat(14_000) },
+    doctrine: { ...DEFAULT_DOCTRINE, padding: "x".repeat(14_000) },
   });
   for (let index = 0; index < 301; index++) player.ws.send(payload);
 

@@ -98,7 +98,7 @@ export function DoctrinePanel({
       </div>
 
       <p style={{ margin: "0 0 10px", fontSize: "0.72rem", color: "#a08060" }}>
-        {Math.round(adopted * 100)}% of this colony's ants are running its current doctrine.
+        {Math.round(adopted * 100)}% of this colony's ants have adopted its current per-ant behavior.
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>

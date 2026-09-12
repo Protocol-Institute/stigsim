@@ -1,5 +1,5 @@
 import { COLS, ROWS, CELL, W, H, cellCenter, DenseField } from "@stigsim/sim-core";
-import type { Colony, Simulation } from "@stigsim/sim-core";
+import type { Ant, Colony, Simulation } from "@stigsim/sim-core";
 
 /**
  * The raw channel arrays of one colony.
@@ -36,6 +36,7 @@ export function render(
   watchedAntIdx: number = 0,
   editMode: EditMode = "none",
   hoverCell: { x: number; y: number } | null = null,
+  antOpacity?: (ant: Ant) => number,
 ) {
   const allAnts = sim.allAnts;
   const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
@@ -175,7 +176,9 @@ export function render(
       const isWatched = viewMode === "one" && flatIdx === safeIdx;
 
       const tankFrac = Math.min(1, ant.tank / sim.params.tankMax);
-      ctx.globalAlpha = 0.25 + 0.75 * tankFrac;
+      ctx.globalAlpha = antOpacity
+        ? Math.max(0, Math.min(1, antOpacity(ant)))
+        : 0.25 + 0.75 * tankFrac;
 
       const r = ant.hasFood ? 4.5 : 3.5;
       ctx.beginPath();

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_DOCTRINE,
+  DEPOSIT_RATE,
+  DEPOSITS_PER_CELL,
   H,
   W,
   cloneDoctrine,
@@ -24,10 +26,13 @@ const EMPTY_METRICS: WarColonyMetrics = {
   lowEnergy: 0, births: 0, deaths: 0, doctrineChanged: false, doctrineAdopted: 0,
 };
 
-type AdjustableSetting = "startingAnts" | "foodSources" | "foodPerSource" | "loopRate";
+type AdjustableSetting = "startingAnts" | "foodSources" | "foodPerSource" | "loopRate" | "tankMax";
 
 function drawWar(ctx: CanvasRenderingContext2D, war: WarSimulation) {
-  render(ctx, war.simulation, "all", 0, "none", null);
+  render(ctx, war.simulation, "all", 0, "none", null, ant => {
+    const state = war.getAntSnapshot(ant);
+    return state ? 0.3 + 0.7 * Math.max(0, Math.min(1, state.energy / war.rules.maxEnergy)) : 1;
+  });
   for (const colony of war.simulation.colonies) {
     for (const ant of colony.ants) {
       const state = war.getAntSnapshot(ant);
@@ -95,7 +100,7 @@ function ColonyPanel({
       {metrics.doctrineChanged && (
         <p className="war-adoption">
           <strong>{metrics.doctrineAdopted}/{metrics.population} ants updated.</strong>{" "}
-          Changes are adopted when each ant returns to this colony's nest.
+          Follow and lay behavior updates when each ant returns; colony-level settings apply on the next tick.
         </p>
       )}
     </aside>
@@ -140,6 +145,7 @@ function MatchSetup({
 
         <div className="war-setup__settings">
           <Setting label="Starting ants" value={settings.startingAnts} display={`${settings.startingAnts} per colony`} min={1} max={100} step={1} onChange={value => update("startingAnts", value)} />
+          <Setting label="Gland size" value={settings.tankMax} display={`~${Math.round(settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} cells`} min={1600} max={16000} step={800} onChange={value => update("tankMax", value)} />
           <Setting label="Food sources" value={settings.foodSources} display={`${settings.foodSources}`} min={1} max={12} step={1} onChange={value => update("foodSources", value)} />
           <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={10000} step={50} onChange={value => update("foodPerSource", value)} />
           <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => update("loopRate", value)} />
@@ -326,6 +332,7 @@ export default function LocalWarMode() {
           <strong>Match settings</strong>
           <div className="war-matchbar__summary">
             <span>{settings.startingAnts} ants / colony</span>
+            <span>~{Math.round(settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))}-cell gland</span>
             <span>{settings.foodSources} food {settings.foodSources === 1 ? "source" : "sources"}</span>
             <span>{settings.foodPerSource} food / source</span>
             <span>{Math.round(settings.loopRate * 100)}% maze loops</span>

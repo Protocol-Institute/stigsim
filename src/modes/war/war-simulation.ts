@@ -14,7 +14,6 @@ import {
   type Colony,
   type Doctrine,
   type RunConfig,
-  type SimParams,
   type Topology,
 } from "@stigsim/sim-core";
 
@@ -58,6 +57,7 @@ export interface WarMatchSettings {
   loopRate: number;
   foodSources: number;
   foodPerSource: number;
+  tankMax: number;
   topology: Topology;
 }
 
@@ -67,6 +67,7 @@ export const DEFAULT_WAR_SETTINGS: WarMatchSettings = {
   loopRate: 0.1,
   foodSources: 1,
   foodPerSource: 500,
+  tankMax: DEFAULT_PARAMS.tankMax,
   topology: cloneTopology(DEFAULT_TOPOLOGY),
 };
 
@@ -90,7 +91,7 @@ export interface WarAntSnapshot {
   id: number;
   phase: WarAntPhase;
   energy: number;
-  doctrine: SimParams;
+  role: Ant["role"];
   doctrineVersion: number;
 }
 
@@ -112,43 +113,19 @@ export interface WarColonyMetrics {
 
 export type WarResult = number | "draw" | null;
 
-function doctrineFromParams(params: SimParams): Doctrine {
-  const doctrine = cloneDoctrine(DEFAULT_DOCTRINE);
-  doctrine.evapRate = params.evapRate;
-  doctrine.forager.follow.searching.food.own = params.trailPower;
-  doctrine.forager.follow.returning.home.own = params.trailPower;
-  return doctrine;
-}
-
-function asDoctrine(value: Doctrine | SimParams): Doctrine {
-  return "v" in value ? cloneDoctrine(value) : doctrineFromParams(value);
-}
-
-function paramsFromDoctrine(doctrine: Doctrine, tankMax: number): SimParams {
-  return {
-    evapRate: doctrine.evapRate,
-    trailPower: doctrine.forager.follow.searching.food.own,
-    tankMax,
-    cautionary: false,
-  };
-}
-
 export class WarSimulation {
   readonly simulation: Simulation;
   readonly rules: WarRules;
   readonly settings: WarMatchSettings;
   private readonly antRuntime = new Map<Ant, AntRuntime>();
   private readonly colonyRuntime: ColonyRuntime[];
-  // Online War still speaks the pre-doctrine SimParams contract. Keep those
-  // exact wire values at the adapter boundary while Local War uses Doctrine.
-  private readonly legacyDoctrines: Array<SimParams | null>;
   private readonly economyRng: ReturnType<typeof makeRng>;
   private nextAntId = 0;
   result: WarResult = null;
 
   constructor(
     settings: Partial<WarMatchSettings> = {},
-    doctrines: Array<Doctrine | SimParams> = [DEFAULT_DOCTRINE, DEFAULT_DOCTRINE],
+    doctrines: Doctrine[] = [DEFAULT_DOCTRINE, DEFAULT_DOCTRINE],
     ruleOverrides: Partial<WarRules> = {},
   ) {
     this.settings = {
@@ -158,10 +135,6 @@ export class WarSimulation {
       topology: cloneTopology(settings.topology ?? DEFAULT_WAR_SETTINGS.topology),
     };
     this.rules = { ...WAR_RULES, ...ruleOverrides };
-    this.legacyDoctrines = [0, 1].map(index => {
-      const doctrine = doctrines[index];
-      return doctrine && !("v" in doctrine) ? { ...doctrine } : null;
-    });
     this.colonyRuntime = [0, 1].map(colonyId => ({
       foodReserve: this.settings.startingAnts * this.rules.startingReservePerAnt,
       developingAnts: [],
@@ -174,7 +147,7 @@ export class WarSimulation {
     const config: RunConfig = {
       seeds: makeSeeds(this.settings.masterSeed),
       numAnts: this.settings.startingAnts,
-      params: { ...DEFAULT_PARAMS },
+      params: { tankMax: this.settings.tankMax },
       loopRate: this.settings.loopRate,
       numColonies: 2,
       numFoodSources: this.settings.foodSources,
@@ -182,7 +155,7 @@ export class WarSimulation {
     };
     this.economyRng = makeRng(`${config.seeds.ants}:war-survival`);
     this.simulation = new Simulation(config, {
-      doctrines: doctrines.map(asDoctrine),
+      doctrines,
       topology: this.settings.topology,
       adoption: "nest",
     });
@@ -191,22 +164,19 @@ export class WarSimulation {
     }
   }
 
-  setDoctrine(colonyId: number, doctrine: Doctrine | SimParams): void {
+  setDoctrine(colonyId: number, doctrine: Doctrine): void {
     const state = this.colonyRuntime[colonyId];
     if (!state) return;
     state.doctrineChanged = true;
-    this.legacyDoctrines[colonyId] = "v" in doctrine ? null : { ...doctrine };
-    this.simulation.setColonyDoctrine(colonyId, asDoctrine(doctrine));
+    this.simulation.setColonyDoctrine(colonyId, doctrine);
   }
 
-  getDoctrine(colonyId: number): SimParams {
-    const legacy = this.legacyDoctrines[colonyId];
-    if (legacy) return { ...legacy };
-    return paramsFromDoctrine(this.simulation.colonies[colonyId].doctrine, this.simulation.params.tankMax);
+  getDoctrine(colonyId: number): Doctrine {
+    return cloneDoctrine(this.simulation.colonies[colonyId].doctrine);
   }
 
   getFullDoctrine(colonyId: number): Doctrine {
-    return cloneDoctrine(this.simulation.colonies[colonyId].doctrine);
+    return this.getDoctrine(colonyId);
   }
 
   getAntSnapshot(ant: Ant): WarAntSnapshot | null {
@@ -215,10 +185,7 @@ export class WarSimulation {
       id: state.id,
       phase: state.phase,
       energy: state.energy,
-      doctrine: paramsFromDoctrine(
-        this.simulation.doctrineFor(ant, this.simulation.colonies[ant.colonyId]),
-        this.simulation.params.tankMax,
-      ),
+      role: ant.role,
       doctrineVersion: ant.doctrineVersion,
     } : null;
   }
@@ -280,7 +247,7 @@ export class WarSimulation {
 
   private prepareColony(colony: Colony): void {
     const dead = new Set<Ant>();
-    for (const ant of colony.ants) {
+    for (const [index, ant] of colony.ants.entries()) {
       const state = this.antRuntime.get(ant)!;
       if (state.phase === "waiting") {
         state.energy -= this.rules.waitEnergyCost;
@@ -288,7 +255,7 @@ export class WarSimulation {
           dead.add(ant);
           continue;
         }
-        this.simulation.adoptAntAtNest(ant);
+        this.simulation.adoptAntAtNest(ant, index);
         this.refuelAtNest(ant, state, colony.id);
         continue;
       }
@@ -327,7 +294,7 @@ export class WarSimulation {
   }
 
   private finishColony(colony: Colony): void {
-    for (const ant of colony.ants) {
+    for (const [index, ant] of colony.ants.entries()) {
       const state = this.antRuntime.get(ant)!;
       if (state.phase === "searching" && ant.state === "returning" && ant.hasFood) {
         state.phase = "returning";
@@ -336,7 +303,7 @@ export class WarSimulation {
           && ant.state === "searching"
           && ant.cx === colony.nestX && ant.cy === colony.nestY) {
         state.departure = [ant.tx, ant.ty];
-        this.simulation.adoptAntAtNest(ant);
+        this.simulation.adoptAntAtNest(ant, index);
         this.refuelAtNest(ant, state, colony.id);
       }
     }
