@@ -64,7 +64,9 @@ model is one point in that table, and the presets are a handful of others.
 Every change is recorded in the run's trace, so a replay shows the same
 colony reacting to the same doctrine at the same tick. Nest and food are
 smells computed at read time rather than pheromone written into the field, so
-the trails contain only what ants laid.
+the trails contain only what ants laid. Every live food source emits odor to
+every colony; discovering a source is retained for metrics but no longer gates
+whether ants can smell it.
 
 Every run is reproducible from a seed. The Run panel shows the current run's
 seed, lets you generate a new one, and saves a trace file that captures the
