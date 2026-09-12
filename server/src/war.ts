@@ -10,7 +10,7 @@ import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
 import { WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
 import { PRESETS } from "../../src/doctrine-presets";
-import { conformDoctrine } from "../../src/topology-choices";
+import { conformDoctrine, isNamedTopology } from "../../src/topology-choices";
 import type {
   OnlineWarSettings,
   WarClientMessage,
@@ -75,7 +75,7 @@ export function validOnlineWarSettings(value: unknown): value is OnlineWarSettin
     && settings.loopRate >= 0 && settings.loopRate <= 0.5
     && Number.isInteger(settings.tankMax) && settings.tankMax! >= 1_600 && settings.tankMax! <= 16_000
     && settings.tankMax! % 800 === 0
-    && isTopology(settings.topology);
+    && isTopology(settings.topology) && isNamedTopology(settings.topology);
 }
 
 export function validWarDoctrine(value: unknown): value is Doctrine {

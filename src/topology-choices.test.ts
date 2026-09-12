@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, TOPOLOGY_OPEN, TOPOLOGY_PRIVATE, TOPOLOGY_SENSING, cloneDoctrine, isDoctrine } from "@stigsim/sim-core";
-import { choiceFor, conformDoctrine, TOPOLOGY_CHOICES } from "./topology-choices";
+import { choiceFor, conformDoctrine, isNamedTopology, TOPOLOGY_CHOICES } from "./topology-choices";
 
 function saboteurPoacher() {
   const d = cloneDoctrine(DEFAULT_DOCTRINE);
@@ -45,5 +45,14 @@ test("conformDoctrine does not touch the input", () => {
 });
 
 test("choiceFor maps each named option back to its choice", () => {
-  for (const c of TOPOLOGY_CHOICES) assert.equal(choiceFor(c.topology), c);
+  for (const c of TOPOLOGY_CHOICES) {
+    assert.equal(choiceFor(c.topology), c);
+    assert.equal(isNamedTopology(c.topology), true);
+  }
+});
+
+test("custom topology variants are not mislabeled as a named option", () => {
+  const custom = { ...TOPOLOGY_MIMICRY, visible: { ...TOPOLOGY_MIMICRY.visible }, provenance: false };
+  assert.equal(choiceFor(custom).label, "Custom");
+  assert.equal(isNamedTopology(custom), false);
 });
