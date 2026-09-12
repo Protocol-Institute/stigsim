@@ -3,7 +3,7 @@ import {
   Simulation,
   COLS, ROWS, CELL, W, H, DEPOSIT_RATE, DEPOSITS_PER_CELL, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
-  DEFAULT_FOOD_PER_SOURCE, DEFAULT_DOCTRINE, MAX_COLONIES,
+  DEFAULT_FOOD_PER_SOURCE, DEFAULT_DOCTRINE, TOPOLOGY_PRIVATE,
   cloneDoctrine, makeSeeds, generateMasterSeed,
 } from "@stigsim/sim-core";
 import type { Command, Doctrine } from "@stigsim/sim-core";
@@ -16,9 +16,6 @@ import type { MetricsSample } from "@stigsim/sim-trace";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 import { ParamCard } from "./ParamCard";
-import { DoctrinePanel } from "./DoctrinePanel";
-import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "./topology-choices";
-import type { TopologyChoice } from "./topology-choices";
 
 // ─── Simple control row ───────────────────────────────────────────────────────
 function ControlCard({
@@ -147,14 +144,10 @@ export default function AntSim() {
   const [numAnts, setNumAnts] = useState(DEFAULT_NUM_ANTS);
   const [tankMax, setTankMax] = useState(DEFAULT_PARAMS.tankMax);
   const [tankDraft, setTankDraft] = useState(DEFAULT_PARAMS.tankMax);
-  const [doctrines, setDoctrines] = useState<Doctrine[]>(
-    () => Array.from({ length: MAX_COLONIES }, () => cloneDoctrine(DEFAULT_DOCTRINE)),
-  );
-  const [selectedColony, setSelectedColony] = useState(0);
-  const [topologyChoice, setTopologyChoice] = useState<TopologyChoice>(TOPOLOGY_CHOICES[0]);
-  const topologyRef = useRef(topologyChoice);
-  topologyRef.current = topologyChoice;
-  const [adopted, setAdopted] = useState<number[]>([1]);
+  // Maze keeps one shared set of ant controls. The shared core represents
+  // those values as a doctrine, but this route deliberately does not expose
+  // per-colony doctrine or field-topology concepts.
+  const [doctrine, setDoctrine] = useState<Doctrine>(() => cloneDoctrine(DEFAULT_DOCTRINE));
   const [canvasScale, setCanvasScale] = useState(1);
   const [watchedAntIdx, setWatchedAntIdx] = useState(0);
   const [manualControl, setManualControl] = useState(false);
@@ -179,8 +172,8 @@ export default function AntSim() {
 
   const tankMaxRef = useRef(tankMax);
   tankMaxRef.current = tankMax;
-  const doctrinesRef = useRef(doctrines);
-  doctrinesRef.current = doctrines;
+  const doctrineRef = useRef(doctrine);
+  doctrineRef.current = doctrine;
   const framesPerTickRef = useRef(framesPerTick);
   framesPerTickRef.current = framesPerTick;
   const numAntsRef = useRef(numAnts);
@@ -223,10 +216,7 @@ export default function AntSim() {
     if (!r) return;
 
     setColonyScores(r.sim.colonies.map(c => c.foodCollected));
-    setDoctrines(prev => prev.map((d, i) => (r.sim.colonies[i] ? cloneDoctrine(r.sim.colonies[i].doctrine) : d)));
-    setAdopted(r.sim.colonies.map(c => c.ants.length === 0 ? 1
-      : c.ants.filter(a => a.doctrineVersion === c.doctrineVersion).length / c.ants.length));
-    setTopologyChoice(choiceFor(r.sim.topology));
+    if (r.sim.colonies[0]) setDoctrine(cloneDoctrine(r.sim.colonies[0].doctrine));
     setLatestFingerprint(r.sim.fingerprints[r.sim.fingerprints.length - 1] ?? null);
 
     // The metrics recorder only runs for the live simulation, so the rate
@@ -284,9 +274,13 @@ export default function AntSim() {
     }
   }, [forceRender]);
 
-  const commitDoctrine = useCallback((colony: number, doctrine: Doctrine) => {
-    setDoctrines(prev => prev.map((d, i) => (i === colony ? doctrine : d)));
-    send({ kind: "setDoctrine", colony, doctrine });
+  const commitSharedDoctrine = useCallback((next: Doctrine) => {
+    setDoctrine(next);
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.colonies.forEach((_, colony) => {
+      send({ kind: "setDoctrine", colony, doctrine: next });
+    });
   }, [send]);
 
   useEffect(() => {
@@ -427,11 +421,10 @@ export default function AntSim() {
     // The run's settings travel as commands, applied before the first
     // physics step and recorded at tick 1, so a trace carries them.
     sim.enqueue({ kind: "setAdoption", mode: "instant" });
-    sim.enqueue({ kind: "setTopology", topology: topologyRef.current.topology });
-    sim.colonies.forEach((_, i) => sim.enqueue({ kind: "setDoctrine", colony: i, doctrine: doctrinesRef.current[i] }));
+    sim.enqueue({ kind: "setTopology", topology: TOPOLOGY_PRIVATE });
+    sim.colonies.forEach((_, i) => sim.enqueue({ kind: "setDoctrine", colony: i, doctrine: doctrineRef.current }));
     sim.flushPending();
     simRef.current = sim;
-    setAdopted(sim.colonies.map(() => 1));
     setColonyScores(sim.colonies.map(() => 0));
     setFoodRate(0);
     setLatestFingerprint(null);
@@ -507,7 +500,7 @@ export default function AntSim() {
     frameCountRef.current = 0;
     initSim();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopRate, numColonies, numFoodSources, foodPerSource, tankMax, topologyChoice]);
+  }, [loopRate, numColonies, numFoodSources, foodPerSource, tankMax]);
 
   useEffect(() => {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
@@ -531,8 +524,6 @@ export default function AntSim() {
           sim.step();
           metricsRef.current.maybeSample(sim);
           setColonyScores(sim.colonies.map(c => c.foodCollected));
-          setAdopted(sim.colonies.map(c => c.ants.length === 0 ? 1
-            : c.ants.filter(a => a.doctrineVersion === c.doctrineVersion).length / c.ants.length));
           const fp = sim.fingerprints[sim.fingerprints.length - 1];
           if (fp) setLatestFingerprint(fp);
           const latest = metricsRef.current.samples[metricsRef.current.samples.length - 1];
@@ -572,8 +563,6 @@ export default function AntSim() {
   const stepsPerSec = Math.round(60 / framesPerTick);
   const speedLabel = framesPerTick <= 2 ? "Fast" : framesPerTick <= 6 ? "Medium" : framesPerTick <= 14 ? "Slow" : "Very slow";
   const tankCells = Math.round(tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL));
-  const colonyIdx = Math.min(selectedColony, numColonies - 1);
-  const spoilerIdx = doctrines.slice(0, numColonies).findIndex(d => d.spoilerFraction > 0);
   const loopPct = Math.round(loopRate * 100);
   const loopLabel = loopRate === 0 ? "None (tree)" : loopRate < 0.05 ? "Very few" : loopRate < 0.15 ? "Some" : loopRate < 0.3 ? "Many" : "Lots";
 
@@ -783,20 +772,6 @@ export default function AntSim() {
               <div style={{ width: 9, height: 9, borderRadius: "50%", background: "#facc15", flexShrink: 0 }} />
               <span>Carrying food</span>
             </div>
-            {spoilerIdx >= 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", opacity: 0.7 }}>
-                <div style={{ width: 9, height: 9, borderRadius: "50%", background: "transparent", border: "1.5px solid #fff", flexShrink: 0 }} />
-                <span>Spoiler</span>
-              </div>
-            )}
-            {topologyChoice.topology.provenance && spoilerIdx >= 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", opacity: 0.7 }}>
-                <div style={{ width: 12, height: 12, borderRadius: 2, background: "#2a1e0e", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ width: 5, height: 5, background: COLONY_COLORS[spoilerIdx].primary }} />
-                </div>
-                <span>False trail (in the spoiler's colour)</span>
-              </div>
-            )}
           </>
         )}
       </div>
@@ -969,40 +944,6 @@ export default function AntSim() {
             style={{ flex: "1 1 270px" }}
             disabled={replaying}
           />
-
-          <div style={{
-            background: "#0f0a04", border: "1px solid #3d2e18", borderRadius: 10, padding: "14px 16px",
-            display: "flex", flexDirection: "column", gap: 8, flex: "1 1 270px", minWidth: 0,
-            opacity: replaying ? 0.4 : 1,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#e5d5b5" }}>Field topology</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f59e0b" }}>{topologyChoice.label}</span>
-            </div>
-            <p style={{ margin: 0, fontSize: "0.72rem", color: "#a08060", lineHeight: 1.45 }}>
-              {topologyChoice.description} <strong style={{ color: "#e5d5b5" }}>Changing this restarts the simulation.</strong>
-            </p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {TOPOLOGY_CHOICES.map(c => (
-                <button
-                  key={c.name}
-                  onClick={() => {
-                    setDoctrines(prev => prev.map(d => conformDoctrine(d, c.topology)));
-                    setTopologyChoice(c);
-                  }}
-                  disabled={replaying || numColonies < 2}
-                  style={{
-                    padding: "5px 10px", borderRadius: 8, fontSize: "0.72rem", cursor: replaying ? "not-allowed" : "pointer",
-                    border: "1px solid #3d2e18",
-                    background: c.name === topologyChoice.name ? "#f59e0b" : "#1a1208",
-                    color: c.name === topologyChoice.name ? "#000" : "#e5d5b5",
-                  }}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
 
         </div>
 
@@ -1217,24 +1158,41 @@ export default function AntSim() {
         </div>
       </div>
 
-      {/* ── Doctrine ──────────────────────────────────────────────────────────── */}
-      <DoctrinePanel
-        numColonies={numColonies}
-        selected={colonyIdx}
-        onSelect={setSelectedColony}
-        doctrine={doctrines[colonyIdx]}
-        adopted={adopted[colonyIdx] ?? 1}
-        topology={topologyChoice.topology}
-        disabled={replaying}
-        onCommit={commitDoctrine}
-      />
-
       {/* ── Ant settings ───────────────────────────────────────────────────────── */}
       <div style={{ width: "100%", maxWidth: 600 }}>
         <p style={{ margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b5a3e" }}>
           Ant settings
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
+          <ParamCard
+            label="Evaporation rate"
+            description="How quickly pheromone trails fade away. Higher values force more re-exploration; lower values keep established paths alive longer. Applies equally to every colony."
+            value={doctrine.evapRate}
+            displayValue={`${(doctrine.evapRate * 1000).toFixed(0)}‰ / step`}
+            min={0.001} max={0.02} step={0.001}
+            onChange={value => {
+              const next = cloneDoctrine(doctrine);
+              next.evapRate = value;
+              commitSharedDoctrine(next);
+            }}
+            disabled={replaying}
+          />
+
+          <ParamCard
+            label="Trail bias"
+            description="How strongly ants prefer stronger trails. Power 1 is nearly random exploration; power 10 follows the strongest path almost always. Applies equally to every colony."
+            value={doctrine.forager.follow.searching.food.own}
+            displayValue={`power ${doctrine.forager.follow.searching.food.own}`}
+            min={1} max={10} step={0.5}
+            onChange={value => {
+              const next = cloneDoctrine(doctrine);
+              next.forager.follow.searching.food.own = value;
+              next.forager.follow.returning.home.own = value;
+              commitSharedDoctrine(next);
+            }}
+            disabled={replaying}
+          />
+
           <ParamCard
             label="Gland size"
             description="How much pheromone each ant carries. Fixed for the run and the same for every colony; releasing the slider restarts the simulation."
