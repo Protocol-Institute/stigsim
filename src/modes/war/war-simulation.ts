@@ -13,6 +13,7 @@ import {
   type Ant,
   type Colony,
   type Doctrine,
+  type MazeLayout,
   type RunConfig,
   type Topology,
 } from "@stigsim/sim-core";
@@ -59,6 +60,7 @@ export interface WarMatchSettings {
   foodPerSource: number;
   tankMax: number;
   topology: Topology;
+  layout: MazeLayout;
 }
 
 export const DEFAULT_WAR_SETTINGS: WarMatchSettings = {
@@ -69,6 +71,9 @@ export const DEFAULT_WAR_SETTINGS: WarMatchSettings = {
   foodPerSource: 500,
   tankMax: DEFAULT_PARAMS.tankMax,
   topology: cloneTopology(DEFAULT_TOPOLOGY),
+  // Mirrored by default: a War match is a comparison between two doctrines,
+  // and the comparison means nothing if the map favoured one nest.
+  layout: "mirrored",
 };
 
 interface AntRuntime {
@@ -152,6 +157,7 @@ export class WarSimulation {
       numColonies: 2,
       numFoodSources: this.settings.foodSources,
       foodPerSource: this.settings.foodPerSource,
+      layout: this.settings.layout,
     };
     this.economyRng = makeRng(`${config.seeds.ants}:war-survival`);
     this.simulation = new Simulation(config, {

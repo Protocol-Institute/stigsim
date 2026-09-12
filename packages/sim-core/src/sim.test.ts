@@ -31,6 +31,36 @@ function openness(sim: Simulation): boolean[] {
   return out;
 }
 
+test("the mirrored layout gives a rotation-symmetric maze and food set", () => {
+  const sim = new Simulation(config({ layout: "mirrored", numColonies: 2, numFoodSources: 5 }));
+  assert.equal(sim.layout, "mirrored");
+  const open = openness(sim);
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      assert.equal(open[y * COLS + x], open[(ROWS - 1 - y) * COLS + (COLS - 1 - x)], `cell ${x},${y}`);
+    }
+  }
+  assert.equal(sim.foodSources.length, 5);
+  for (const src of sim.foodSources) {
+    const mirror = sim.foodSources.find(s => s.x === COLS - 1 - src.x && s.y === ROWS - 1 - src.y);
+    assert.ok(mirror, `source at ${src.x},${src.y} has no image`);
+  }
+  assert.ok(sim.foodSources.some(s => s.x === (COLS - 1) / 2 && s.y === (ROWS - 1) / 2), "odd count includes the centre");
+});
+
+test("the mirrored layout places a single source on the centre cell", () => {
+  const sim = new Simulation(config({ layout: "mirrored", numColonies: 2, numFoodSources: 1 }));
+  assert.deepEqual(sim.foodSources.map(s => [s.x, s.y]), [[(COLS - 1) / 2, (ROWS - 1) / 2]]);
+});
+
+test("omitting the layout is the random layout, unchanged from before", () => {
+  const implicit = new Simulation(config());
+  const explicit = new Simulation(config({ layout: "random" }));
+  assert.equal(implicit.layout, "random");
+  assert.deepEqual(openness(implicit), openness(explicit));
+  assert.deepEqual(implicit.foodSources, explicit.foodSources);
+});
+
 test("a fresh simulation has a maze, one colony, and one food source", () => {
   const sim = build();
   assert.equal(sim.bounds.rows, ROWS);

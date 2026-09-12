@@ -1,14 +1,15 @@
 import {
   CELL, V, ARRIVE_THRESH, DEPOSIT_RATE,
-  DIRS4, TRIP_WINDOW,
+  DIRS4, TRIP_WINDOW, DEFAULT_LAYOUT,
 } from "./constants";
 import type {
-  Ant, Colony, FieldSet, FoodSource, Occupancy, SimParams,
+  Ant, Colony, FieldSet, FoodSource, MazeLayout, Occupancy, SimParams,
   SimulationOptions, WorldSpec,
 } from "./types";
 import type { RunConfig } from "./types";
-import { inBounds } from "./world";
+import { inBounds, pathDistances } from "./world";
 import { mazeWorld } from "./maze";
+import { pickMirroredFood } from "./food-layout";
 import { makeRng, shuffleInPlace, type Rng } from "./rng";
 import { isCommand, type Command, type TimedCommand } from "./commands";
 import { fingerprint, FINGERPRINT_INTERVAL } from "./fingerprint";
@@ -37,6 +38,8 @@ export class Simulation {
   foodPerSource: number;
   params: SimParams;
   loopRate: number;
+  /** How the maze and food were laid out. Fixed at construction. */
+  readonly layout: MazeLayout;
   readonly world: WorldSpec;
   readonly occupancy: Occupancy;
   /** Dimensions of the world being simulated. */
@@ -58,11 +61,13 @@ export class Simulation {
   private schedule: Map<number, Command[]> | null = null;
 
   constructor(config: RunConfig, options: SimulationOptions = {}) {
-    const world = options.world ?? mazeWorld(config.loopRate, makeRng(config.seeds.maze));
+    const layout = config.layout ?? DEFAULT_LAYOUT;
+    const world = options.world ?? mazeWorld(config.loopRate, makeRng(config.seeds.maze), layout);
     this.config = config;
     this.numAnts = config.numAnts;
     this.params = { ...config.params };
     this.loopRate = config.loopRate;
+    this.layout = layout;
     this.numColonies = config.numColonies;
     this.numFoodSources = config.numFoodSources;
     this.foodPerSource = config.foodPerSource;
@@ -279,13 +284,27 @@ export class Simulation {
         if (farEnough) open.push([x, y]);
       }
     }
-    shuffleInPlace(open, rng);
-    const count = Math.min(this.numFoodSources, open.length);
-    return open.slice(0, count).map(([x, y]) => ({
+    const cells = this.layout === "mirrored" ? this._mirroredFoodCells(open, rng) : this._randomFoodCells(open, rng);
+    return cells.map(([x, y]) => ({
       x, y,
       remaining: this.foodPerSource,
       total: this.foodPerSource,
     }));
+  }
+
+  /** The original placement: a shuffle of the eligible cells, its draw sequence unchanged. */
+  private _randomFoodCells(open: [number, number][], rng: Rng): [number, number][] {
+    shuffleInPlace(open, rng);
+    return open.slice(0, Math.min(this.numFoodSources, open.length));
+  }
+
+  /** Rotated pairs weighted by path distance from the first two nests; see food-layout.ts. */
+  private _mirroredFoodCells(open: [number, number][], rng: Rng): [number, number][] {
+    const distances = this.colonies.slice(0, 2).map(c => pathDistances(this.occupancy, c.nestX, c.nestY));
+    return pickMirroredFood({
+      cols: this.bounds.cols, rows: this.bounds.rows,
+      eligible: open, distances, count: this.numFoodSources, rng,
+    });
   }
 
   get allAnts(): Ant[] {
