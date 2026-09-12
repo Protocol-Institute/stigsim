@@ -135,6 +135,21 @@ export class Simulation {
     return ant;
   }
 
+  /** Removes matching ants while releasing their held doctrine versions. */
+  removeAnts(colonyId: number, predicate: (ant: Ant, index: number) => boolean): number {
+    const colony = this.colonies[colonyId];
+    if (!colony) return 0;
+    let removed = 0;
+    colony.ants = colony.ants.filter((ant, index) => {
+      if (!predicate(ant, index)) return true;
+      this._ref(colony, ant.doctrineVersion, -1);
+      removed++;
+      return false;
+    });
+    if (removed > 0) this._reindexManualAnt();
+    return removed;
+  }
+
   /** Applies the colony's current doctrine to an ant that is waiting at its nest. */
   adoptAntAtNest(ant: Ant, index: number): void {
     const colony = this.colonies[ant.colonyId];
@@ -275,8 +290,7 @@ export class Simulation {
       if (n > colony.ants.length) {
         for (let i = colony.ants.length; i < n; i++) colony.ants.push(this._newAnt(colony, i, n));
       } else if (n < colony.ants.length) {
-        const removed = colony.ants.splice(n);
-        for (const ant of removed) this._ref(colony, ant.doctrineVersion, -1);
+        this.removeAnts(colony.id, (_ant, index) => index >= n);
       }
     }
     this.numAnts = n;

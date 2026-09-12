@@ -114,6 +114,14 @@ test("setAntCount keeps the reference counts honest", () => {
   assert.deepEqual(refs(sim, 0), { 0: 3 });
 });
 
+test("removeAnts releases every removed ant's doctrine reference", () => {
+  const sim = new Simulation(config({ numColonies: 1, numAnts: 4 }));
+  const removed = sim.removeAnts(0, ant => ant === sim.colonies[0].ants[1]);
+  assert.equal(removed, 1);
+  assert.equal(sim.colonies[0].ants.length, 3);
+  assert.deepEqual(refs(sim, 0), { 0: 3 });
+});
+
 test("a doctrine for a colony the run does not have is ignored", () => {
   const sim = new Simulation(config({ numColonies: 1 }));
   sim.enqueue({ kind: "setDoctrine", colony: 3, doctrine: DEFAULT_DOCTRINE });
