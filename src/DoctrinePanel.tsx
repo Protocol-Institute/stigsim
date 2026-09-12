@@ -1,12 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { cloneDoctrine } from "@stigsim/sim-core";
 import type { Doctrine, Topology } from "@stigsim/sim-core";
 import { COLONY_COLORS } from "./render";
 import { ParamCard } from "./ParamCard";
 import { PRESETS } from "./doctrine-presets";
-
-/** A slider drag commits once, this long after the last movement. */
-const COMMIT_DELAY_MS = 100;
 
 const heading: CSSProperties = {
   margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em",
@@ -28,24 +25,20 @@ export function DoctrinePanel({
   showColonySelector?: boolean;
 }) {
   const [draft, setDraft] = useState<Doctrine>(doctrine);
-  const timer = useRef<number | null>(null);
 
-  // A colony switch or a reset replaces the draft; a commit echoes back the
-  // same object, which is fine.
+  // Online War installs a pending doctrine synchronously, so snapshot echoes
+  // cannot replace an in-progress slider value with stale authoritative data.
   useEffect(() => { setDraft(doctrine); }, [doctrine, selected]);
-  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
 
   const edit = (change: (d: Doctrine) => void) => {
     const next = cloneDoctrine(draft);
     change(next);
     setDraft(next);
-    if (timer.current !== null) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => { timer.current = null; onCommit(selected, next); }, COMMIT_DELAY_MS);
+    onCommit(selected, next);
   };
 
   const pick = (d: Doctrine) => {
     const next = cloneDoctrine(d);
-    if (timer.current !== null) { window.clearTimeout(timer.current); timer.current = null; }
     setDraft(next);
     onCommit(selected, next);
   };
