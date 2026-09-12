@@ -185,7 +185,6 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, topology, editable, st
   onCommit: (colonyId: number, doctrine: Doctrine) => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
-  const adopted = metrics.population === 0 ? 1 : metrics.doctrineAdopted / metrics.population;
   return <aside className="war-colony" style={{ "--colony-color": color } as React.CSSProperties}>
     <div className="war-colony__name"><span />{name ?? `Colony ${colonyId + 1}`}{editable ? " · You" : ""}<em>{status}</em></div>
     {onClaim && <button className="war-button online-war-claim" onClick={onClaim}>Join Colony {colonyId + 1}</button>}
@@ -196,7 +195,7 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, topology, editable, st
         <div className="war-metric" key={label}><span>{label}</span><strong className={["Retreating", "Waiting", "Low energy", "Died"].includes(String(label)) && Number(value) > 0 ? "war-metric--warning" : ""}>{value}</strong></div>)}
     </div>
     <FullDoctrinePanel numColonies={2} selected={colonyId} onSelect={() => undefined} doctrine={doctrine}
-      adopted={adopted} topology={topology} disabled={!editable} onCommit={onCommit} showColonySelector={false} />
+      topology={topology} disabled={!editable} onCommit={onCommit} showColonySelector={false} />
     {metrics.doctrineChanged && <p className="war-adoption"><strong>{metrics.doctrineAdopted}/{metrics.population} ants updated.</strong>{" "}Follow and lay behavior updates when each ant returns; colony-level settings apply on the next tick.</p>}
   </aside>;
 }
