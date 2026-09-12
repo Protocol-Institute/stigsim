@@ -15,6 +15,7 @@ import {
 import { COLONY_COLORS } from "../../render";
 import { DoctrinePanel as FullDoctrinePanel } from "../../DoctrinePanel";
 import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "../../topology-choices";
+import { LAYOUT_CHOICES, layoutChoice } from "../../layout-choices";
 import { appHref } from "../../routes";
 import { WAR_RULES } from "./war-simulation";
 import { terminalWarCloseMessage, warCloseAction } from "./online-war-connection";
@@ -210,6 +211,13 @@ function SettingsForm({ settings, onChange }: { settings: OnlineWarSettings; onC
     <label><span>Food/source <strong>{settings.foodPerSource}</strong></span><input type="range" min="50" max="10000" step="50" value={settings.foodPerSource} onChange={event => update("foodPerSource", Number(event.target.value))} /></label>
     <label><span>Maze loops <strong>{Math.round(settings.loopRate * 100)}%</strong></span><input type="range" min="0" max="0.5" step="0.05" value={settings.loopRate} onChange={event => update("loopRate", Number(event.target.value))} /></label>
     <div className="war-setting war-setting--topology online-war-settings__topology">
+      <span><b>Map layout</b><strong>{layoutChoice(settings.layout).label}</strong></span>
+      <p>{layoutChoice(settings.layout).description}</p>
+      <div className="war-topology-options">{LAYOUT_CHOICES.map(choice => <button type="button" key={choice.name}
+        className={choice.name === settings.layout ? "is-active" : ""}
+        onClick={() => update("layout", choice.name)}>{choice.label}</button>)}</div>
+    </div>
+    <div className="war-setting war-setting--topology online-war-settings__topology">
       <span><b>Field topology</b><strong>{choiceFor(settings.topology).label}</strong></span>
       <p>{choiceFor(settings.topology).description}</p>
       <div className="war-topology-options">{TOPOLOGY_CHOICES.map(choice => <button type="button" key={choice.name}
@@ -248,7 +256,7 @@ function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mo
     <div className="mp-row-stat"><small>Ants</small><strong>{match.settings.startingAnts}</strong><span>per colony</span></div>
     <div className="mp-row-stat"><small>Food</small><strong>{match.settings.foodSources}</strong><span>{match.settings.foodPerSource}/source</span></div>
     <div className="mp-row-stat"><small>Speed</small><strong>{match.settings.stepsPerSecond}</strong><span>steps/sec</span></div>
-    <div className="mp-row-stat"><small>Field</small><strong>{choiceFor(match.settings.topology).label}</strong><span>{Math.round(match.settings.loopRate * 100)}% loops · ~{Math.round(match.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} gland</span></div>
+    <div className="mp-row-stat"><small>Field</small><strong>{choiceFor(match.settings.topology).label}</strong><span>{layoutChoice(match.settings.layout).label} · {Math.round(match.settings.loopRate * 100)}% loops · ~{Math.round(match.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} gland</span></div>
     <button className={`mp-row-action ${mode === "running" ? "watch" : "join"}`} onClick={onJoin}>{action}</button>
   </article>;
 }
@@ -261,7 +269,7 @@ function HistoryRow({ record }: { record: WarMatchRecord }) {
     <div className="mp-row-stat"><small>Ants</small><strong>{record.settings.startingAnts}</strong><span>per colony</span></div>
     <div className="mp-row-stat"><small>Food</small><strong>{record.settings.foodSources}</strong><span>{record.settings.foodPerSource}/source</span></div>
     <div className="mp-row-stat"><small>Speed</small><strong>{record.settings.stepsPerSecond}</strong><span>steps/sec</span></div>
-    <div className="mp-row-stat"><small>Field</small><strong>{choiceFor(record.settings.topology).label}</strong><span>~{Math.round(record.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} gland</span></div>
+    <div className="mp-row-stat"><small>Field</small><strong>{choiceFor(record.settings.topology).label}</strong><span>{layoutChoice(record.settings.layout).label} · ~{Math.round(record.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} gland</span></div>
     <div className="mp-row-result"><small>Result</small><strong>{result}</strong><button className="mp-review-action" disabled>Review · Coming soon</button></div>
   </article>;
 }
@@ -481,7 +489,7 @@ export default function OnlineWarMode() {
       <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share"}</button>
     </div></header>
     {error && <div className="online-war-error">{error}</div>}
-    {snapshot && <section className="war-matchbar" aria-label="Locked match settings"><div className="war-matchbar__group"><strong>Match settings</strong><div className="war-matchbar__summary"><span>{snapshot.settings.startingAnts} ants / colony</span><span>~{Math.round(snapshot.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))}-cell gland</span><span>{snapshot.settings.foodSources} food {snapshot.settings.foodSources === 1 ? "source" : "sources"}</span><span>{snapshot.settings.foodPerSource} food / source</span><span>{Math.round(snapshot.settings.loopRate * 100)}% maze loops</span><span>{choiceFor(snapshot.settings.topology).label} topology</span><span className="war-matchbar__seed" title={snapshot.settings.masterSeed}>Seed: {snapshot.settings.masterSeed}</span></div></div><div className="war-matchbar__group war-matchbar__group--controls"><strong>Simulation</strong><div className="war-matchbar__summary"><span>{snapshot.settings.stepsPerSecond} steps / sec</span></div></div></section>}
+    {snapshot && <section className="war-matchbar" aria-label="Locked match settings"><div className="war-matchbar__group"><strong>Match settings</strong><div className="war-matchbar__summary"><span>{snapshot.settings.startingAnts} ants / colony</span><span>~{Math.round(snapshot.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))}-cell gland</span><span>{snapshot.settings.foodSources} food {snapshot.settings.foodSources === 1 ? "source" : "sources"}</span><span>{snapshot.settings.foodPerSource} food / source</span><span>{Math.round(snapshot.settings.loopRate * 100)}% maze loops</span><span>{layoutChoice(snapshot.settings.layout).label} map</span><span>{choiceFor(snapshot.settings.topology).label} topology</span><span className="war-matchbar__seed" title={snapshot.settings.masterSeed}>Seed: {snapshot.settings.masterSeed}</span></div></div><div className="war-matchbar__group war-matchbar__group--controls"><strong>Simulation</strong><div className="war-matchbar__summary"><span>{snapshot.settings.stepsPerSecond} steps / sec</span></div></div></section>}
     <section className="war-arena">
       <ColonyPanel colonyId={0} name={names[0]} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} topology={snapshot?.settings.topology ?? settings.topology} editable={colonyId === 0} status={playerStatus(0)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 0 ? () => send({ type: "stand-up" }) : undefined} onCommit={changeDoctrine} />
       <div className="war-maze online-war-maze"><canvas ref={canvasRef} width={W} height={H} />
