@@ -338,12 +338,11 @@ export class WarSimulation {
   private removeDead(colony: Colony, dead: Set<Ant>): void {
     if (dead.size === 0) return;
     const state = this.colonyRuntime[colony.id];
-    colony.ants = colony.ants.filter(ant => {
-      if (!dead.has(ant)) return true;
+    for (const ant of dead) {
       this.antRuntime.delete(ant);
       state.deaths++;
-      return false;
-    });
+    }
+    this.simulation.removeAnts(colony.id, ant => dead.has(ant));
   }
 
   private advanceEconomy(colony: Colony): void {
