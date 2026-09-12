@@ -1,4 +1,6 @@
 import { createServer } from "http";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import router from "./routes";
@@ -34,6 +36,20 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "16kb" }));
 app.use("/api", router);
+
+// Preview-only hosting: keep API misses as API misses, then serve the built SPA.
+const staticDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../dist");
+app.use("/api", (_request, response) => {
+  response.status(404).json({ error: "Not found" });
+});
+app.use(express.static(staticDir));
+app.use((request, response, next) => {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    next();
+    return;
+  }
+  response.sendFile(resolve(staticDir, "index.html"));
+});
 
 const server = createServer(app);
 
