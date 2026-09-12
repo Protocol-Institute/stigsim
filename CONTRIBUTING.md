@@ -95,8 +95,11 @@ command, or traces stop reproducing.
 
 A doctrine, an adoption mode, or a topology change is a command like any
 other: `setDoctrine` carries the whole doctrine as data, validated by
-`isDoctrine` on both the bus and the loader. Never call into a colony's
-doctrine from outside `apply`.
+`isDoctrine` on both the bus and the loader. Trace-producing modes must never
+change a colony's doctrine outside `apply`. War Mode is the temporary explicit
+exception: it is not traced yet, and its authoritative boundary calls
+`setColonyDoctrine`. Moving War doctrine changes onto the recorded command bus
+belongs to the tracing/replay package that removes this exception.
 
 If the change was deliberate, bump
 `SIM_VERSION` in `packages/sim-trace/src/trace.ts` and regenerate the fixture with
