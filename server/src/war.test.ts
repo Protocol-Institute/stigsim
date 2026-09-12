@@ -18,6 +18,14 @@ test("online match settings enforce bounded server workloads", () => {
   }), false);
 });
 
+test("online match settings accept both map layouts and nothing else", () => {
+  assert.equal(DEFAULT_ONLINE_WAR_SETTINGS.layout, "mirrored");
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "random" }), true);
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "hexagonal" }), false);
+  const { layout: _dropped, ...withoutLayout } = DEFAULT_ONLINE_WAR_SETTINGS;
+  assert.equal(validOnlineWarSettings(withoutLayout), false);
+});
+
 test("online doctrine validation matches the controls exposed to players", () => {
   assert.equal(validWarDoctrine(DEFAULT_DOCTRINE), true);
   const invalid = cloneDoctrine(DEFAULT_DOCTRINE);

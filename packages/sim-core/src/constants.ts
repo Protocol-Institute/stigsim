@@ -38,6 +38,22 @@ export const DEFAULT_NUM_COLONIES = 1;
 export const DEFAULT_NUM_FOOD_SOURCES = 1;
 export const DEFAULT_FOOD_PER_SOURCE = 500;
 
+// ─── Layout ──────────────────────────────────────────────────────────────────
+export const MAZE_LAYOUTS = ["random", "mirrored"] as const;
+export const DEFAULT_LAYOUT = "random";
+/**
+ * Under the mirrored layout, food prefers cells that are about as far by path
+ * from one nest as from the other, and the safe pair prefers cells at the
+ * shortest available distance from a nest. Both weights are
+ * exp(-(offset / FOOD_BOUNDARY_SCALE)^2), so a cell this many steps off the
+ * target weighs about a third as much as one on it, and two scales off
+ * weighs almost nothing. A tuning constant rather than a setting until play
+ * shows it needs to be one.
+ */
+export const FOOD_BOUNDARY_SCALE = 6;
+/** Minimum Manhattan distance between any two mirrored-layout food sources. */
+export const FOOD_MIN_SEPARATION = 4;
+
 /** Completed round trips kept per colony for the trip-efficiency metric. */
 export const TRIP_WINDOW = 50;
 

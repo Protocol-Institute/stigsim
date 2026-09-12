@@ -139,8 +139,13 @@ test("an ant refuels from its colony reserve at the nest", () => {
 });
 
 test("an under-fueled ant waits at the nest and keeps consuming energy", () => {
+  // Pinned to the random layout this test was written against. Under the
+  // mirrored maze for this seed the ant flips to retreating mid-corridor, and
+  // the one-cell no-backtrack rule sends it forward to the next junction
+  // rather than home, so it never reaches the nest within the budget below.
+  // That is a retreat-path behaviour, not the waiting rule under test here.
   const war = new WarSimulation(
-    { masterSeed: "waiting-test", startingAnts: 1 },
+    { masterSeed: "waiting-test", startingAnts: 1, layout: "random" },
     undefined,
     {
       maxEnergy: 1000,

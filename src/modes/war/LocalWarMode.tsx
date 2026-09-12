@@ -12,6 +12,7 @@ import {
 import { COLONY_COLORS, render } from "../../render";
 import { DoctrinePanel as FullDoctrinePanel } from "../../DoctrinePanel";
 import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "../../topology-choices";
+import { LAYOUT_CHOICES, layoutChoice } from "../../layout-choices";
 import {
   DEFAULT_WAR_SETTINGS,
   WAR_RULES,
@@ -147,6 +148,20 @@ function MatchSetup({
           <Setting label="Food sources" value={settings.foodSources} display={`${settings.foodSources}`} min={1} max={12} step={1} onChange={value => update("foodSources", value)} />
           <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={10000} step={50} onChange={value => update("foodPerSource", value)} />
           <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => update("loopRate", value)} />
+          <div className="war-setting war-setting--topology">
+            <span><b>Map layout</b><strong>{layoutChoice(settings.layout).label}</strong></span>
+            <p>{layoutChoice(settings.layout).description}</p>
+            <div className="war-topology-options">
+              {LAYOUT_CHOICES.map(choice => (
+                <button
+                  key={choice.name}
+                  type="button"
+                  className={choice.name === settings.layout ? "is-active" : ""}
+                  onClick={() => onChange({ ...settings, layout: choice.name })}
+                >{choice.label}</button>
+              ))}
+            </div>
+          </div>
           <div className="war-setting war-setting--topology">
             <span><b>Field topology</b><strong>{choiceFor(settings.topology).label}</strong></span>
             <p>{choiceFor(settings.topology).description}</p>
@@ -334,6 +349,7 @@ export default function LocalWarMode() {
             <span>{settings.foodSources} food {settings.foodSources === 1 ? "source" : "sources"}</span>
             <span>{settings.foodPerSource} food / source</span>
             <span>{Math.round(settings.loopRate * 100)}% maze loops</span>
+            <span>{layoutChoice(settings.layout).label} map</span>
             <span>{choiceFor(settings.topology).label} topology</span>
             <span className="war-matchbar__seed" title={settings.masterSeed}>Seed: {settings.masterSeed}</span>
           </div>

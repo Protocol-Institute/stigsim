@@ -1,7 +1,7 @@
-import type { RunConfig, RunSeeds, SimParams } from "@stigsim/sim-core";
+import type { MazeLayout, RunConfig, RunSeeds, SimParams } from "@stigsim/sim-core";
 import type { TimedCommand } from "@stigsim/sim-core";
 import { isTimedCommand, isAntCount, validParams } from "@stigsim/sim-core";
-import { MAX_COLONIES, MAX_FOOD_PER_SOURCE, MAX_FOOD_SOURCES, MAX_TICKS } from "@stigsim/sim-core";
+import { MAX_COLONIES, MAX_FOOD_PER_SOURCE, MAX_FOOD_SOURCES, MAX_TICKS, MAZE_LAYOUTS } from "@stigsim/sim-core";
 import type { MetricsSample, MetricsRecorder } from "./metrics";
 import type { Simulation } from "@stigsim/sim-core";
 import { fingerprint } from "@stigsim/sim-core";
@@ -19,6 +19,14 @@ export interface TraceRunConfig {
   numColonies: number;
   numFoodSources: number;
   foodPerSource: number;
+  /**
+   * Written by every build since layouts existed; absent from traces recorded
+   * before, which all used the random layout. Left optional rather than
+   * bumping TRACE_VERSION so those traces still load. A build older than
+   * this field replays a mirrored trace on the random layout and diverges at
+   * the first fingerprint checkpoint, which the replay tool reports.
+   */
+  layout?: MazeLayout;
 }
 
 export interface Trace {
@@ -79,6 +87,7 @@ export function buildTrace(
         numColonies: sim.config.numColonies,
         numFoodSources: sim.config.numFoodSources,
         foodPerSource: sim.config.foodPerSource,
+        layout: sim.layout,
       },
     },
     commands: sim.commandLog.map(c => ({ t: c.t, cmd: { ...c.cmd } })),
@@ -148,6 +157,7 @@ const CONFIG_CHECKS: [string, (c: Record<string, unknown>) => boolean][] = [
   ["colony count", c => isInt(c.numColonies) && c.numColonies >= 1 && c.numColonies <= MAX_COLONIES],
   ["food source count", c => isInt(c.numFoodSources) && c.numFoodSources >= 0 && c.numFoodSources <= MAX_FOOD_SOURCES],
   ["food-per-source amount", c => isNum(c.foodPerSource) && c.foodPerSource > 0 && c.foodPerSource <= MAX_FOOD_PER_SOURCE],
+  ["layout", c => c.layout === undefined || (MAZE_LAYOUTS as readonly unknown[]).includes(c.layout)],
 ];
 
 function configError(v: unknown): string | null {
