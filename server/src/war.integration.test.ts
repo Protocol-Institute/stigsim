@@ -46,7 +46,7 @@ async function closeServer(server: Server): Promise<void> {
 }
 
 test("two players and a spectator can complete the authoritative lobby flow", async t => {
-  const { attachWarWs, shutdownWar } = await import("./war");
+  const { attachWarWs, normalizeWarDoctrine, shutdownWar } = await import("./war");
   const server = createServer();
   await attachWarWs(server, [TEST_ORIGIN], true);
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -110,7 +110,7 @@ test("two players and a spectator can complete the authoritative lobby flow", as
   }, doctrineStart);
   assert.deepEqual(
     (doctrineSnapshot.snapshot as { colonies: Array<{ doctrine: unknown }> }).colonies[0].doctrine,
-    changedDoctrine,
+    normalizeWarDoctrine(changedDoctrine, DEFAULT_ONLINE_WAR_SETTINGS.topology),
   );
 
   const deniedStart = spectator.messages.length;

@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
-import { DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DenseField, DenseGrid, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
+import { DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, ROLES, STATES, DenseField, DenseGrid, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
@@ -79,7 +79,17 @@ export function validOnlineWarSettings(value: unknown): value is OnlineWarSettin
 }
 
 export function validWarDoctrine(value: unknown): value is Doctrine {
-  return isDoctrine(value);
+  if (!isDoctrine(value)) return false;
+  if (value.evapRate < 0.001 || value.evapRate > 0.02) return false;
+  if (value.spoilerFraction > 0.5 || value.spoilerFraction * 20 !== Math.round(value.spoilerFraction * 20)) return false;
+  if (value.mimicRate * 20 !== Math.round(value.mimicRate * 20)) return false;
+  for (const role of ROLES) for (const state of STATES) for (const channel of DOCTRINE_CHANNELS) {
+    const follow = value[role].follow[state][channel];
+    if (Math.abs(follow.own) > 10 || Math.abs(follow.enemy) > 10) return false;
+    const lay = value[role].lay[state][channel];
+    if (lay.own > 1) return false;
+  }
+  return true;
 }
 
 function cleanName(value: unknown): string | null {
@@ -96,8 +106,8 @@ function roomCode(): string {
   }
 }
 
-function warDoctrine(value: Doctrine): Doctrine {
-  return cloneDoctrine(value);
+export function normalizeWarDoctrine(value: Doctrine, topology: Topology): Doctrine {
+  return conformDoctrine(value, topology);
 }
 
 function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
@@ -530,7 +540,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     if (!validWarDoctrine(message.doctrine)) {
       return send(socket, { type: "error", message: "Doctrine values are outside the allowed range" });
     }
-    match.war.setDoctrine(colonyId, warDoctrine(message.doctrine));
+    match.war.setDoctrine(colonyId, normalizeWarDoctrine(message.doctrine, match.settings.topology));
     if (match.phase === "waiting") broadcastSnapshot(match);
   } else if (message.type === "reset" && match.phase === "finished") {
     resetMatch(match);
