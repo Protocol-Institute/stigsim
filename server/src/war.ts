@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
-import { DEFAULT_PARAMS, DenseField, DenseGrid, deriveStreamSeed, generateMasterSeed, makeRng, type SimParams } from "@stigsim/sim-core";
+import { DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, ROLES, STATES, DenseField, DenseGrid, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
@@ -9,6 +9,8 @@ import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
 import { WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
+import { PRESETS } from "../../src/doctrine-presets";
+import { conformDoctrine, isNamedTopology } from "../../src/topology-choices";
 import type {
   OnlineWarSettings,
   WarClientMessage,
@@ -70,20 +72,24 @@ export function validOnlineWarSettings(value: unknown): value is OnlineWarSettin
     && Number.isInteger(settings.foodPerSource) && settings.foodPerSource! >= 50 && settings.foodPerSource! <= 10_000
     && settings.foodPerSource! % 50 === 0
     && typeof settings.loopRate === "number" && Number.isFinite(settings.loopRate)
-    && settings.loopRate >= 0 && settings.loopRate <= 0.5;
+    && settings.loopRate >= 0 && settings.loopRate <= 0.5
+    && Number.isInteger(settings.tankMax) && settings.tankMax! >= 1_600 && settings.tankMax! <= 16_000
+    && settings.tankMax! % 800 === 0
+    && isTopology(settings.topology) && isNamedTopology(settings.topology);
 }
 
-export function validWarDoctrine(value: unknown): value is SimParams {
-  if (!value || typeof value !== "object") return false;
-  const doctrine = value as Partial<SimParams>;
-  return typeof doctrine.evapRate === "number" && Number.isFinite(doctrine.evapRate)
-    && doctrine.evapRate >= 0.001 && doctrine.evapRate <= 0.02
-    && typeof doctrine.trailPower === "number" && Number.isFinite(doctrine.trailPower)
-    && doctrine.trailPower >= 1 && doctrine.trailPower <= 10
-    && doctrine.trailPower * 2 === Math.round(doctrine.trailPower * 2)
-    && Number.isInteger(doctrine.tankMax) && doctrine.tankMax! >= 1_600 && doctrine.tankMax! <= 16_000
-    && doctrine.tankMax! % 800 === 0
-    && typeof doctrine.cautionary === "boolean";
+export function validWarDoctrine(value: unknown): value is Doctrine {
+  if (!isDoctrine(value)) return false;
+  if (value.evapRate < 0.001 || value.evapRate > 0.02) return false;
+  if (value.spoilerFraction > 0.5 || value.spoilerFraction * 20 !== Math.round(value.spoilerFraction * 20)) return false;
+  if (value.mimicRate * 20 !== Math.round(value.mimicRate * 20)) return false;
+  for (const role of ROLES) for (const state of STATES) for (const channel of DOCTRINE_CHANNELS) {
+    const follow = value[role].follow[state][channel];
+    if (Math.abs(follow.own) > 10 || Math.abs(follow.enemy) > 10) return false;
+    const lay = value[role].lay[state][channel];
+    if (lay.own > 1) return false;
+  }
+  return true;
 }
 
 function cleanName(value: unknown): string | null {
@@ -100,13 +106,8 @@ function roomCode(): string {
   }
 }
 
-function warDoctrine(value: SimParams): SimParams {
-  return {
-    evapRate: value.evapRate,
-    trailPower: value.trailPower,
-    tankMax: value.tankMax,
-    cautionary: value.cautionary,
-  };
+export function normalizeWarDoctrine(value: Doctrine, topology: Topology): Doctrine {
+  return conformDoctrine(value, topology);
 }
 
 function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
@@ -117,27 +118,28 @@ function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
     foodSources: value.foodSources,
     foodPerSource: value.foodPerSource,
     loopRate: value.loopRate,
+    tankMax: value.tankMax,
+    topology: cloneTopology(value.topology),
   };
 }
 
-function makeWar(settings: OnlineWarSettings, doctrines?: SimParams[]): WarSimulation {
+function makeWar(settings: OnlineWarSettings, doctrines?: Doctrine[]): WarSimulation {
   return new WarSimulation({
     masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
     startingAnts: settings.startingAnts,
     foodSources: settings.foodSources,
     foodPerSource: settings.foodPerSource,
     loopRate: settings.loopRate,
+    tankMax: settings.tankMax,
+    topology: settings.topology,
   }, doctrines);
 }
 
-export function randomOpponentDoctrine(masterSeed: string): SimParams {
+export function randomOpponentDoctrine(masterSeed: string, topology: Topology = DEFAULT_TOPOLOGY): Doctrine {
   const rng = makeRng(deriveStreamSeed(masterSeed, "war-random-opponent-doctrine"));
-  return {
-    evapRate: (1 + Math.floor(rng() * 20)) / 1_000,
-    trailPower: 1 + Math.floor(rng() * 19) * 0.5,
-    tankMax: 1_600 + Math.floor(rng() * 19) * 800,
-    cautionary: rng() >= 0.5,
-  };
+  const available = PRESETS.filter(preset => preset.available(topology));
+  const preset = available[Math.floor(rng() * available.length)] ?? PRESETS[0];
+  return conformDoctrine(preset.doctrine, topology);
 }
 
 function createMatch(settings: OnlineWarSettings): WarMatch {
@@ -328,7 +330,10 @@ export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settin
         nestY: colony.nestY,
         homePhero: pheromoneWireValues(colony.field.layer("home")),
         foodPhero: pheromoneWireValues(colony.field.layer("food")),
-        cautPhero: pheromoneWireValues(colony.field.layer("caut")),
+        receivedPhero: [...colony.received].map(([from, field]) => {
+          if (!(field instanceof DenseField)) throw new Error("Online War requires dense provenance fields");
+          return { from, home: pheromoneWireValues(field.layer("home")), food: pheromoneWireValues(field.layer("food")) };
+        }),
         ants: colony.ants.map(ant => {
           const runtime = match.war.getAntSnapshot(ant);
           if (!runtime) throw new Error("War ant is missing runtime state");
@@ -341,6 +346,8 @@ export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settin
             hasFood: ant.hasFood,
             phase: runtime.phase,
             energy: runtime.energy,
+            role: runtime.role,
+            doctrineVersion: runtime.doctrineVersion,
           };
         }),
         metrics: match.war.getMetrics(colony.id),
@@ -448,8 +455,8 @@ function standUp(socket: WebSocket, match: WarMatch): void {
 
 function resetMatch(match: WarMatch): void {
   const doctrines = match.players.map(player => player?.isBot
-    ? randomOpponentDoctrine(match.settings.masterSeed)
-    : DEFAULT_PARAMS);
+    ? randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)
+    : DEFAULT_DOCTRINE);
   match.war = makeWar(match.settings, doctrines);
   match.phase = "waiting";
   match.finishedAt = null;
@@ -500,7 +507,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     const { match, token } = createWaitingMatch(socket, name, message.settings);
     match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
     match.players[0]!.ready = true;
-    match.war = makeWar(match.settings, [DEFAULT_PARAMS, randomOpponentDoctrine(match.settings.masterSeed)]);
+    match.war = makeWar(match.settings, [DEFAULT_DOCTRINE, randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)]);
     match.phase = "running";
     enterMatch(socket, match, name, token);
     return;
@@ -533,7 +540,7 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     if (!validWarDoctrine(message.doctrine)) {
       return send(socket, { type: "error", message: "Doctrine values are outside the allowed range" });
     }
-    match.war.setDoctrine(colonyId, warDoctrine(message.doctrine));
+    match.war.setDoctrine(colonyId, normalizeWarDoctrine(message.doctrine, match.settings.topology));
     if (match.phase === "waiting") broadcastSnapshot(match);
   } else if (message.type === "reset" && match.phase === "finished") {
     resetMatch(match);

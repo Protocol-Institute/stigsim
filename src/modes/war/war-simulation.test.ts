@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CELL, DEFAULT_PARAMS, fingerprint, type Ant, type Colony } from "@stigsim/sim-core";
+import {
+  CELL, DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY,
+  cloneDoctrine, fingerprint, type Ant, type Colony,
+} from "@stigsim/sim-core";
 import { WarSimulation } from "./war-simulation";
 
 function forceAtNest(ant: Ant, colony: Colony) {
@@ -13,27 +16,53 @@ function forceAtNest(ant: Ant, colony: Colony) {
   ant.state = "returning";
 }
 
+function antDoctrine(war: WarSimulation, ant: Ant) {
+  return war.simulation.doctrineFor(ant, war.simulation.colonies[ant.colonyId]);
+}
+
+test("a War match starts with its selected topology and full per-colony doctrines", () => {
+  const saboteur = cloneDoctrine(DEFAULT_DOCTRINE);
+  saboteur.spoilerFraction = 0.25;
+  saboteur.mimicRate = 0.5;
+  const war = new WarSimulation(
+    { masterSeed: "full-doctrine", startingAnts: 8, topology: TOPOLOGY_MIMICRY },
+    [saboteur, DEFAULT_DOCTRINE],
+  );
+
+  assert.deepEqual(war.simulation.topology, TOPOLOGY_MIMICRY);
+  assert.equal(war.getFullDoctrine(0).spoilerFraction, 0.25);
+  assert.equal(war.simulation.colonies[0].ants.filter(ant => ant.role === "spoiler").length, 2);
+  assert.ok(war.simulation.colonies[1].ants.every(ant => ant.role === "forager"));
+});
+
+test("gland size is fixed once per match and shared by both colonies", () => {
+  const war = new WarSimulation({ masterSeed: "shared-gland", startingAnts: 2, tankMax: 8_000 });
+  assert.equal(war.simulation.params.tankMax, 8_000);
+  assert.ok(war.simulation.colonies.every(colony => colony.ants.every(ant => ant.tank === 8_000)));
+});
+
 test("doctrine changes wait until an ant returns to its nest", () => {
   const war = new WarSimulation(
     { masterSeed: "doctrine-test", startingAnts: 1 },
-    [DEFAULT_PARAMS, DEFAULT_PARAMS],
+    [DEFAULT_DOCTRINE, DEFAULT_DOCTRINE],
     { maxEnergy: 3, retreatEnergy: 2, minDepartEnergy: 2 },
   );
   const colony = war.simulation.colonies[0];
   const ant = colony.ants[0];
-  const changed = { ...DEFAULT_PARAMS, trailPower: 8, tankMax: 8800 };
+  const changed = cloneDoctrine(DEFAULT_DOCTRINE);
+  changed.forager.follow.searching.food.own = 8;
 
   war.setDoctrine(0, changed);
   assert.equal(war.getMetrics(0).doctrineChanged, true);
-  assert.equal(war.getAntSnapshot(ant)?.doctrine.trailPower, DEFAULT_PARAMS.trailPower);
+  assert.equal(antDoctrine(war, ant).forager.follow.searching.food.own, DEFAULT_DOCTRINE.forager.follow.searching.food.own);
   war.step();
   war.step();
   assert.equal(war.getAntSnapshot(ant)?.phase, "retreating");
-  assert.equal(war.getAntSnapshot(ant)?.doctrine.trailPower, DEFAULT_PARAMS.trailPower);
+  assert.equal(antDoctrine(war, ant).forager.follow.searching.food.own, DEFAULT_DOCTRINE.forager.follow.searching.food.own);
 
   forceAtNest(ant, colony);
   war.step();
-  assert.equal(war.getAntSnapshot(ant)?.doctrine.trailPower, changed.trailPower);
+  assert.equal(antDoctrine(war, ant).forager.follow.searching.food.own, 8);
   assert.equal(war.getAntSnapshot(ant)?.doctrineVersion, 1);
   assert.equal(war.getMetrics(0).doctrineAdopted, 1);
   assert.equal(war.getMetrics(0).doctrineChanged, false);
@@ -59,7 +88,9 @@ test("metrics account for every living ant and current doctrine adoption", () =>
     doctrineAdopted: 3,
   });
 
-  war.setDoctrine(0, { ...DEFAULT_PARAMS, trailPower: 7 });
+  const changedDoctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+  changedDoctrine.forager.follow.searching.food.own = 7;
+  war.setDoctrine(0, changedDoctrine);
   const changed = war.getMetrics(0);
   assert.equal(changed.doctrineChanged, true);
   assert.equal(changed.doctrineAdopted, 0);
@@ -232,13 +263,32 @@ test("an empty colony uses its pending doctrine for pheromone evaporation", () =
   const war = new WarSimulation({ masterSeed: "empty-evaporation", startingAnts: 1 });
   const colony = war.simulation.colonies[0];
   colony.ants.length = 0;
-  war.setDoctrine(0, { ...DEFAULT_PARAMS, evapRate: 0.02 });
+  const changed = cloneDoctrine(DEFAULT_DOCTRINE);
+  changed.evapRate = 0.02;
+  war.setDoctrine(0, changed);
 
   const cell = [0, 0] as const;
   colony.field.set("home", cell[0], cell[1], 100);
   war.step();
 
   assert.ok(Math.abs(colony.field.get("home", cell[0], cell[1]) - 98) < 0.001);
+});
+
+test("colony-level evaporation changes immediately while ants keep old per-ant behavior", () => {
+  const war = new WarSimulation({ masterSeed: "split-adoption", startingAnts: 1 });
+  const colony = war.simulation.colonies[0];
+  const ant = colony.ants[0];
+  const changed = cloneDoctrine(DEFAULT_DOCTRINE);
+  changed.evapRate = 0.02;
+  changed.forager.follow.searching.food.own = 8;
+  colony.field.set("home", 0, 0, 100);
+
+  war.setDoctrine(0, changed);
+  war.step();
+
+  assert.ok(Math.abs(colony.field.get("home", 0, 0) - 98) < 0.001);
+  assert.equal(ant.doctrineVersion, 0);
+  assert.equal(antDoctrine(war, ant).forager.follow.searching.food.own, DEFAULT_DOCTRINE.forager.follow.searching.food.own);
 });
 
 test("same-seed War Mode remains deterministic through doctrine changes", () => {
@@ -250,10 +300,18 @@ test("same-seed War Mode remains deterministic through doctrine changes", () => 
   };
   const first = new WarSimulation(settings);
   const second = new WarSimulation(settings);
-  const changes = new Map([
-    [400, [0, { ...DEFAULT_PARAMS, evapRate: 0.012, trailPower: 7 }] as const],
-    [1_200, [1, { ...DEFAULT_PARAMS, tankMax: 12_000, cautionary: true }] as const],
-    [2_100, [0, { ...DEFAULT_PARAMS, evapRate: 0.003, tankMax: 8_800 }] as const],
+  const firstChange = cloneDoctrine(DEFAULT_DOCTRINE);
+  firstChange.evapRate = 0.012;
+  firstChange.forager.follow.searching.food.own = 7;
+  const secondChange = cloneDoctrine(DEFAULT_DOCTRINE);
+  secondChange.spoilerFraction = 0.2;
+  secondChange.mimicRate = 0.5;
+  const thirdChange = cloneDoctrine(DEFAULT_DOCTRINE);
+  thirdChange.evapRate = 0.003;
+  const changes = new Map<number, readonly [number, typeof firstChange]>([
+    [400, [0, firstChange]],
+    [1_200, [1, secondChange]],
+    [2_100, [0, thirdChange]],
   ]);
 
   for (let tick = 0; tick < 3_000; tick++) {

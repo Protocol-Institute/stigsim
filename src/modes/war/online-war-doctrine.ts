@@ -1,8 +1,7 @@
-import type { SimParams } from "@stigsim/sim-core";
+import { doctrineNumbers, type Doctrine } from "@stigsim/sim-core";
 
-export function sameWarDoctrine(first: SimParams, second: SimParams): boolean {
-  return first.evapRate === second.evapRate
-    && first.trailPower === second.trailPower
-    && first.tankMax === second.tankMax
-    && first.cautionary === second.cautionary;
+export function sameWarDoctrine(first: Doctrine, second: Doctrine): boolean {
+  const a = doctrineNumbers(first);
+  const b = doctrineNumbers(second);
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }

@@ -1,21 +1,52 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DenseField } from "@stigsim/sim-core";
+import { COLS, ROWS, DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, DenseField, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
-import { completedWarRecord, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { completedWarRecord, normalizeWarDoctrine, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
   assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, startingAnts: 101 }), false);
   assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, foodPerSource: 51 }), false);
   assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, loopRate: Number.NaN }), false);
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, tankMax: 8_001 }), false);
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, topology: { ...TOPOLOGY_MIMICRY, maxMimicRate: 2 } }), false);
+  assert.equal(validOnlineWarSettings({
+    ...DEFAULT_ONLINE_WAR_SETTINGS,
+    topology: { ...TOPOLOGY_MIMICRY, visible: { ...TOPOLOGY_MIMICRY.visible }, provenance: false },
+  }), false);
 });
 
 test("online doctrine validation matches the controls exposed to players", () => {
-  assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.5, tankMax: 8_000, cautionary: true }), true);
-  assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.25, tankMax: 8_000, cautionary: true }), false);
-  assert.equal(validWarDoctrine({ evapRate: 0.005, trailPower: 2.5, tankMax: 8_001, cautionary: true }), false);
+  assert.equal(validWarDoctrine(DEFAULT_DOCTRINE), true);
+  const invalid = cloneDoctrine(DEFAULT_DOCTRINE);
+  invalid.forager.follow.searching.food.own = 2.25;
+  assert.equal(validWarDoctrine(invalid), false);
+  const excessiveFollow = cloneDoctrine(DEFAULT_DOCTRINE);
+  excessiveFollow.forager.follow.searching.food.own = 10.5;
+  assert.equal(validWarDoctrine(excessiveFollow), false);
+  const excessiveLay = cloneDoctrine(DEFAULT_DOCTRINE);
+  excessiveLay.forager.lay.searching.home.own = 2;
+  assert.equal(validWarDoctrine(excessiveLay), false);
+  const zeroEvaporation = cloneDoctrine(DEFAULT_DOCTRINE);
+  zeroEvaporation.evapRate = 0;
+  assert.equal(validWarDoctrine(zeroEvaporation), false);
+  const excessiveSpoilers = cloneDoctrine(DEFAULT_DOCTRINE);
+  excessiveSpoilers.spoilerFraction = 0.55;
+  assert.equal(validWarDoctrine(excessiveSpoilers), false);
+  assert.equal(validWarDoctrine({ ...DEFAULT_DOCTRINE, cautionary: true }), false);
+});
+
+test("online doctrines are conformed to the match topology", () => {
+  const doctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+  doctrine.spoilerFraction = 0.2;
+  doctrine.mimicRate = 0.5;
+  doctrine.forager.follow.searching.food.enemy = 2;
+  const normalized = normalizeWarDoctrine(doctrine, DEFAULT_ONLINE_WAR_SETTINGS.topology);
+  assert.equal(normalized.spoilerFraction, 0);
+  assert.equal(normalized.mimicRate, 0);
+  assert.equal(normalized.forager.follow.searching.food.enemy, 0);
 });
 
 test("random-opponent doctrine is deterministic from the match seed", () => {
@@ -45,6 +76,18 @@ test("wire snapshots contain the shared WarSimulation state", () => {
   assert.equal(snapshot.grid.length > 0, true);
   assert.equal(snapshot.colonies[0].homePhero.length, snapshot.grid.length * snapshot.grid[0].length);
   assert.equal(snapshot.colonies[0].ants.length, 2);
+  assert.equal(snapshot.colonies[0].ants[0].role, "forager");
+  assert.equal(snapshot.colonies[0].ants[0].doctrineVersion, 0);
+});
+
+test("online match settings construct one symmetric gland and topology", () => {
+  const settings = { ...DEFAULT_ONLINE_WAR_SETTINGS, tankMax: 8_000, topology: TOPOLOGY_MIMICRY };
+  const war = new WarSimulation(settings);
+  const snapshot = snapshotWarMatch({ war, phase: "running", settings });
+  assert.equal(war.simulation.params.tankMax, 8_000);
+  assert.deepEqual(war.simulation.topology, TOPOLOGY_MIMICRY);
+  assert.equal(snapshot.settings.tankMax, 8_000);
+  assert.deepEqual(snapshot.settings.topology, TOPOLOGY_MIMICRY);
 });
 
 test("wire snapshots round pheromones without changing simulation precision", () => {
@@ -62,6 +105,21 @@ test("wire snapshots round pheromones without changing simulation precision", ()
   assert.equal(home[0], authoritativeValue);
   assert.notEqual(authoritativeValue, snapshot.colonies[0].homePhero[0]);
   assert.equal(JSON.stringify(snapshot).includes("0.3333333432674408"), false);
+});
+
+test("wire snapshots expose false-trail provenance without a cautionary channel", () => {
+  const war = new WarSimulation({ masterSeed: "snapshot-provenance", startingAnts: 1, topology: TOPOLOGY_MIMICRY });
+  const received = new DenseField(COLS, ROWS);
+  received.set("food", 2, 3, 12.3456);
+  war.simulation.colonies[0].received.set(1, received);
+
+  const snapshot = snapshotWarMatch({ war, phase: "running", settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, topology: TOPOLOGY_MIMICRY } });
+  assert.deepEqual(snapshot.colonies[0].receivedPhero, [{
+    from: 1,
+    home: Array(COLS * ROWS).fill(0),
+    food: Array.from({ length: COLS * ROWS }, (_, index) => index === 3 * COLS + 2 ? 12.346 : 0),
+  }]);
+  assert.equal("cautPhero" in snapshot.colonies[0], false);
 });
 
 test("wire ant ids remain stable when an earlier ant leaves the array", () => {
