@@ -12,6 +12,10 @@ test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, loopRate: Number.NaN }), false);
   assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, tankMax: 8_001 }), false);
   assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, topology: { ...TOPOLOGY_MIMICRY, maxMimicRate: 2 } }), false);
+  assert.equal(validOnlineWarSettings({
+    ...DEFAULT_ONLINE_WAR_SETTINGS,
+    topology: { ...TOPOLOGY_MIMICRY, visible: { ...TOPOLOGY_MIMICRY.visible }, provenance: false },
+  }), false);
 });
 
 test("online doctrine validation matches the controls exposed to players", () => {

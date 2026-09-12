@@ -5,7 +5,7 @@ import {
 import type { Doctrine, Topology } from "@stigsim/sim-core";
 
 export interface TopologyChoice {
-  name: "private" | "sensing" | "mimicry" | "open";
+  name: "private" | "sensing" | "mimicry" | "open" | "custom";
   label: string;
   description: string;
   topology: Topology;
@@ -18,10 +18,23 @@ export const TOPOLOGY_CHOICES: readonly TopologyChoice[] = [
   { name: "open", label: "Open", description: "One shared food trail for everyone. Nobody can tell whose trail is whose; home stays private.", topology: TOPOLOGY_OPEN },
 ];
 
-/** The choice a running simulation's topology corresponds to, by read mode and mimic switch. */
+function sameTopology(a: Topology, b: Topology): boolean {
+  return a.read === b.read
+    && a.mimicEnemy === b.mimicEnemy
+    && a.visible.home === b.visible.home
+    && a.visible.food === b.visible.food
+    && a.maxMimicRate === b.maxMimicRate
+    && a.provenance === b.provenance;
+}
+
+/** The exact named choice for a topology, or an honest label for legacy/custom data. */
 export function choiceFor(t: Topology): TopologyChoice {
-  return TOPOLOGY_CHOICES.find(c => c.topology.read === t.read && c.topology.mimicEnemy === t.mimicEnemy)
-    ?? TOPOLOGY_CHOICES[0];
+  return TOPOLOGY_CHOICES.find(c => sameTopology(c.topology, t))
+    ?? { name: "custom", label: "Custom", description: "A non-standard field topology.", topology: t };
+}
+
+export function isNamedTopology(t: Topology): boolean {
+  return TOPOLOGY_CHOICES.some(choice => sameTopology(choice.topology, t));
 }
 
 /**
