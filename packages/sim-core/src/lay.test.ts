@@ -146,6 +146,18 @@ test("under separable mimicry the deposit lands in the other colony's layer", ()
   assert.equal(a.field.get("food", a.nestX, a.nestY), 0);
 });
 
+test("mimic deposits cannot cross on a topology-invisible channel", () => {
+  const sim = new Simulation(config());
+  sim.topology = { ...TOPOLOGY_MIMICRY, visible: { home: false, food: true } };
+  const doctrine = allSpoilers(0.5);
+  doctrine.spoiler.lay.searching.food.mimic = 0;
+  doctrine.spoiler.lay.searching.home.mimic = 1;
+  start(sim, doctrine);
+  const [attacker, victim] = sim.colonies;
+  for (let i = 0; i < 5; i++) sim.step();
+  assert.equal(victim.field.get("home", attacker.nestX, attacker.nestY), 0);
+});
+
 test("under the open topology the deposit lands in the spoiler's own layer", () => {
   const sim = new Simulation(config());
   sim.topology = TOPOLOGY_OPEN;

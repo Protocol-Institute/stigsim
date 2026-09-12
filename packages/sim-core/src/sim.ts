@@ -213,8 +213,8 @@ export class Simulation {
    * it. With more than two colonies the amount is split equally.
    */
   private _depositMimic(colony: Colony, ch: DoctrineChannel, cx: number, cy: number, amount: number) {
-    const { read, mimicEnemy, provenance } = this.topology;
-    if (!mimicEnemy || read === "private") return;
+    const { read, mimicEnemy, provenance, visible } = this.topology;
+    if (!mimicEnemy || !visible[ch] || read === "private") return;
     if (read === "shared") { colony.field.add(ch, cx, cy, amount); return; }
     const others = this.colonies.filter(c => c !== colony);
     if (others.length === 0) return;
