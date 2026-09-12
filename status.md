@@ -4,6 +4,9 @@
 
 - Apply the shared doctrine, adoption, topology, and symmetric gland model to
   both Local and Online War Mode.
+- Reconcile the energy, starvation, death, and colony-extinction mechanics
+  shared by War and Infinite Mode; War reproduction remains an explicit
+  mode-specific policy.
 - Integrate the shared `WarSimulation` as an authoritative Online War experience with create, join, spectate, reconnect, rematch, and compact completed-match history. Replay remains a follow-up.
 - Point `stigsim.protocol-institute.org` (Cloudflare DNS) at GitHub Pages — repo side done, needs a CNAME DNS record added in Cloudflare.
 - Integrate and deploy Infinite Mode using one Railway simulation server and Neon Postgres.

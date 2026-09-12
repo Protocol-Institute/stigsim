@@ -109,6 +109,12 @@ evaporation, spoiler allocation, and mimic rate apply at the next tick; ants
 adopt new follow and lay behavior when they return to their nest. War tracing
 remains deliberately deferred.
 
+The lifecycle half of work package 4 also remains open. War still owns its
+energy, reserve, reproduction, hatching, and death policies in `WarSimulation`,
+while Infinite Mode retains its existing starvation lifecycle. Unifying their
+shared energy/death mechanics without erasing intentional mode differences is
+follow-up architecture work, separate from this doctrine/topology integration.
+
 ## How the shared world works
 
 The website is a static React/Vite application hosted on GitHub Pages. Infinite
