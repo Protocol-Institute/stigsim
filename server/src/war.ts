@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
-import { DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, MAZE_LAYOUTS, ROLES, STATES, DenseField, DenseGrid, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
+import { ADOPTION_MODES, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, MAZE_LAYOUTS, ROLES, STATES, DenseField, DenseGrid, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
@@ -76,7 +76,8 @@ export function validOnlineWarSettings(value: unknown): value is OnlineWarSettin
     && Number.isInteger(settings.tankMax) && settings.tankMax! >= 1_600 && settings.tankMax! <= 16_000
     && settings.tankMax! % 800 === 0
     && isTopology(settings.topology) && isNamedTopology(settings.topology)
-    && (MAZE_LAYOUTS as readonly unknown[]).includes(settings.layout);
+    && (MAZE_LAYOUTS as readonly unknown[]).includes(settings.layout)
+    && (ADOPTION_MODES as readonly unknown[]).includes(settings.adoption);
 }
 
 export function validWarDoctrine(value: unknown): value is Doctrine {
@@ -122,6 +123,7 @@ function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
     tankMax: value.tankMax,
     topology: cloneTopology(value.topology),
     layout: value.layout,
+    adoption: value.adoption,
   };
 }
 
@@ -135,6 +137,7 @@ function makeWar(settings: OnlineWarSettings, doctrines?: Doctrine[]): WarSimula
     tankMax: settings.tankMax,
     topology: settings.topology,
     layout: settings.layout,
+    adoption: settings.adoption,
   }, doctrines);
 }
 

@@ -7,6 +7,7 @@ export type DoctrineChannel = "home" | "food";
 export type Origin = "own" | "enemy";
 export type AdoptionMode = "instant" | "nest";
 
+export const ADOPTION_MODES: readonly AdoptionMode[] = ["instant", "nest"];
 export const ROLES: readonly Role[] = ["forager", "spoiler"];
 export const STATES: readonly AntState[] = ["searching", "returning"];
 export const DOCTRINE_CHANNELS: readonly DoctrineChannel[] = ["home", "food"];

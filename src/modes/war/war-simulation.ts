@@ -10,6 +10,7 @@ import {
   generateMasterSeed,
   makeRng,
   makeSeeds,
+  type AdoptionMode,
   type Ant,
   type Colony,
   type Doctrine,
@@ -61,6 +62,8 @@ export interface WarMatchSettings {
   tankMax: number;
   topology: Topology;
   layout: MazeLayout;
+  /** When a doctrine change reaches the ants. */
+  adoption: AdoptionMode;
 }
 
 export const DEFAULT_WAR_SETTINGS: WarMatchSettings = {
@@ -74,6 +77,8 @@ export const DEFAULT_WAR_SETTINGS: WarMatchSettings = {
   // Mirrored by default: a War match is a comparison between two doctrines,
   // and the comparison means nothing if the map favoured one nest.
   layout: "mirrored",
+  // On-return is what War has always run; instant is there to be tried.
+  adoption: "nest",
 };
 
 interface AntRuntime {
@@ -163,7 +168,7 @@ export class WarSimulation {
     this.simulation = new Simulation(config, {
       doctrines,
       topology: this.settings.topology,
-      adoption: "nest",
+      adoption: this.settings.adoption,
     });
     for (const colony of this.simulation.colonies) {
       for (const ant of colony.ants) this.registerAnt(ant, colony.id);
