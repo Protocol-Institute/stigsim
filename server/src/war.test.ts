@@ -3,7 +3,7 @@ import test from "node:test";
 import { COLS, ROWS, DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, DenseField, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
-import { completedWarRecord, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { completedWarRecord, normalizeWarDoctrine, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
@@ -19,7 +19,30 @@ test("online doctrine validation matches the controls exposed to players", () =>
   const invalid = cloneDoctrine(DEFAULT_DOCTRINE);
   invalid.forager.follow.searching.food.own = 2.25;
   assert.equal(validWarDoctrine(invalid), false);
+  const excessiveFollow = cloneDoctrine(DEFAULT_DOCTRINE);
+  excessiveFollow.forager.follow.searching.food.own = 10.5;
+  assert.equal(validWarDoctrine(excessiveFollow), false);
+  const excessiveLay = cloneDoctrine(DEFAULT_DOCTRINE);
+  excessiveLay.forager.lay.searching.home.own = 2;
+  assert.equal(validWarDoctrine(excessiveLay), false);
+  const zeroEvaporation = cloneDoctrine(DEFAULT_DOCTRINE);
+  zeroEvaporation.evapRate = 0;
+  assert.equal(validWarDoctrine(zeroEvaporation), false);
+  const excessiveSpoilers = cloneDoctrine(DEFAULT_DOCTRINE);
+  excessiveSpoilers.spoilerFraction = 0.55;
+  assert.equal(validWarDoctrine(excessiveSpoilers), false);
   assert.equal(validWarDoctrine({ ...DEFAULT_DOCTRINE, cautionary: true }), false);
+});
+
+test("online doctrines are conformed to the match topology", () => {
+  const doctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+  doctrine.spoilerFraction = 0.2;
+  doctrine.mimicRate = 0.5;
+  doctrine.forager.follow.searching.food.enemy = 2;
+  const normalized = normalizeWarDoctrine(doctrine, DEFAULT_ONLINE_WAR_SETTINGS.topology);
+  assert.equal(normalized.spoilerFraction, 0);
+  assert.equal(normalized.mimicRate, 0);
+  assert.equal(normalized.forager.follow.searching.food.enemy, 0);
 });
 
 test("random-opponent doctrine is deterministic from the match seed", () => {
