@@ -18,6 +18,24 @@ test("online match settings enforce bounded server workloads", () => {
   }), false);
 });
 
+test("online match settings accept both map layouts and nothing else", () => {
+  assert.equal(DEFAULT_ONLINE_WAR_SETTINGS.layout, "mirrored");
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "random" }), true);
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "hexagonal" }), false);
+  const { layout: _dropped, ...withoutLayout } = DEFAULT_ONLINE_WAR_SETTINGS;
+  assert.equal(validOnlineWarSettings(withoutLayout), false);
+});
+
+test("online match settings accept both adoption modes and nothing else", () => {
+  assert.equal(DEFAULT_ONLINE_WAR_SETTINGS.adoption, "nest");
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "instant" }), true);
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "eventually" }), false);
+  const { adoption: _dropped, ...withoutAdoption } = DEFAULT_ONLINE_WAR_SETTINGS;
+  assert.equal(validOnlineWarSettings(withoutAdoption), false);
+  const war = new WarSimulation({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "instant" });
+  assert.equal(war.simulation.adoption, "instant");
+});
+
 test("online doctrine validation matches the controls exposed to players", () => {
   assert.equal(validWarDoctrine(DEFAULT_DOCTRINE), true);
   const invalid = cloneDoctrine(DEFAULT_DOCTRINE);

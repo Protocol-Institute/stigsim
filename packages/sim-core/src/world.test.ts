@@ -1,7 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DenseGrid, WallSet, inBounds } from "./world";
+import { DenseGrid, WallSet, inBounds, pathDistances } from "./world";
 import type { CellType, Occupancy } from "./types";
+
+test("pathDistances counts orthogonal steps and marks unreachable cells -1", () => {
+  // A 5x3 corridor with a wall in the middle column, top two rows.
+  const cells: CellType[][] = [
+    [1, 1, 0, 1, 1],
+    [1, 1, 0, 1, 1],
+    [1, 1, 1, 1, 1],
+  ];
+  const d = pathDistances(new DenseGrid(cells), 0, 0);
+  assert.equal(d[0], 0);
+  assert.equal(d[1], 1);
+  assert.equal(d[2 * 5 + 2], 4);
+  assert.equal(d[0 * 5 + 4], 8);
+  assert.equal(d[0 * 5 + 2], -1, "a wall is unreachable");
+});
+
+test("pathDistances from a closed cell reaches nothing, and refuses an unbounded world", () => {
+  const d = pathDistances(new DenseGrid([[0, 1]]), 0, 0);
+  assert.deepEqual([...d], [-1, -1]);
+  assert.throws(() => pathDistances(new WallSet(null), 0, 0), RangeError);
+});
 
 /** A 4x3 grid (4 wide, 3 tall) with one open cell at (1, 1). */
 function grid(): CellType[][] {

@@ -105,9 +105,19 @@ compact completed-match results. Replay checkpoints and playback are deferred.
 
 Local and Online War share the same four field topologies, symmetric match-level
 gland size, and per-colony doctrine model. Colony-level atoms such as
-evaporation, spoiler allocation, and mimic rate apply at the next tick; ants
-adopt new follow and lay behavior when they return to their nest. War tracing
-remains deliberately deferred.
+evaporation, spoiler allocation, and mimic rate apply at the next tick. When
+the follow and lay tables reach the ants is a match setting: on return to the
+nest, the default, or instantly on the next tick for every ant wherever it is.
+War tracing remains deliberately deferred.
+
+By default a War match uses the mirrored map layout: the maze equals its own
+180-degree rotation about the centre cell, so both nests face the same maze,
+and food is placed in rotated pairs. A single source sits at the exact centre;
+with more than two sources, the first pair is placed near the nests and every
+other pair is weighted toward cells about as far by path from one nest as from
+the other, which in a maze means the crossings between the two halves. The
+random layout, one maze and random food, is still available as a match
+setting.
 
 The lifecycle half of work package 4 also remains open. War still owns its
 energy, reserve, reproduction, hatching, and death policies in `WarSimulation`,
