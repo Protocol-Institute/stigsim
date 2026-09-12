@@ -66,7 +66,6 @@ function ColonyPanel({
   onCommit: (colonyId: number, doctrine: Doctrine) => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
-  const adopted = metrics.population === 0 ? 1 : metrics.doctrineAdopted / metrics.population;
   return (
     <aside className="war-colony" style={{ "--colony-color": color } as React.CSSProperties}>
       <div className="war-colony__name"><span />Colony {colonyId + 1}</div>
@@ -91,7 +90,6 @@ function ColonyPanel({
         selected={colonyId}
         onSelect={() => undefined}
         doctrine={doctrine}
-        adopted={adopted}
         topology={topology}
         disabled={disabled}
         onCommit={onCommit}

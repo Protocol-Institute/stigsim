@@ -14,7 +14,7 @@ const heading: CSSProperties = {
 };
 
 export function DoctrinePanel({
-  numColonies, selected, onSelect, doctrine, adopted, topology, disabled, onCommit,
+  numColonies, selected, onSelect, doctrine, topology, disabled, onCommit,
   showColonySelector = true,
 }: {
   numColonies: number;
@@ -22,8 +22,6 @@ export function DoctrinePanel({
   onSelect: (colony: number) => void;
   /** The selected colony's doctrine as last committed. */
   doctrine: Doctrine;
-  /** Fraction of the selected colony's ants running its current doctrine. */
-  adopted: number;
   topology: Topology;
   disabled: boolean;
   onCommit: (colony: number, doctrine: Doctrine) => void;
@@ -96,10 +94,6 @@ export function DoctrinePanel({
           </button>
         ))}
       </div>
-
-      <p style={{ margin: "0 0 10px", fontSize: "0.72rem", color: "#a08060" }}>
-        {Math.round(adopted * 100)}% of this colony's ants have adopted its current per-ant behavior.
-      </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
         <ParamCard
