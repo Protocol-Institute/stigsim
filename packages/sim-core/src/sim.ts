@@ -131,6 +131,9 @@ export class Simulation {
     const colony = this.colonies[colonyId];
     if (!colony) return null;
     const ant = this._newAnt(colony, colony.ants.length, colony.ants.length + 1);
+    const targetSpoilers = Math.floor(colony.doctrine.spoilerFraction * (colony.ants.length + 1));
+    const currentSpoilers = colony.ants.filter(existing => existing.role === "spoiler").length;
+    ant.role = currentSpoilers < targetSpoilers ? "spoiler" : "forager";
     colony.ants.push(ant);
     return ant;
   }
@@ -153,7 +156,7 @@ export class Simulation {
   /** Applies the colony's current doctrine to an ant that is waiting at its nest. */
   adoptAntAtNest(ant: Ant, index: number): void {
     const colony = this.colonies[ant.colonyId];
-    if (colony?.ants[index] === ant) this._nestEvent(ant, colony, index);
+    if (colony?.ants[index] === ant) this._nestEvent(ant, colony);
   }
 
   /** Spoilers are the first floor(fraction * total) ants by index. No draw is spent. */
@@ -162,9 +165,12 @@ export class Simulation {
   }
 
   /** The nest event: adopt the current doctrine and take the role the index implies. */
-  private _nestEvent(ant: Ant, colony: Colony, index: number) {
-    this._adopt(ant, colony);
-    ant.role = this._roleFor(colony, index, colony.ants.length);
+  private _nestEvent(ant: Ant, colony: Colony) {
+    if (this._adopt(ant, colony)) {
+      const targetSpoilers = Math.floor(colony.doctrine.spoilerFraction * colony.ants.length);
+      const otherSpoilers = colony.ants.filter(existing => existing !== ant && existing.role === "spoiler").length;
+      ant.role = otherSpoilers < targetSpoilers ? "spoiler" : "forager";
+    }
   }
 
   /**
@@ -244,11 +250,12 @@ export class Simulation {
   }
 
   /** Re-stamps an ant with the colony's current doctrine. The nest event. */
-  private _adopt(ant: Ant, colony: Colony) {
-    if (ant.doctrineVersion === colony.doctrineVersion) return;
+  private _adopt(ant: Ant, colony: Colony): boolean {
+    if (ant.doctrineVersion === colony.doctrineVersion) return false;
     this._ref(colony, ant.doctrineVersion, -1);
     ant.doctrineVersion = colony.doctrineVersion;
     this._ref(colony, ant.doctrineVersion, +1);
+    return true;
   }
 
   /** The doctrine an ant is running, which under nest adoption need not be the colony's current one. */
@@ -288,7 +295,7 @@ export class Simulation {
   setAntCount(n: number) {
     for (const colony of this.colonies) {
       if (n > colony.ants.length) {
-        for (let i = colony.ants.length; i < n; i++) colony.ants.push(this._newAnt(colony, i, n));
+        while (colony.ants.length < n) this.spawnAnt(colony.id);
       } else if (n < colony.ants.length) {
         this.removeAnts(colony.id, (_ant, index) => index >= n);
       }
@@ -542,7 +549,7 @@ export class Simulation {
     if (ant.state === "returning" && ant.cx === colony.nestX && ant.cy === colony.nestY) {
       const delivered = ant.hasFood;
       ant.state = "searching";
-      this._nestEvent(ant, colony, index);
+      this._nestEvent(ant, colony);
       ant.hasFood = false;
       ant.tank = tankMax;
       if (delivered) colony.foodCollected++;

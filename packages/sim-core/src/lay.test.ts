@@ -100,9 +100,22 @@ test("setAntCount roles new ants against the new total", () => {
   assert.deepEqual(sim.colonies[0].ants.map(a => a.role), ["spoiler", "spoiler", "forager", "forager"]);
   sim.enqueue({ kind: "setAntCount", n: 8 });
   sim.step();
-  // Existing ants keep their roles; ants 4..7 sit above floor(0.5 * 8) = 4.
+  // Existing ants keep their roles; births fill the target quota without
+  // reassigning survivors by their now-shifted array positions.
   assert.deepEqual(sim.colonies[0].ants.map(a => a.role),
-    ["spoiler", "spoiler", "forager", "forager", "forager", "forager", "forager", "forager"]);
+    ["spoiler", "spoiler", "forager", "forager", "forager", "spoiler", "forager", "spoiler"]);
+});
+
+test("a birth can become a spoiler and deaths do not re-role survivors", () => {
+  const sim = new Simulation(config({ numAnts: 4, numColonies: 1 }));
+  start(sim, still(d => { d.spoilerFraction = 0.5; }));
+  const colony = sim.colonies[0];
+  const survivingForager = colony.ants[2];
+  sim.removeAnts(0, ant => ant === colony.ants[0]);
+  assert.equal(survivingForager.role, "forager");
+  const born = sim.spawnAnt(0);
+  assert.equal(born?.role, "spoiler", "the birth restores the target spoiler quota");
+  assert.equal(survivingForager.role, "forager", "a survivor's role remains stable");
 });
 
 /** Everyone is a spoiler laying only mimic food while searching. */
