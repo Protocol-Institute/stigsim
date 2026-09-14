@@ -1,5 +1,6 @@
-import { DEFAULT_DOCTRINE, cloneDoctrine } from "@stigsim/sim-core";
+import { DEFAULT_DOCTRINE, cloneDoctrine, doctrineNumbers } from "@stigsim/sim-core";
 import type { Doctrine, Topology } from "@stigsim/sim-core";
+import { conformDoctrine } from "./topology-choices";
 
 /**
  * A named doctrine with a one-line intent. The engine never sees a preset;
@@ -44,3 +45,10 @@ export const PRESETS: readonly DoctrinePreset[] = [
   { name: "Saboteur", intent: "send a fifth of the colony to lay false trail", doctrine: saboteur, available: t => t.mimicEnemy },
   { name: "Poacher", intent: "follow the other colony's food trail", doctrine: poacher, available: t => t.read === "separable" },
 ];
+
+/** Return the visible preset represented by a doctrine under this field topology. */
+export function activePresetName(doctrine: Doctrine, topology: Topology): string | null {
+  const actual = doctrineNumbers(conformDoctrine(doctrine, topology));
+  return PRESETS.find(preset => preset.available(topology)
+    && doctrineNumbers(conformDoctrine(preset.doctrine, topology)).every((value, index) => value === actual[index]))?.name ?? null;
+}

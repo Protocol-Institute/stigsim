@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, TOPOLOGY_OPEN, TOPOLOGY_PRIVATE, TOPOLOGY_SENSING, isDoctrine,
 } from "@stigsim/sim-core";
-import { PRESETS, withExponent } from "./doctrine-presets";
+import { PRESETS, activePresetName, withExponent } from "./doctrine-presets";
 
 test("every preset is a valid doctrine with a unique name", () => {
   for (const p of PRESETS) assert.equal(isDoctrine(p.doctrine), true, p.name);
@@ -27,4 +27,12 @@ test("presets whose atoms are inert under a topology say so", () => {
   assert.equal(by.Saboteur.available(TOPOLOGY_MIMICRY), true);
   assert.equal(by.Saboteur.available(TOPOLOGY_OPEN), true);
   assert.equal(by.Highway.available(TOPOLOGY_PRIVATE), true);
+});
+
+test("active presets are recognized after topology conformance", () => {
+  assert.equal(activePresetName(DEFAULT_DOCTRINE, TOPOLOGY_PRIVATE), "Default");
+  assert.equal(activePresetName(PRESETS.find(p => p.name === "Saboteur")!.doctrine, TOPOLOGY_MIMICRY), "Saboteur");
+
+  const custom = withExponent(DEFAULT_DOCTRINE, 6);
+  assert.equal(activePresetName(custom, TOPOLOGY_PRIVATE), null);
 });
