@@ -14,6 +14,38 @@ export function inBounds(occ: Occupancy, x: number, y: number): boolean {
 }
 
 /**
+ * Shortest path length in orthogonal steps from (sx, sy) to every cell of a
+ * bounded occupancy, indexed y * cols + x, with -1 for cells no path reaches.
+ * A plain breadth-first search; the grid is small enough that it runs once
+ * per nest at construction and is never on a hot path.
+ */
+export function pathDistances(occ: Occupancy, sx: number, sy: number): Int32Array {
+  const b = occ.bounds;
+  if (b === null) throw new RangeError("pathDistances needs a bounded world.");
+  const { cols, rows } = b;
+  const dist = new Int32Array(cols * rows).fill(-1);
+  if (!occ.isOpen(sx, sy)) return dist;
+  const queue = new Int32Array(cols * rows);
+  let head = 0, tail = 0;
+  dist[sy * cols + sx] = 0;
+  queue[tail++] = sy * cols + sx;
+  while (head < tail) {
+    const idx = queue[head++];
+    const x = idx % cols, y = (idx - x) / cols;
+    const d = dist[idx] + 1;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (!occ.isOpen(nx, ny)) continue;
+      const nidx = ny * cols + nx;
+      if (dist[nidx] !== -1) continue;
+      dist[nidx] = d;
+      queue[tail++] = nidx;
+    }
+  }
+  return dist;
+}
+
+/**
  * Occupancy over a fixed grid of open and closed cells.
  *
  * Wraps the maze's CellType[][] by reference — generateMaze still produces one

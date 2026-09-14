@@ -168,6 +168,16 @@ export interface RunSeeds {
   ants: string;
 }
 
+/**
+ * How the maze and the food are laid out relative to the nests.
+ *
+ * `random` is the original generator: one spanning tree from the top-left
+ * corner, loops opened at random, food placed at random. `mirrored` makes the
+ * grid equal to its own 180-degree rotation about the centre cell, and places
+ * food in rotated pairs, so a two-colony match is identical from either nest.
+ */
+export type MazeLayout = "random" | "mirrored";
+
 export interface RunConfig {
   seeds: RunSeeds;
   numAnts: number;
@@ -176,4 +186,6 @@ export interface RunConfig {
   numColonies: number;
   numFoodSources: number;
   foodPerSource: number;
+  /** Absent means `random`, which is what every run before layouts existed used. */
+  layout?: MazeLayout;
 }

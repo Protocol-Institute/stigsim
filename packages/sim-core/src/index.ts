@@ -4,6 +4,7 @@ export * from "./field";
 export * from "./chunked-field";
 export * from "./world";
 export * from "./maze";
+export * from "./food-layout";
 export * from "./sim";
 export * from "./rng";
 export * from "./commands";

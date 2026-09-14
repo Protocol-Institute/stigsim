@@ -28,6 +28,12 @@ test("stored matches from before topology and gland settings receive safe defaul
   const normalized = normalizeStoredWarRecord(legacy);
   assert.equal(normalized.settings.tankMax, DEFAULT_ONLINE_WAR_SETTINGS.tankMax);
   assert.deepEqual(normalized.settings.topology, DEFAULT_ONLINE_WAR_SETTINGS.topology);
+  // Played before layouts and adoption modes were settings, so on the only ones there were.
+  assert.equal(normalized.settings.layout, "random");
+  assert.equal(normalized.settings.adoption, "nest");
+  const modern = normalizeStoredWarRecord({ ...legacy, settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "mirrored", adoption: "instant" } });
+  assert.equal(modern.settings.layout, "mirrored");
+  assert.equal(modern.settings.adoption, "instant");
 });
 
 test("online match settings enforce bounded server workloads", () => {
@@ -41,6 +47,24 @@ test("online match settings enforce bounded server workloads", () => {
     ...DEFAULT_ONLINE_WAR_SETTINGS,
     topology: { ...TOPOLOGY_MIMICRY, visible: { ...TOPOLOGY_MIMICRY.visible }, provenance: false },
   }), false);
+});
+
+test("online match settings accept both map layouts and nothing else", () => {
+  assert.equal(DEFAULT_ONLINE_WAR_SETTINGS.layout, "mirrored");
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "random" }), true);
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "hexagonal" }), false);
+  const { layout: _dropped, ...withoutLayout } = DEFAULT_ONLINE_WAR_SETTINGS;
+  assert.equal(validOnlineWarSettings(withoutLayout), false);
+});
+
+test("online match settings accept both adoption modes and nothing else", () => {
+  assert.equal(DEFAULT_ONLINE_WAR_SETTINGS.adoption, "nest");
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "instant" }), true);
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "eventually" }), false);
+  const { adoption: _dropped, ...withoutAdoption } = DEFAULT_ONLINE_WAR_SETTINGS;
+  assert.equal(validOnlineWarSettings(withoutAdoption), false);
+  const war = new WarSimulation({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "instant" });
+  assert.equal(war.simulation.adoption, "instant");
 });
 
 test("online doctrine validation matches the controls exposed to players", () => {
