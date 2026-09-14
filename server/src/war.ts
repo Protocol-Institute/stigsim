@@ -8,7 +8,7 @@ import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
-import { WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
+import { DEFAULT_ONLINE_WAR_SETTINGS, WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
 import { PRESETS } from "../../src/doctrine-presets";
 import { conformDoctrine, isNamedTopology } from "../../src/topology-choices";
 import type {
@@ -120,6 +120,21 @@ function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
     loopRate: value.loopRate,
     tankMax: value.tankMax,
     topology: cloneTopology(value.topology),
+  };
+}
+
+/** Add fields introduced after persisted match records first shipped. */
+export function normalizeStoredWarRecord(value: WarMatchRecord): WarMatchRecord {
+  const settings = value.settings as Partial<OnlineWarSettings>;
+  return {
+    ...value,
+    settings: {
+      ...settings,
+      tankMax: Number.isFinite(settings.tankMax) ? settings.tankMax! : DEFAULT_ONLINE_WAR_SETTINGS.tankMax,
+      topology: isTopology(settings.topology)
+        ? cloneTopology(settings.topology)
+        : cloneTopology(DEFAULT_ONLINE_WAR_SETTINGS.topology),
+    } as OnlineWarSettings,
   };
 }
 
@@ -257,7 +272,7 @@ async function loadMatchHistory(): Promise<void> {
   try {
     const rows = await db.select().from(warMatchRecordsTable).orderBy(desc(warMatchRecordsTable.completedAt)).limit(50);
     matchHistory.splice(0, matchHistory.length, ...rows.flatMap(row => {
-      try { return [JSON.parse(row.data) as WarMatchRecord]; } catch { return []; }
+      try { return [normalizeStoredWarRecord(JSON.parse(row.data) as WarMatchRecord)]; } catch { return []; }
     }));
   } catch (error) {
     console.warn("[war] Failed to load match history", error);

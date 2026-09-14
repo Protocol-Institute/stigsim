@@ -3,7 +3,32 @@ import test from "node:test";
 import { COLS, ROWS, DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, DenseField, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
-import { completedWarRecord, normalizeWarDoctrine, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { completedWarRecord, normalizeStoredWarRecord, normalizeWarDoctrine, randomOpponentDoctrine, snapshotWarMatch, validOnlineWarSettings, validWarDoctrine } from "./war";
+
+test("stored matches from before topology and gland settings receive safe defaults", () => {
+  const legacy = {
+    recordId: "legacy-record",
+    matchId: "OLD01",
+    completedAt: "2026-01-01T00:00:00.000Z",
+    playerNames: ["Alpha", "Beta"],
+    winner: 0,
+    settings: {
+      masterSeed: "legacy-seed",
+      stepsPerSecond: 15,
+      startingAnts: 20,
+      foodSources: 1,
+      foodPerSource: 500,
+      loopRate: 0.1,
+    },
+    finalTick: 100,
+    finalMetrics: [],
+    finalDoctrines: [],
+  } as unknown as Parameters<typeof normalizeStoredWarRecord>[0];
+
+  const normalized = normalizeStoredWarRecord(legacy);
+  assert.equal(normalized.settings.tankMax, DEFAULT_ONLINE_WAR_SETTINGS.tankMax);
+  assert.deepEqual(normalized.settings.topology, DEFAULT_ONLINE_WAR_SETTINGS.topology);
+});
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
