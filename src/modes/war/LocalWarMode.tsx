@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CELL,
-  DEFAULT_PARAMS,
+  DEFAULT_DOCTRINE,
   DEPOSIT_RATE,
+  DEPOSITS_PER_CELL,
   H,
-  V,
   W,
+  cloneDoctrine,
   generateMasterSeed,
-  type SimParams,
+  type Doctrine,
 } from "@stigsim/sim-core";
 import { COLONY_COLORS, render } from "../../render";
+import { DoctrinePanel as FullDoctrinePanel } from "../../DoctrinePanel";
+import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "../../topology-choices";
 import {
   DEFAULT_WAR_SETTINGS,
   WAR_RULES,
@@ -24,18 +26,12 @@ const EMPTY_METRICS: WarColonyMetrics = {
   lowEnergy: 0, births: 0, deaths: 0, doctrineChanged: false, doctrineAdopted: 0,
 };
 
-type AdjustableSetting = "startingAnts" | "foodSources" | "foodPerSource" | "loopRate";
+type AdjustableSetting = "startingAnts" | "foodSources" | "foodPerSource" | "loopRate" | "tankMax";
 
 function drawWar(ctx: CanvasRenderingContext2D, war: WarSimulation) {
-  render(ctx, war.simulation, "all", 0, "none", null, {
-    showCautionaryForColony: colony => colony.ants.some(
-      ant => war.getAntSnapshot(ant)?.doctrine.cautionary === true
-    ),
-    antOpacity: ant => {
-      const energy = war.getAntSnapshot(ant)?.energy ?? war.rules.maxEnergy;
-      const energyFraction = Math.max(0, Math.min(1, energy / war.rules.maxEnergy));
-      return 0.3 + 0.7 * energyFraction;
-    },
+  render(ctx, war.simulation, "all", 0, "none", null, ant => {
+    const state = war.getAntSnapshot(ant);
+    return state ? 0.3 + 0.7 * Math.max(0, Math.min(1, state.energy / war.rules.maxEnergy)) : 1;
   });
   for (const colony of war.simulation.colonies) {
     for (const ant of colony.ants) {
@@ -59,21 +55,17 @@ function Metric({ label, value, warning = false }: { label: string; value: numbe
   );
 }
 
-function DoctrinePanel({
-  colonyId, doctrine, metrics, onChange,
+function ColonyPanel({
+  colonyId, doctrine, metrics, topology, disabled, onCommit,
 }: {
   colonyId: number;
-  doctrine: SimParams;
+  doctrine: Doctrine;
   metrics: WarColonyMetrics;
-  onChange: <K extends keyof SimParams>(key: K, value: SimParams[K]) => void;
+  topology: WarMatchSettings["topology"];
+  disabled: boolean;
+  onCommit: (colonyId: number, doctrine: Doctrine) => void;
 }) {
   const color = COLONY_COLORS[colonyId].primary;
-  const tankCells = Math.round(doctrine.tankMax / (DEPOSIT_RATE * (CELL / V)));
-  const sliders = [
-    { key: "evapRate" as const, label: "Evaporation rate", min: 0.001, max: 0.02, step: 0.001, value: `${Math.round(doctrine.evapRate * 1000)}‰ / step` },
-    { key: "trailPower" as const, label: "Trail bias", min: 1, max: 10, step: 0.5, value: `power ${doctrine.trailPower}` },
-    { key: "tankMax" as const, label: "Gland size", min: 1600, max: 16000, step: 800, value: `~${tankCells} cells` },
-  ];
   return (
     <aside className="war-colony" style={{ "--colony-color": color } as React.CSSProperties}>
       <div className="war-colony__name"><span />Colony {colonyId + 1}</div>
@@ -93,33 +85,20 @@ function DoctrinePanel({
         <Metric label="Born" value={metrics.births} />
         <Metric label="Died" value={metrics.deaths} warning />
       </div>
-      <div className="war-doctrine">
-        {sliders.map(control => (
-          <label key={control.key}>
-            <span><b>{control.label}</b><strong>{control.value}</strong></span>
-            <input
-              type="range" min={control.min} max={control.max} step={control.step}
-              value={doctrine[control.key] as number}
-              onChange={event => onChange(control.key, Number(event.target.value))}
-            />
-          </label>
-        ))}
-        <div className="war-toggle">
-          <b>Cautionary</b>
-          <div>
-            {[false, true].map(value => (
-              <button
-                key={String(value)} className={doctrine.cautionary === value ? "is-active" : ""}
-                onClick={() => onChange("cautionary", value)}
-              >{value ? "On" : "Off"}</button>
-            ))}
-          </div>
-        </div>
-      </div>
+      <FullDoctrinePanel
+        numColonies={2}
+        selected={colonyId}
+        onSelect={() => undefined}
+        doctrine={doctrine}
+        topology={topology}
+        disabled={disabled}
+        onCommit={onCommit}
+        showColonySelector={false}
+      />
       {metrics.doctrineChanged && (
         <p className="war-adoption">
           <strong>{metrics.doctrineAdopted}/{metrics.population} ants updated.</strong>{" "}
-          Changes are adopted when each ant returns to this colony's nest.
+          Follow and lay behavior updates when each ant returns; colony-level settings apply on the next tick.
         </p>
       )}
     </aside>
@@ -164,9 +143,24 @@ function MatchSetup({
 
         <div className="war-setup__settings">
           <Setting label="Starting ants" value={settings.startingAnts} display={`${settings.startingAnts} per colony`} min={1} max={100} step={1} onChange={value => update("startingAnts", value)} />
+          <Setting label="Gland size" value={settings.tankMax} display={`~${Math.round(settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} cells`} min={1600} max={16000} step={800} onChange={value => update("tankMax", value)} />
           <Setting label="Food sources" value={settings.foodSources} display={`${settings.foodSources}`} min={1} max={12} step={1} onChange={value => update("foodSources", value)} />
           <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={10000} step={50} onChange={value => update("foodPerSource", value)} />
           <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => update("loopRate", value)} />
+          <div className="war-setting war-setting--topology">
+            <span><b>Field topology</b><strong>{choiceFor(settings.topology).label}</strong></span>
+            <p>{choiceFor(settings.topology).description}</p>
+            <div className="war-topology-options">
+              {TOPOLOGY_CHOICES.map(choice => (
+                <button
+                  key={choice.name}
+                  type="button"
+                  className={choice.name === choiceFor(settings.topology).name ? "is-active" : ""}
+                  onClick={() => onChange({ ...settings, topology: choice.topology })}
+                >{choice.label}</button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="war-seed">
@@ -207,8 +201,8 @@ export default function LocalWarMode() {
   const [draftSettings, setDraftSettings] = useState<WarMatchSettings>(initialSettings);
   const [speed, setSpeed] = useState(15);
   const speedRef = useRef(speed);
-  const [doctrines, setDoctrines] = useState<SimParams[]>([
-    { ...DEFAULT_PARAMS }, { ...DEFAULT_PARAMS },
+  const [doctrines, setDoctrines] = useState<Doctrine[]>([
+    cloneDoctrine(DEFAULT_DOCTRINE), cloneDoctrine(DEFAULT_DOCTRINE),
   ]);
   const [initialWar] = useState(() => new WarSimulation(initialSettings, doctrines));
   const warRef = useRef(initialWar);
@@ -274,9 +268,10 @@ export default function LocalWarMode() {
     setSpeed(value);
   };
 
-  const updateDoctrine = <K extends keyof SimParams>(colonyId: number, key: K, value: SimParams[K]) => {
-    setDoctrines(current => current.map((doctrine, id) => id === colonyId ? { ...doctrine, [key]: value } : doctrine));
-    warRef.current.setDoctrine(colonyId, { ...doctrines[colonyId], [key]: value });
+  const updateDoctrine = (colonyId: number, doctrine: Doctrine) => {
+    const conformed = conformDoctrine(doctrine, settings.topology);
+    setDoctrines(current => current.map((currentDoctrine, id) => id === colonyId ? conformed : currentDoctrine));
+    warRef.current.setDoctrine(colonyId, conformed);
     refreshStats();
   };
 
@@ -294,8 +289,10 @@ export default function LocalWarMode() {
       ...draftSettings,
       masterSeed: draftSettings.masterSeed.trim() || generateMasterSeed(),
     };
+    const nextDoctrines = doctrines.map(doctrine => conformDoctrine(doctrine, next.topology));
+    setDoctrines(nextDoctrines);
     setDraftSettings(next);
-    createMatch(next);
+    createMatch(next, nextDoctrines);
     setRunning(true);
   };
 
@@ -333,9 +330,11 @@ export default function LocalWarMode() {
           <strong>Match settings</strong>
           <div className="war-matchbar__summary">
             <span>{settings.startingAnts} ants / colony</span>
+            <span>~{Math.round(settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))}-cell gland</span>
             <span>{settings.foodSources} food {settings.foodSources === 1 ? "source" : "sources"}</span>
             <span>{settings.foodPerSource} food / source</span>
             <span>{Math.round(settings.loopRate * 100)}% maze loops</span>
+            <span>{choiceFor(settings.topology).label} topology</span>
             <span className="war-matchbar__seed" title={settings.masterSeed}>Seed: {settings.masterSeed}</span>
           </div>
         </div>
@@ -378,12 +377,12 @@ export default function LocalWarMode() {
         )}
 
         <section className="war-arena">
-          <DoctrinePanel colonyId={0} doctrine={doctrines[0]} metrics={metrics[0] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(0, key, value)} />
+          <ColonyPanel colonyId={0} doctrine={doctrines[0]} metrics={metrics[0] ?? EMPTY_METRICS} topology={settings.topology} disabled={result !== null} onCommit={updateDoctrine} />
           <div className="war-maze">
             <canvas ref={canvasRef} width={W} height={H} />
-            <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div>
+            <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>White ring: spoiler</span><span>Inset: false-trail provenance</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div>
           </div>
-          <DoctrinePanel colonyId={1} doctrine={doctrines[1]} metrics={metrics[1] ?? EMPTY_METRICS} onChange={(key, value) => updateDoctrine(1, key, value)} />
+          <ColonyPanel colonyId={1} doctrine={doctrines[1]} metrics={metrics[1] ?? EMPTY_METRICS} topology={settings.topology} disabled={result !== null} onCommit={updateDoctrine} />
         </section>
         <p className="war-rules-note">
           Ants retreat below {Math.round(WAR_RULES.retreatEnergy / WAR_RULES.maxEnergy * 100)}% energy, refuel from their colony reserve,

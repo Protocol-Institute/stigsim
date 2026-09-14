@@ -1,4 +1,5 @@
-import type { SimParams } from "@stigsim/sim-core";
+import { DEFAULT_PARAMS, DEFAULT_TOPOLOGY, cloneTopology } from "@stigsim/sim-core";
+import type { Doctrine, Role, Topology } from "@stigsim/sim-core";
 
 export const WAR_RECONNECTED_ELSEWHERE_CODE = 4001;
 export const WAR_MATCH_REMOVED_CODE = 4002;
@@ -12,6 +13,8 @@ export interface OnlineWarSettings {
   foodSources: number;
   foodPerSource: number;
   loopRate: number;
+  tankMax: number;
+  topology: Topology;
 }
 
 export const DEFAULT_ONLINE_WAR_SETTINGS: OnlineWarSettings = {
@@ -21,6 +24,8 @@ export const DEFAULT_ONLINE_WAR_SETTINGS: OnlineWarSettings = {
   foodSources: 1,
   foodPerSource: 500,
   loopRate: 0.1,
+  tankMax: DEFAULT_PARAMS.tankMax,
+  topology: cloneTopology(DEFAULT_TOPOLOGY),
 };
 
 export interface WarMatchSummary {
@@ -42,7 +47,7 @@ export interface WarMatchRecord {
   settings: OnlineWarSettings;
   finalTick: number;
   finalMetrics: WarMetricsWire[];
-  finalDoctrines: SimParams[];
+  finalDoctrines: Doctrine[];
 }
 
 export interface WarMetricsWire {
@@ -70,6 +75,8 @@ export interface WarAntWire {
   hasFood: boolean;
   phase: "searching" | "returning" | "retreating" | "waiting";
   energy: number;
+  role: Role;
+  doctrineVersion: number;
 }
 
 export interface WarColonyWire {
@@ -78,10 +85,10 @@ export interface WarColonyWire {
   nestY: number;
   homePhero: number[];
   foodPhero: number[];
-  cautPhero: number[];
+  receivedPhero: Array<{ from: number; home: number[]; food: number[] }>;
   ants: WarAntWire[];
   metrics: WarMetricsWire;
-  doctrine: SimParams;
+  doctrine: Doctrine;
 }
 
 export interface WarSnapshot {
@@ -100,7 +107,7 @@ export type WarClientMessage =
   | { type: "claim-seat"; colonyId: number }
   | { type: "stand-up" }
   | { type: "ready" }
-  | { type: "set-doctrine"; doctrine: SimParams }
+  | { type: "set-doctrine"; doctrine: Doctrine }
   | { type: "reset" };
 
 export type WarServerMessage =

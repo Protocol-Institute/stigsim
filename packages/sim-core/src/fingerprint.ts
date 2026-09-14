@@ -1,4 +1,6 @@
 import type { Simulation } from "./sim";
+import { doctrineNumbers } from "./doctrine";
+import { READ_MODES } from "./topology";
 
 export const FINGERPRINT_INTERVAL = 500;
 
@@ -34,7 +36,10 @@ function mixLayer(h: number, layer: Float32Array): number {
  * and counter while standing at different points in the sequence, and from
  * there they draw different numbers and diverge for good. Leaving it out
  * would let a replay report a match for hundreds of ticks after it had
- * already stopped reproducing the recording.
+ * already stopped reproducing the recording. It also covers every doctrine a
+ * colony's ants still hold, each ant's version and role, the adoption mode,
+ * and the topology, so two runs that differ only in a doctrine atom diverge
+ * at the next checkpoint rather than silently.
  */
 export function fingerprint(sim: Simulation): string {
   let h = FNV_OFFSET;
@@ -46,10 +51,14 @@ export function fingerprint(sim: Simulation): string {
   h = mixU32(h, sim.foodSources.length);
   h = mixU32(h, sim.manualAntIndex === null ? 0xffffffff : sim.manualAntIndex);
 
-  h = mixF64(h, sim.params.evapRate);
-  h = mixF64(h, sim.params.trailPower);
   h = mixF64(h, sim.params.tankMax);
-  h = mixU32(h, sim.params.cautionary ? 1 : 0);
+  h = mixU32(h, sim.adoption === "instant" ? 0 : 1);
+  h = mixU32(h, READ_MODES.indexOf(sim.topology.read));
+  h = mixU32(h, sim.topology.mimicEnemy ? 1 : 0);
+  h = mixU32(h, sim.topology.visible.home ? 1 : 0);
+  h = mixU32(h, sim.topology.visible.food ? 1 : 0);
+  h = mixF64(h, sim.topology.maxMimicRate);
+  h = mixU32(h, sim.topology.provenance ? 1 : 0);
 
   const { cols, rows } = sim.bounds;
   for (let y = 0; y < rows; y++) {
@@ -68,6 +77,14 @@ export function fingerprint(sim: Simulation): string {
     h = mixU32(h, colony.nestX);
     h = mixU32(h, colony.nestY);
     h = mixU32(h, colony.foodCollected);
+    h = mixU32(h, colony.doctrineVersion);
+    // Every version some ant still holds, in version order, as its numbers in
+    // table order. Under nest adoption the pending doctrine is state the
+    // run's future depends on even before any ant has adopted it.
+    for (const v of [...colony.doctrines.keys()].sort((x, y) => x - y)) {
+      h = mixU32(h, v);
+      for (const n of doctrineNumbers(colony.doctrines.get(v)!)) h = mixF64(h, n);
+    }
     // Canonical order for the backing, which for a dense field is home, food,
     // caut — the order this has always hashed.
     for (const layer of colony.field.layers()) h = mixLayer(h, layer);
@@ -87,6 +104,8 @@ export function fingerprint(sim: Simulation): string {
       h = mixU32(h, ant.hasFood ? 1 : 0);
       h = mixU32(h, ant.manual ? 1 : 0);
       h = mixF64(h, ant.tank);
+      h = mixU32(h, ant.doctrineVersion);
+      h = mixU32(h, ant.role === "spoiler" ? 1 : 0);
     }
   }
 

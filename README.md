@@ -48,10 +48,19 @@ and your experiment is not visible to anyone else.
 You can:
 
 - Adjust maze loops and food sources
-- Tune colony size, simulation speed, evaporation, trail bias, and gland size
-- Enable cautionary pheromones that discourage unsustainable routes
+- Tune one evaporation rate and trail bias shared by every colony
+- Set colony size and gland size for the run
 - Edit walls and food sources while the simulation is running
 - Observe whole colonies or control an individual ant
+
+Maze intentionally keeps private colony trails and a compact shared control
+surface; per-colony doctrines, topology, spoilers, and mimicry belong to War
+Mode. Every Maze change is still recorded in the run's trace, so a replay
+shows each colony reacting to the same settings at the same tick. Nest and food are
+smells computed at read time rather than pheromone written into the field, so
+the trails contain only what ants laid. Every live food source emits odor to
+every colony; discovering a source is retained for metrics but no longer gates
+whether ants can smell it.
 
 Every run is reproducible from a seed. The Run panel shows the current run's
 seed, lets you generate a new one, and saves a trace file that captures the
@@ -93,6 +102,18 @@ War Mode is a bounded two-colony survival match powered by the shared
 simulation core. It can run locally in one browser or authoritatively on the
 server. The server owns the clock, validates doctrine changes, and persists
 compact completed-match results. Replay checkpoints and playback are deferred.
+
+Local and Online War share the same four field topologies, symmetric match-level
+gland size, and per-colony doctrine model. Colony-level atoms such as
+evaporation, spoiler allocation, and mimic rate apply at the next tick; ants
+adopt new follow and lay behavior when they return to their nest. War tracing
+remains deliberately deferred.
+
+The lifecycle half of work package 4 also remains open. War still owns its
+energy, reserve, reproduction, hatching, and death policies in `WarSimulation`,
+while Infinite Mode retains its existing starvation lifecycle. Unifying their
+shared energy/death mechanics without erasing intentional mode differences is
+follow-up architecture work, separate from this doctrine/topology integration.
 
 ## How the shared world works
 
