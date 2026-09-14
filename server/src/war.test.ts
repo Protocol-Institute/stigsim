@@ -28,6 +28,12 @@ test("stored matches from before topology and gland settings receive safe defaul
   const normalized = normalizeStoredWarRecord(legacy);
   assert.equal(normalized.settings.tankMax, DEFAULT_ONLINE_WAR_SETTINGS.tankMax);
   assert.deepEqual(normalized.settings.topology, DEFAULT_ONLINE_WAR_SETTINGS.topology);
+  // Played before layouts and adoption modes were settings, so on the only ones there were.
+  assert.equal(normalized.settings.layout, "random");
+  assert.equal(normalized.settings.adoption, "nest");
+  const modern = normalizeStoredWarRecord({ ...legacy, settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, layout: "mirrored", adoption: "instant" } });
+  assert.equal(modern.settings.layout, "mirrored");
+  assert.equal(modern.settings.adoption, "instant");
 });
 
 test("online match settings enforce bounded server workloads", () => {

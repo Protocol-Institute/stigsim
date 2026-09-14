@@ -116,8 +116,8 @@ and food is placed in rotated pairs. A single source sits at the exact centre;
 with more than two sources, the first pair is placed near the nests and every
 other pair is weighted toward cells about as far by path from one nest as from
 the other, which in a maze means the crossings between the two halves. The
-random layout, one maze and random food, is still available as a match
-setting.
+asymmetric layout, one seed-generated maze with no symmetry and food placed
+anywhere, is still available as a match setting.
 
 The lifecycle half of work package 4 also remains open. War still owns its
 energy, reserve, reproduction, hatching, and death policies in `WarSimulation`,
