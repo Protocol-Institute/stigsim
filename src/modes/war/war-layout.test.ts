@@ -28,5 +28,6 @@ test("a War match can still be created on the random layout", () => {
 test("layout choices name both layouts and treat a missing layout as random", () => {
   assert.deepEqual(LAYOUT_CHOICES.map(choice => choice.name), ["mirrored", "random"]);
   assert.equal(layoutChoice("mirrored").label, "Mirrored");
+  assert.equal(layoutChoice("random").label, "Asymmetric");
   assert.equal(layoutChoice(undefined).name, "random");
 });

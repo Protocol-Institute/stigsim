@@ -138,6 +138,10 @@ export function normalizeStoredWarRecord(value: WarMatchRecord): WarMatchRecord 
       topology: isTopology(settings.topology)
         ? cloneTopology(settings.topology)
         : cloneTopology(DEFAULT_ONLINE_WAR_SETTINGS.topology),
+      // Records from before these settings existed were played on the only
+      // layout and adoption mode there was, not on today's defaults.
+      layout: (MAZE_LAYOUTS as readonly unknown[]).includes(settings.layout) ? settings.layout! : "random",
+      adoption: (ADOPTION_MODES as readonly unknown[]).includes(settings.adoption) ? settings.adoption! : "nest",
     } as OnlineWarSettings,
   };
 }
