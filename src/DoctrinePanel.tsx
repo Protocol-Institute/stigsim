@@ -3,7 +3,7 @@ import { cloneDoctrine } from "@stigsim/sim-core";
 import type { Doctrine, Topology } from "@stigsim/sim-core";
 import { COLONY_COLORS } from "./render";
 import { ParamCard } from "./ParamCard";
-import { PRESETS } from "./doctrine-presets";
+import { PRESETS, activePresetName } from "./doctrine-presets";
 
 const heading: CSSProperties = {
   margin: "4px 0 8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em",
@@ -46,6 +46,7 @@ export function DoctrinePanel({
   const exponent = draft.forager.follow.searching.food.own;
   const showMimic = topology.mimicEnemy;
   const showPoach = topology.read === "separable";
+  const activePreset = activePresetName(draft, topology);
 
   return (
     <div style={{ width: "100%" }}>
@@ -72,20 +73,27 @@ export function DoctrinePanel({
       )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-        {PRESETS.filter(p => p.available(topology)).map(p => (
+        {PRESETS.filter(p => p.available(topology)).map(p => {
+          const active = p.name === activePreset;
+          return (
           <button
             key={p.name}
             title={p.intent}
+            aria-pressed={active}
             onClick={() => pick(p.doctrine)}
             disabled={disabled}
             style={{
               padding: "5px 10px", borderRadius: 8, fontSize: "0.72rem", cursor: disabled ? "not-allowed" : "pointer",
-              border: "1px solid #3d2e18", background: "#1a1208", color: "#e5d5b5",
+              border: `1px solid ${active ? "#f59e0b" : "#3d2e18"}`,
+              background: active ? "#f59e0b" : "#1a1208",
+              color: active ? "#100b05" : "#e5d5b5",
+              fontWeight: active ? 700 : 400,
             }}
           >
             {p.name}
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
