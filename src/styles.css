@@ -874,6 +874,11 @@ textarea {
   padding-top: 2px;
 }
 
+/* A two-option chooser fits one grid column; only the four-option topology row needs the full width. */
+.war-setting--choice {
+  grid-column: auto;
+}
+
 .war-setting--topology > span {
   margin-bottom: 0;
 }

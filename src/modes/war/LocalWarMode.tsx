@@ -149,8 +149,7 @@ function MatchSetup({
           <Setting label="Gland size" value={settings.tankMax} display={`~${Math.round(settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} cells`} min={1600} max={16000} step={800} onChange={value => update("tankMax", value)} />
           <Setting label="Food sources" value={settings.foodSources} display={`${settings.foodSources}`} min={1} max={12} step={1} onChange={value => update("foodSources", value)} />
           <Setting label="Food per source" value={settings.foodPerSource} display={`${settings.foodPerSource} units`} min={50} max={10000} step={50} onChange={value => update("foodPerSource", value)} />
-          <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => update("loopRate", value)} />
-          <div className="war-setting war-setting--topology">
+          <div className="war-setting war-setting--topology war-setting--choice">
             <span><b>Map layout</b><strong>{layoutChoice(settings.layout).label}</strong></span>
             <p>{layoutChoice(settings.layout).description}</p>
             <div className="war-topology-options">
@@ -164,7 +163,7 @@ function MatchSetup({
               ))}
             </div>
           </div>
-          <div className="war-setting war-setting--topology">
+          <div className="war-setting war-setting--topology war-setting--choice">
             <span><b>Doctrine changes apply</b><strong>{adoptionChoice(settings.adoption).label}</strong></span>
             <p>{adoptionChoice(settings.adoption).description}</p>
             <div className="war-topology-options">
@@ -178,6 +177,7 @@ function MatchSetup({
               ))}
             </div>
           </div>
+          <Setting label="Maze loop rate" value={settings.loopRate} display={`${Math.round(settings.loopRate * 100)}%`} min={0} max={0.5} step={0.05} onChange={value => update("loopRate", value)} />
           <div className="war-setting war-setting--topology">
             <span><b>Field topology</b><strong>{choiceFor(settings.topology).label}</strong></span>
             <p>{choiceFor(settings.topology).description}</p>

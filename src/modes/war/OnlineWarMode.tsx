@@ -212,14 +212,14 @@ function SettingsForm({ settings, onChange }: { settings: OnlineWarSettings; onC
     <label><span>Food sources <strong>{settings.foodSources}</strong></span><input type="range" min="1" max="12" step="1" value={settings.foodSources} onChange={event => update("foodSources", Number(event.target.value))} /></label>
     <label><span>Food/source <strong>{settings.foodPerSource}</strong></span><input type="range" min="50" max="10000" step="50" value={settings.foodPerSource} onChange={event => update("foodPerSource", Number(event.target.value))} /></label>
     <label><span>Maze loops <strong>{Math.round(settings.loopRate * 100)}%</strong></span><input type="range" min="0" max="0.5" step="0.05" value={settings.loopRate} onChange={event => update("loopRate", Number(event.target.value))} /></label>
-    <div className="war-setting war-setting--topology">
+    <div className="war-setting war-setting--topology war-setting--choice">
       <span><b>Map layout</b><strong>{layoutChoice(settings.layout).label}</strong></span>
       <p>{layoutChoice(settings.layout).description}</p>
       <div className="war-topology-options">{LAYOUT_CHOICES.map(choice => <button type="button" key={choice.name}
         className={choice.name === settings.layout ? "is-active" : ""}
         onClick={() => update("layout", choice.name)}>{choice.label}</button>)}</div>
     </div>
-    <div className="war-setting war-setting--topology">
+    <div className="war-setting war-setting--topology war-setting--choice">
       <span><b>Doctrine changes apply</b><strong>{adoptionChoice(settings.adoption).label}</strong></span>
       <p>{adoptionChoice(settings.adoption).description}</p>
       <div className="war-topology-options">{ADOPTION_CHOICES.map(choice => <button type="button" key={choice.name}
