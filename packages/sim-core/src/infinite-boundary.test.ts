@@ -88,6 +88,14 @@ test("Infinite persistence rejects malformed or newer state before restoring it"
     { version: 1, nextColonyId: -1, walls: [], colonies: [], foodSources: [] },
     { version: 1, nextColonyId: 1, walls: [3], colonies: [], foodSources: [] },
     { version: 1, nextColonyId: 1, walls: [], colonies: [{ nestX: 0, nestY: 0, params: {} }], foodSources: [] },
+    {
+      walls: ["would,mutate"],
+      colonies: [
+        { id: 1, nestX: 0, nestY: 0, params: {} },
+        { id: 1, nestX: 1, nestY: 1, params: {} },
+      ],
+      foodSources: [],
+    },
     { walls: [], colonies: [{ nestX: "x", nestY: 0, params: {} }], foodSources: [] },
     { walls: [], colonies: [], foodSources: [{ x: 0, y: 0, remaining: "many", total: 2 }] },
     { walls: ["would,mutate"], colonies: [], foodSources: [], nextColonyId: 1.5 },

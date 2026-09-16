@@ -152,6 +152,21 @@ function invalidPersistence(error: string): ModeConfigResult<void> {
   return { ok: false, error };
 }
 
+function hasRestorableColonyIds(
+  simulation: InfiniteSimulation,
+  colonies: readonly ParsedColony[],
+): boolean {
+  const ids = new Set(simulation.colonies.map(colony => colony.id));
+  let nextId = simulation.serializePersistence().nextColonyId;
+  for (const colony of colonies) {
+    const id = colony.id ?? nextId++;
+    if (ids.has(id)) return false;
+    ids.add(id);
+    nextId = Math.max(nextId, id + 1);
+  }
+  return true;
+}
+
 /** Versioned durable-state boundary, including the deployed pre-v1 seed shape. */
 export const infinitePersistenceCodec = {
   version: 1 as const,
@@ -171,6 +186,9 @@ export const infinitePersistenceCodec = {
     const foodSources = parseFoodSources(world.foodSources);
     if (!walls || !colonies || !foodSources) {
       return invalidPersistence("Infinite persistence contains invalid world data.");
+    }
+    if (!hasRestorableColonyIds(simulation, colonies)) {
+      return invalidPersistence("Infinite persistence contains duplicate colony ids.");
     }
 
     if (world.version === 1) {

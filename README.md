@@ -214,7 +214,8 @@ long-running simulation server and Postgres database.
 
 Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
 development workflow and architecture, and [`status.md`](status.md) for current
-work and the roadmap.
+work and the roadmap. Mode authors should also read the
+[`Mode SDK guide`](docs/mode-sdk.md).
 
 ## Privacy
 

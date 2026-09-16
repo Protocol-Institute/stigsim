@@ -53,6 +53,10 @@ different and is part of each deployed protocol.
 
 Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
 
+See [`docs/mode-sdk.md`](docs/mode-sdk.md) for the extension contract, tracing
+workflow, boundary ownership, versioning rules, existing-mode matrix, and the
+verification checklist for adding or migrating a mode.
+
 ## Determinism
 
 Maze Simulator runs are reproducible from a seed. `pnpm test:client` covers
