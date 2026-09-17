@@ -104,11 +104,11 @@ server. The server owns the clock, validates doctrine changes, and persists
 compact completed-match results. Replay checkpoints and playback are deferred.
 
 Local and Online War share the same four field topologies, symmetric match-level
-gland size, and per-colony doctrine model. Colony-level atoms such as
-evaporation, spoiler allocation, and mimic rate apply at the next tick. When
-the follow and lay tables reach the ants is a match setting: on return to the
-nest, the default, or instantly on the next tick for every ant wherever it is.
-War tracing remains deliberately deferred.
+gland size, and per-colony doctrine model. Evaporation and mimic rate apply at
+the next tick. When the follow and lay tables and the spoiler roles reach the
+ants is a match setting: on return to the nest, the default, or instantly on
+the next tick for every ant wherever it is. War tracing remains deliberately
+deferred.
 
 By default a War match uses the mirrored map layout: the maze equals its own
 180-degree rotation about the centre cell, so both nests face the same maze,

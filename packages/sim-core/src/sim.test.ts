@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  Simulation, DEFAULT_PARAMS, COLS, ROWS, CELL, DEPOSIT_RATE, DIRS4, makeSeeds, DenseField, DenseGrid,
+  Simulation, DEFAULT_PARAMS, COLS, ROWS, CELL, DEPOSIT_RATE, DIRS4, FOOD_MIN_SEPARATION, makeSeeds, DenseField, DenseGrid,
 } from "./index";
 import type { CellType, RunConfig, WorldSpec } from "./index";
 
@@ -46,6 +46,25 @@ test("the mirrored layout gives a rotation-symmetric maze and food set", () => {
     assert.ok(mirror, `source at ${src.x},${src.y} has no image`);
   }
   assert.ok(sim.foodSources.some(s => s.x === (COLS - 1) / 2 && s.y === (ROWS - 1) / 2), "odd count includes the centre");
+});
+
+test("mirrored food keeps its minimum separation on the real maze at even counts", () => {
+  // On the real generator the two cells beside the centre are exactly
+  // path-equidistant and were the likeliest contested pick; a pair drawn
+  // there is two cells apart. Odd counts never showed it because the centre
+  // source pruned those cells first.
+  for (const count of [2, 4, 6, 12]) {
+    for (let s = 0; s < 25; s++) {
+      const sim = new Simulation(config({ layout: "mirrored", numColonies: 2, numFoodSources: count, seeds: makeSeeds(`sep-${count}-${s}`) }));
+      const src = sim.foodSources;
+      for (let i = 0; i < src.length; i++) {
+        for (let j = i + 1; j < src.length; j++) {
+          const d = Math.abs(src[i].x - src[j].x) + Math.abs(src[i].y - src[j].y);
+          assert.ok(d >= FOOD_MIN_SEPARATION, `count ${count} seed ${s}: (${src[i].x},${src[i].y}) and (${src[j].x},${src[j].y}) are ${d} apart`);
+        }
+      }
+    }
+  }
 });
 
 test("the mirrored layout places a single source on the centre cell", () => {

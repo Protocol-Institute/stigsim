@@ -60,13 +60,35 @@ test("an odd count with no eligible centre drops the unpaired source rather than
   for (const p of picked) assert.ok(has(picked, image(15, p)));
 });
 
-test("no two sources sit within the minimum separation", () => {
-  const world = openWorld(21);
-  const picked = pickMirroredFood({ ...world, count: 12, rng: makeRng("spread") });
+function assertSeparated(picked: readonly (readonly [number, number])[], label: string) {
   for (let i = 0; i < picked.length; i++) {
     for (let j = i + 1; j < picked.length; j++) {
       const d = Math.abs(picked[i][0] - picked[j][0]) + Math.abs(picked[i][1] - picked[j][1]);
-      assert.ok(d >= FOOD_MIN_SEPARATION, `${picked[i]} and ${picked[j]} are ${d} apart`);
+      assert.ok(d >= FOOD_MIN_SEPARATION, `${label}: ${picked[i]} and ${picked[j]} are ${d} apart`);
+    }
+  }
+}
+
+test("no two sources sit within the minimum separation", () => {
+  const world = openWorld(21);
+  assertSeparated(pickMirroredFood({ ...world, count: 12, rng: makeRng("spread") }), "count 12");
+});
+
+test("a pair is never placed too close to its own image, so even counts cannot stack the centre", () => {
+  // Offer only the four cells adjacent to the centre. Each is two steps
+  // from its image, so no pair may be formed from them at all.
+  const n = 15;
+  const world = openWorld(n);
+  const c = (n - 1) / 2;
+  const adjacent: [number, number][] = [[c - 1, c], [c + 1, c], [c, c - 1], [c, c + 1]];
+  assert.deepEqual(pickMirroredFood({ ...world, eligible: adjacent, count: 2, rng: makeRng("adjacent") }), []);
+
+  // With the whole grid on offer, even counts across many seeds stay apart.
+  // Before the own-image check, the centre-adjacent cells were the most
+  // path-equidistant candidates and were drawn regularly.
+  for (const count of [2, 4, 6]) {
+    for (let s = 0; s < 40; s++) {
+      assertSeparated(pickMirroredFood({ ...world, count, rng: makeRng(`even-${count}-${s}`) }), `count ${count} seed ${s}`);
     }
   }
 });

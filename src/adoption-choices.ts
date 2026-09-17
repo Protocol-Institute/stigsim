@@ -16,8 +16,8 @@ export const ADOPTION_CHOICES: readonly AdoptionChoice[] = [
   {
     name: "nest",
     label: "On return to nest",
-    description: "Each ant picks up new follow and lay behavior when it next reaches the nest, so a change spreads through the colony over a round trip. Evaporation, spoiler share, and mimic rate apply on the next tick regardless.",
-    note: "Follow and lay behavior updates when each ant returns; colony-level settings apply on the next tick.",
+    description: "Each ant picks up new follow and lay behavior, and its spoiler or forager role, when it next reaches the nest, so a change spreads through the colony over a round trip. Evaporation and mimic rate apply on the next tick regardless.",
+    note: "Follow and lay behavior and roles update as each ant returns; evaporation and mimic rate apply on the next tick.",
   },
   {
     name: "instant",

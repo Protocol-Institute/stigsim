@@ -15,9 +15,9 @@ export interface OnlineWarSettings {
   loopRate: number;
   tankMax: number;
   topology: Topology;
-  /** Absent on records written before layouts existed; readers treat that as random. */
+  /** Stored records from before this setting existed lack it on disk; the server fills in `random` on load. */
   layout: MazeLayout;
-  /** Absent on records written before this setting existed; readers treat that as on-return. */
+  /** Stored records from before this setting existed lack it on disk; the server fills in `nest` on load. */
   adoption: AdoptionMode;
 }
 

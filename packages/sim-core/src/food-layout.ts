@@ -23,7 +23,12 @@ import type { Rng } from "./rng";
 export interface MirroredFoodInput {
   cols: number;
   rows: number;
-  /** Cells food may occupy, in a fixed order. Assumed closed under rotation. */
+  /**
+   * Cells food may occupy, in a fixed order. A cell whose image is not in
+   * this list is skipped, so a nest set that is not closed under rotation
+   * (three colonies) only shrinks the candidates; it never places a source
+   * without its image.
+   */
   eligible: readonly (readonly [number, number])[];
   /** Path distance from nest 0 and from nest 1, indexed y * cols + x, -1 if unreachable. */
   distances: readonly Int32Array[];
@@ -51,16 +56,19 @@ export function safeWeight(nearest: number, shortest: number): number {
   return falloff(nearest - shortest);
 }
 
-/** One draw, one index: roulette over the weights. */
+/** One draw, one index: roulette over the weights. A zero-weight entry is never drawn, even on a draw of exactly 0. */
 function weightedIndex(weights: number[], rng: Rng): number {
   let total = 0;
   for (const w of weights) total += w;
   let u = rng() * total;
+  let last = 0;
   for (let i = 0; i < weights.length; i++) {
+    if (weights[i] <= 0) continue;
+    last = i;
     u -= weights[i];
-    if (u <= 0) return i;
+    if (u < 0) return i;
   }
-  return weights.length - 1;
+  return last;
 }
 
 export function pickMirroredFood({ cols, rows, eligible, distances, count, rng }: MirroredFoodInput): [number, number][] {
@@ -70,19 +78,25 @@ export function pickMirroredFood({ cols, rows, eligible, distances, count, rng }
   const twoNests = distances.length >= 2;
   const dist = (i: number, x: number, y: number) => distances[i][key(x, y)];
 
+  const near = (a: readonly [number, number], b: readonly [number, number]) =>
+    Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) < FOOD_MIN_SEPARATION;
+
   // One representative per rotated pair: the member with the smaller key,
-  // kept only when both members are eligible and reachable from both nests.
+  // kept only when both members are eligible, reachable from both nests, and
+  // far enough from each other. The last rule drops the cells next to the
+  // centre, whose images sit two steps away; they are also the most
+  // path-equidistant cells on the map, so without it an even count would
+  // stack two sources on the central crossing.
   let pairs: [number, number][] = eligible
     .filter(([x, y]) => {
       const [mx, my] = image(x, y);
       if (key(x, y) >= key(mx, my) || !eligibleKeys.has(key(mx, my))) return false;
+      if (near([x, y], [mx, my])) return false;
       return !twoNests || (dist(0, x, y) >= 0 && dist(1, x, y) >= 0);
     })
     .map(([x, y]) => [x, y]);
 
   const picked: [number, number][] = [];
-  const near = (a: readonly [number, number], b: readonly [number, number]) =>
-    Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) < FOOD_MIN_SEPARATION;
   // The picked set is closed under rotation, so a representative that is far
   // from every picked cell has an image that is too.
   const prune = () => { pairs = pairs.filter(p => !picked.some(q => near(p, q))); };
