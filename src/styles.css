@@ -78,7 +78,7 @@
 .mp-directory-connection { display: block; margin-top: 10px; color: #5f503d; font-size: .62rem; text-align: right; }
 
 .mp-modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: #000b; backdrop-filter: blur(5px); }
-.mp-setup-modal { position: relative; width: min(680px, 100%); padding: 28px; border: 1px solid #4a351d; border-radius: 14px; background: #100b05; box-shadow: 0 30px 100px #000; }
+.mp-setup-modal { position: relative; width: min(680px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid #4a351d; border-radius: 14px; background: #100b05; box-shadow: 0 30px 100px #000; }
 .mp-modal-close { position: absolute; top: 12px; right: 12px; border: 0; background: transparent; color: #9b8568; font-size: 1.5rem; cursor: pointer; }
 .mp-modal-kicker { color: #f59e0b; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
 .mp-setup-modal h2 { margin: 7px 0; color: #f5ead8; }
@@ -872,6 +872,11 @@ textarea {
   display: grid;
   gap: 12px;
   padding-top: 2px;
+}
+
+/* A two-option chooser fits one grid column; only the four-option topology row needs the full width. */
+.war-setting--choice {
+  grid-column: auto;
 }
 
 .war-setting--topology > span {

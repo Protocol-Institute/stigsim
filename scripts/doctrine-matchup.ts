@@ -31,9 +31,11 @@ function firstDelivery(sim: Simulation, colony: number, seen: (number | null)[])
 }
 
 function run(topology: Topology, seed: string, challenger: Doctrine, challengerIs: 0 | 1): Row {
+  // Mirrored, as War matches are: a doctrine comparison on a map that
+  // favoured one nest would measure the map, not the doctrine.
   const sim = new Simulation({
     seeds: makeSeeds(seed), numAnts: 40, params: DEFAULT_PARAMS,
-    loopRate: 0.12, numColonies: 2, numFoodSources: 3, foodPerSource: 500,
+    loopRate: 0.12, numColonies: 2, numFoodSources: 3, foodPerSource: 500, layout: "mirrored",
   });
   sim.enqueue({ kind: "setAdoption", mode: "instant" });
   sim.enqueue({ kind: "setTopology", topology });

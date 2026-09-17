@@ -1,5 +1,5 @@
 import { DEFAULT_PARAMS, DEFAULT_TOPOLOGY, cloneTopology } from "@stigsim/sim-core";
-import type { Doctrine, Role, Topology } from "@stigsim/sim-core";
+import type { AdoptionMode, Doctrine, MazeLayout, Role, Topology } from "@stigsim/sim-core";
 
 export const WAR_RECONNECTED_ELSEWHERE_CODE = 4001;
 export const WAR_MATCH_REMOVED_CODE = 4002;
@@ -15,6 +15,10 @@ export interface OnlineWarSettings {
   loopRate: number;
   tankMax: number;
   topology: Topology;
+  /** Stored records from before this setting existed lack it on disk; the server fills in `random` on load. */
+  layout: MazeLayout;
+  /** Stored records from before this setting existed lack it on disk; the server fills in `nest` on load. */
+  adoption: AdoptionMode;
 }
 
 export const DEFAULT_ONLINE_WAR_SETTINGS: OnlineWarSettings = {
@@ -26,6 +30,8 @@ export const DEFAULT_ONLINE_WAR_SETTINGS: OnlineWarSettings = {
   loopRate: 0.1,
   tankMax: DEFAULT_PARAMS.tankMax,
   topology: cloneTopology(DEFAULT_TOPOLOGY),
+  layout: "mirrored",
+  adoption: "nest",
 };
 
 export interface WarMatchSummary {
