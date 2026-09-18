@@ -232,3 +232,11 @@ export interface ModeInstance<Config = unknown, Runtime extends ModeRuntime = Mo
 export type ModeCreateResult<Config = unknown, Runtime extends ModeRuntime = ModeRuntime> =
   | { ok: true; instance: ModeInstance<Config, Runtime> }
   | { ok: false; error: string };
+
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue };

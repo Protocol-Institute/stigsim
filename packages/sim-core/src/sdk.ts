@@ -3,9 +3,37 @@ import type {
   ModeDefinition,
   ModeReference,
   ModeRuntime,
+  JsonValue,
 } from "./types";
 
 const MODE_ID_MAX_LENGTH = 100;
+
+/** True only when JSON serialization can retain the complete value. */
+export function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
+  if (typeof value !== "object" || seen.has(value)) return false;
+
+  if (Array.isArray(value)) {
+    const ownKeys = Reflect.ownKeys(value);
+    if (ownKeys.length !== value.length + 1 || ownKeys.some(key => typeof key !== "string")) return false;
+    seen.add(value);
+    const valid = value.every(item => isJsonValue(item, seen));
+    seen.delete(value);
+    return valid;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.some(key => typeof key !== "string" ||
+      !Object.prototype.propertyIsEnumerable.call(value, key))) return false;
+
+  seen.add(value);
+  const valid = Object.values(value).every(item => isJsonValue(item, seen));
+  seen.delete(value);
+  return valid;
+}
 
 /** Stable lowercase identifiers, optionally grouped with `/` or `-`. */
 export function isModeId(value: unknown): value is string {

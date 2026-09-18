@@ -76,6 +76,14 @@ every recorded intervention, periodic state fingerprints, and the metrics
 samples. Save one from the Run panel and load it back to replay the run
 exactly.
 
+The original Maze files remain `stigsim-trace@1`. Mode SDK recordings use the
+separate `stigsim-mode-trace@1` envelope: a versioned mode reference, mode-owned
+commands, mode-owned fingerprints, and an end tick. `parseModeTrace` accepts
+both formats and upgrades an old Maze trace to `maze@1` in memory; it never
+rewrites the source file. A traceable mode must validate and canonicalize every
+command and fingerprint all continuation-relevant state it owns outside the
+core simulation. `TRACE_VERSION` and `MODE_TRACE_VERSION` are independent.
+
 A trace is an ordinary file, so `parseTrace` treats one as untrusted: it bounds
 every number against the limits in `packages/sim-core/src/constants.ts` before the trace is
 allowed to become a running simulation. Without those bounds a corrupt or

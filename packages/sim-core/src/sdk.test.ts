@@ -3,10 +3,27 @@ import test from "node:test";
 import {
   ModeRegistry,
   defineMode,
+  isJsonValue,
   isModeId,
   isModeVersion,
   type ModeConfigResult,
 } from "./index";
+
+test("isJsonValue accepts lossless data and rejects values JSON would change", () => {
+  assert.equal(isJsonValue({ nested: [null, true, 4, "value"] }), true);
+  assert.equal(isJsonValue(Object.assign(Object.create(null), { value: 1 })), true);
+  for (const value of [undefined, -0, Number.NaN, Number.POSITIVE_INFINITY, 1n, new Date()]) {
+    assert.equal(isJsonValue(value), false, String(value));
+  }
+  assert.equal(isJsonValue([undefined]), false);
+  const cyclic: { self?: unknown } = {};
+  cyclic.self = cyclic;
+  assert.equal(isJsonValue(cyclic), false);
+  const hidden = {};
+  Object.defineProperty(hidden, "value", { value: 1, enumerable: false });
+  assert.equal(isJsonValue(hidden), false);
+  assert.equal(isJsonValue({ [Symbol("value")]: 1 }), false);
+});
 
 interface CounterConfig {
   initial: number;
