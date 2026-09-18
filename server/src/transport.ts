@@ -1,5 +1,5 @@
 import type { FoodSourceWire, ServerMessage } from "../../shared/infinite-contract";
-import type { InfiniteSimulation } from "./sim";
+import type { InfiniteSimulation } from "@stigsim/sim-core";
 
 export function shouldSendVolatileFrame(
   bufferedAmount: number,

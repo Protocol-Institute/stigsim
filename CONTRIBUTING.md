@@ -39,6 +39,11 @@ Stigsim has a standalone React/Vite simulator and an optional server-authoritati
 - `shared/infinite-contract.ts` is the wire contract shared by browser and server.
 - `server/` contains the authoritative simulation, WebSocket API, and Postgres persistence.
 
+Infinite's authoritative runtime is `infinite@1` in
+`packages/sim-core/src/infinite-mode.ts`; `server/src/sim.ts` is only its
+server compatibility surface. `server/src/legacy-infinite-sim.ts` is a frozen
+test oracle and must never be imported by production code.
+
 Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
 
 ## Determinism

@@ -17,7 +17,11 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { eq, desc } from "drizzle-orm";
 import { db, worldStateTable, colonyRecordsTable } from "./db";
-import { InfiniteSimulation, type PersistedColony, type PersistedWorld } from "./sim";
+import {
+  infiniteMode,
+  type InfinitePersistedColony as PersistedColony,
+  type InfinitePersistedWorld as PersistedWorld,
+} from "@stigsim/sim-core";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
 import {
@@ -30,10 +34,13 @@ import {
 import { calculateFixedSteps } from "./fixed-step";
 import { ThrottledFailureReporter } from "./degraded-status";
 import { performance } from "node:perf_hooks";
-import { TICKS_PER_SEC } from "../../shared/infinite-contract";
+import { COLONY_COLORS, TICKS_PER_SEC } from "../../shared/infinite-contract";
 import type { LeaderboardEntry } from "../../shared/infinite-contract";
 
-export const sim = new InfiniteSimulation();
+export const sim = infiniteMode.create({
+  randomSeed: null,
+  colorCount: COLONY_COLORS.length,
+});
 
 const WORLD_KEY = "infinite";
 const __dirname_ = dirname(fileURLToPath(import.meta.url));

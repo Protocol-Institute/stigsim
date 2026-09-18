@@ -7,6 +7,13 @@ interface Chunk {
   caut: Float32Array;
 }
 
+export interface ChunkEntry {
+  readonly key: string;
+  readonly home: Float32Array;
+  readonly food: Float32Array;
+  readonly caut: Float32Array;
+}
+
 export interface ChunkedFieldOptions {
   /** Cells per chunk edge. Defaults to 32, matching the Infinite Mode wire. */
   chunkSize?: number;
@@ -86,6 +93,11 @@ export class ChunkedField implements FieldSet {
   /** Live chunks. Exposed for tests and for the server's broadcast encoder. */
   get size(): number {
     return this.chunks.size;
+  }
+
+  /** Live chunk arrays in insertion order, for mode-owned wire encoders. */
+  chunkEntries(): readonly ChunkEntry[] {
+    return [...this.chunks].map(([key, chunk]) => ({ key, ...chunk }));
   }
 
   get(ch: Channel, cx: number, cy: number): number {
