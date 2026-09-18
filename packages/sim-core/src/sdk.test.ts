@@ -99,6 +99,37 @@ test("ModeRegistry resolves exact behavior versions and refuses duplicates", () 
   assert.throws(() => registry.register(counterV1), /already registered/);
 });
 
+test("ModeRegistry reconstructs a runtime from a canonical parsed reference", () => {
+  const result = new ModeRegistry().register(counterV1).create({
+    id: "test/counter",
+    version: 1,
+    config: { initial: 7, ignored: true },
+  });
+  assert.ok(result.ok);
+  assert.deepEqual(result.instance.reference, {
+    id: "test/counter",
+    version: 1,
+    config: { initial: 7 },
+  });
+  assert.equal((result.instance.runtime as CounterRuntime).value, 7);
+});
+
+test("ModeRegistry reports invalid, unknown, and malformed references", () => {
+  const registry = new ModeRegistry().register(counterV1);
+  assert.deepEqual(registry.create({ id: "Bad Mode", version: 1, config: {} }), {
+    ok: false,
+    error: "Mode reference has an invalid identity.",
+  });
+  assert.deepEqual(registry.create({ id: "test/counter", version: 2, config: {} }), {
+    ok: false,
+    error: "Mode test/counter@2 is not registered.",
+  });
+  assert.deepEqual(registry.create({ id: "test/counter", version: 1, config: {} }), {
+    ok: false,
+    error: "Counter config needs an integer initial value.",
+  });
+});
+
 test("ModeRegistry validates definitions even when defineMode was bypassed", () => {
   const registry = new ModeRegistry();
   assert.throws(

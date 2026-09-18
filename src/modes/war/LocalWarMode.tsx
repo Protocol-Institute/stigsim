@@ -17,10 +17,11 @@ import { ADOPTION_CHOICES, adoptionChoice } from "../../adoption-choices";
 import {
   DEFAULT_WAR_SETTINGS,
   WAR_RULES,
-  WarSimulation,
   type WarColonyMetrics,
   type WarMatchSettings,
+  type WarSimulation,
 } from "./war-simulation";
+import { warMode, warModeConfig } from "./war-mode";
 
 const EMPTY_METRICS: WarColonyMetrics = {
   population: 0, foodCollected: 0, reserve: 0, hatching: 0,
@@ -235,7 +236,7 @@ export default function LocalWarMode() {
   const [doctrines, setDoctrines] = useState<Doctrine[]>([
     cloneDoctrine(DEFAULT_DOCTRINE), cloneDoctrine(DEFAULT_DOCTRINE),
   ]);
-  const [initialWar] = useState(() => new WarSimulation(initialSettings, doctrines));
+  const [initialWar] = useState(() => warMode.create(warModeConfig(initialSettings, doctrines)));
   const warRef = useRef(initialWar);
   const [metrics, setMetrics] = useState(() => [warRef.current.getMetrics(0), warRef.current.getMetrics(1)]);
   const [running, setRunning] = useState(false);
@@ -255,7 +256,7 @@ export default function LocalWarMode() {
 
   const createMatch = useCallback((nextSettings: WarMatchSettings, nextDoctrines = doctrines) => {
     setRunning(false);
-    warRef.current = new WarSimulation(nextSettings, nextDoctrines);
+    warRef.current = warMode.create(warModeConfig(nextSettings, nextDoctrines));
     setSettings(nextSettings);
     setHasMatch(true);
     setSetupOpen(false);

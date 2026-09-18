@@ -222,3 +222,13 @@ export interface ModeReference<Config = unknown> {
   version: number;
   config: Config;
 }
+
+/** A canonical recipe paired with the runtime reconstructed from it. */
+export interface ModeInstance<Config = unknown, Runtime extends ModeRuntime = ModeRuntime> {
+  reference: ModeReference<Config>;
+  runtime: Runtime;
+}
+
+export type ModeCreateResult<Config = unknown, Runtime extends ModeRuntime = ModeRuntime> =
+  | { ok: true; instance: ModeInstance<Config, Runtime> }
+  | { ok: false; error: string };

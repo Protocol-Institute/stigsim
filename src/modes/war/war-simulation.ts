@@ -133,6 +133,10 @@ export class WarSimulation {
   private nextAntId = 0;
   result: WarResult = null;
 
+  get tick(): number {
+    return this.simulation.tick;
+  }
+
   constructor(
     settings: Partial<WarMatchSettings> = {},
     doctrines: Doctrine[] = [DEFAULT_DOCTRINE, DEFAULT_DOCTRINE],

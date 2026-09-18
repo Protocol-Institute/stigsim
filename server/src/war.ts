@@ -3,7 +3,8 @@ import type { IncomingMessage, Server } from "node:http";
 import { ADOPTION_MODES, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, MAZE_LAYOUTS, ROLES, STATES, DenseField, DenseGrid, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
-import { WarSimulation } from "../../src/modes/war/war-simulation";
+import type { WarSimulation } from "../../src/modes/war/war-simulation";
+import { warMode, warModeConfig } from "../../src/modes/war/war-mode";
 import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
@@ -147,7 +148,7 @@ export function normalizeStoredWarRecord(value: WarMatchRecord): WarMatchRecord 
 }
 
 function makeWar(settings: OnlineWarSettings, doctrines?: Doctrine[]): WarSimulation {
-  return new WarSimulation({
+  return warMode.create(warModeConfig({
     masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
     startingAnts: settings.startingAnts,
     foodSources: settings.foodSources,
@@ -157,7 +158,7 @@ function makeWar(settings: OnlineWarSettings, doctrines?: Doctrine[]): WarSimula
     topology: settings.topology,
     layout: settings.layout,
     adoption: settings.adoption,
-  }, doctrines);
+  }, doctrines));
 }
 
 export function randomOpponentDoctrine(masterSeed: string, topology: Topology = DEFAULT_TOPOLOGY): Doctrine {

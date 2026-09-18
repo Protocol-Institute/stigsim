@@ -1,4 +1,9 @@
-import type { ModeDefinition, ModeRuntime } from "./types";
+import type {
+  ModeCreateResult,
+  ModeDefinition,
+  ModeReference,
+  ModeRuntime,
+} from "./types";
 
 const MODE_ID_MAX_LENGTH = 100;
 
@@ -53,5 +58,24 @@ export class ModeRegistry {
 
   resolve(id: string, version: number): RegisteredMode | undefined {
     return this.modes.get(keyOf(id, version));
+  }
+
+  create(reference: ModeReference): ModeCreateResult {
+    if (!isModeId(reference.id) || !isModeVersion(reference.version)) {
+      return { ok: false, error: "Mode reference has an invalid identity." };
+    }
+    const mode = this.resolve(reference.id, reference.version);
+    if (!mode) {
+      return { ok: false, error: `Mode ${keyOf(reference.id, reference.version)} is not registered.` };
+    }
+    const parsed = mode.parseConfig(reference.config);
+    if (!parsed.ok) return parsed;
+    return {
+      ok: true,
+      instance: {
+        reference: { id: mode.id, version: mode.version, config: parsed.value },
+        runtime: mode.create(parsed.value),
+      },
+    };
   }
 }
