@@ -44,6 +44,13 @@ Infinite's authoritative runtime is `infinite@1` in
 server compatibility surface. `server/src/legacy-infinite-sim.ts` is a frozen
 test oracle and must never be imported by production code.
 
+Wire encoding and persisted-state parsing are mode-owned boundaries:
+`packages/sim-core/src/infinite-boundary.ts` owns Infinite's sparse chunk wire
+and version-1 world format, while `src/modes/war/war-boundary.ts` owns War's
+dense snapshot wire and completed-record parser. Hosts own WebSocket and JSON
+framing. Do not merge the pheromone encoders: their scaling is intentionally
+different and is part of each deployed protocol.
+
 Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
 
 ## Determinism
