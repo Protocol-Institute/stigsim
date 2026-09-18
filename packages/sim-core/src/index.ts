@@ -13,3 +13,4 @@ export * from "./topology";
 export * from "./score";
 export * from "./fingerprint";
 export * from "./sdk";
+export * from "./maze-mode";
