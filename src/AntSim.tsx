@@ -72,7 +72,8 @@ const DPAD_CHEVRONS: Record<string, string> = {
 function DPadButton({ dir, onPress }: { dir: "up" | "down" | "left" | "right"; onPress: () => void }) {
   return (
     <button
-      onPointerDown={e => { e.preventDefault(); onPress(); }}
+      type="button"
+      onClick={onPress}
       aria-label={dir}
       style={{
         width: 64,

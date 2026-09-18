@@ -354,35 +354,46 @@ export class ModeRunRecorder<
   }
 
   private capture(name: string, channel: ActiveChannel): void {
-    const data = canonicalCaptured(
-      channel.definition.capture(this.runtime),
-      channel.definition.parse,
-      `Research channel ${name} sample`,
-    );
-    channel.samples.push({ t: this.runtime.tick, data });
+    const sample = this.captureSample(name, channel);
+    channel.samples.push(sample);
     if (channel.samples.length > channel.capacity) {
       channel.samples.shift();
       channel.truncated = true;
     }
   }
 
+  private captureSample(name: string, channel: ActiveChannel): ResearchSample {
+    const data = canonicalCaptured(
+      channel.definition.capture(this.runtime),
+      channel.definition.parse,
+      `Research channel ${name} sample`,
+    );
+    return { t: this.runtime.tick, data };
+  }
+
   build(): ModeRunRecord<Config, Command> {
-    for (const [name, channel] of this.activeChannels) {
-      const last = channel.samples[channel.samples.length - 1];
-      if (last?.t !== this.runtime.tick) this.capture(name, channel);
-    }
     const trace = this.traceRecorder.build();
     if (trace.commands.length !== this.commandSources.length) {
       throw new Error("Trace commands and command provenance are out of sync.");
     }
     const channels: Record<string, ResearchChannelRecord> = {};
     for (const [name, channel] of this.activeChannels) {
+      const samples = channel.samples.map(sample => ({ t: sample.t, data: cloneJson(sample.data) }));
+      let truncated = channel.truncated;
+      const last = samples[samples.length - 1];
+      if (last?.t !== this.runtime.tick) {
+        samples.push(this.captureSample(name, channel));
+        if (samples.length > channel.capacity) {
+          samples.shift();
+          truncated = true;
+        }
+      }
       channels[name] = {
         version: channel.definition.version,
         interval: channel.interval,
         capacity: channel.capacity,
-        truncated: channel.truncated,
-        samples: channel.samples.map(sample => ({ t: sample.t, data: cloneJson(sample.data) })),
+        truncated,
+        samples,
       };
     }
     const capturedOutcome = this.definition.outcome?.capture(this.runtime);

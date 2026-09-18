@@ -5,6 +5,18 @@
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  scrollbar-color: #4a351d #0f0a04;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: #0f0a04; }
+*::-webkit-scrollbar-thumb { border: 2px solid #0f0a04; border-radius: 999px; background: #4a351d; }
+*::-webkit-scrollbar-thumb:hover { background: #765018; }
+*::-webkit-scrollbar-thumb:active { background: #a46a13; }
+
+@media (forced-colors: active) {
+  :root { scrollbar-color: auto; }
 }
 
 /* Online War Mode --------------------------------------------------------- */
@@ -405,6 +417,8 @@ textarea {
 .war-matchbar,
 .war-arena,
 .war-result,
+.war-record-message,
+.war-replay,
 .war-rules-note {
   width: min(1560px, 100%);
   margin-inline: auto;
@@ -544,6 +558,68 @@ textarea {
 .war-matchbar__controls .war-setting {
   width: 220px;
   margin-left: 4px;
+}
+
+.war-record-message {
+  padding: 9px 12px;
+  margin-top: -8px;
+  margin-bottom: 16px;
+  border: 1px solid #3d2e18;
+  border-radius: 9px;
+  color: #bca98a;
+  background: #171007;
+  font-size: .72rem;
+}
+
+.war-replay {
+  padding: 12px 14px;
+  margin-top: -8px;
+  margin-bottom: 18px;
+  border: 1px solid #765018;
+  border-radius: 11px;
+  background: #171007;
+}
+
+.war-replay__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.war-replay__heading > div:last-child {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.war-replay__heading strong,
+.war-replay__heading span {
+  display: block;
+}
+
+.war-replay__heading strong {
+  color: #f59e0b;
+  font-size: .78rem;
+}
+
+.war-replay__heading span {
+  margin-top: 2px;
+  color: #927e5f;
+  font-size: .7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.war-replay > input {
+  width: 100%;
+  accent-color: #f59e0b;
+}
+
+.war-replay__error {
+  margin: 8px 0 0;
+  color: #ef8b55;
+  font-size: .7rem;
 }
 
 .war-setting > span,
@@ -782,6 +858,23 @@ textarea {
 .war-page--setup {
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 12px;
+}
+
+.war-setup-record {
+  width: min(900px, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: #927e5f;
+  font-size: .72rem;
+}
+
+.war-setup-record p {
+  margin: 0;
+  color: #ef8b55;
 }
 
 .war-setup {
@@ -983,7 +1076,9 @@ textarea {
   }
 
   .war-seed__heading,
-  .war-result {
+  .war-result,
+  .war-replay__heading,
+  .war-setup-record {
     align-items: stretch;
     flex-direction: column;
   }

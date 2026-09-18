@@ -455,7 +455,7 @@ export default function OnlineWarMode() {
   const runningMatches = useMemo(() => matches.filter(match => match.phase === "running"), [matches]);
 
   if (!nameConfirmed) return <main className="mp-name-gate">
-    <form onSubmit={event => { event.preventDefault(); const name = playerName.trim(); if (!name) return; localStorage.setItem("stigsim-player-name", name); setPlayerName(name); setNameConfirmed(true); }}>
+    <form noValidate onSubmit={event => { event.preventDefault(); const name = playerName.trim(); if (!name) return; localStorage.setItem("stigsim-player-name", name); setPlayerName(name); setNameConfirmed(true); }}>
       <span className="mp-name-ant">🐜</span><h1>What should we call you?</h1><p>This name will identify your colony in multiplayer games.</p>
       <input aria-label="Your multiplayer name" autoFocus maxLength={24} value={playerName} onChange={event => setPlayerName(event.target.value)} placeholder="Enter your name" />
       <button disabled={!playerName.trim()}>Continue to multiplayer</button>

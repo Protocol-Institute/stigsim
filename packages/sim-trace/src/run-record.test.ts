@@ -182,6 +182,16 @@ test("invalid provenance is refused before a command mutates the runtime", () =>
   assert.equal(recorder.runtime.total, 0);
 });
 
+test("building a live record does not change later sampling", () => {
+  const recorder = new ModeRunRecorder(counterRecording, { initial: 0 }, {
+    channels: { state: { interval: 2, capacity: 10 } },
+  });
+  recorder.step();
+  assert.deepEqual(recorder.build().channels.state.samples.map(sample => sample.t), [1]);
+  recorder.step();
+  assert.deepEqual(recorder.build().channels.state.samples.map(sample => sample.t), [2]);
+});
+
 test("record parsing rejects tampered provenance, ordering, samples, and schemas", () => {
   const base = recordedCounter();
   const cases: Array<[string, (value: ModeRunRecord) => void, RegExp]> = [
