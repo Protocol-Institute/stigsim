@@ -65,6 +65,13 @@ rules. Later doctrine changes are canonical commands, so researchers can join
 them to observations by tick without duplicating doctrine state into every
 sample.
 
+The authoritative Online War host uses a storage-bounded profile rather than
+the browser-local defaults: `metrics@1` every 10 ticks (capacity 10,000),
+`agents@1` every 50 ticks (capacity 2,000), and `fields@1` every 250 ticks
+(capacity 400). Capacity truncation is explicit in each channel. Completed
+records are fetched on demand from `/api/war/records/:recordId`; lobby messages
+carry only the compact match summary and an availability flag.
+
 ## Replay and analysis
 
 Load files with `parseModeRunRecord` and a `ModeRecordingRegistry`. The parser

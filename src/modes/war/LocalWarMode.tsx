@@ -10,7 +10,7 @@ import {
   type Doctrine,
 } from "@stigsim/sim-core";
 import { serializeModeRunRecord } from "@stigsim/sim-trace";
-import { COLONY_COLORS, render } from "../../render";
+import { COLONY_COLORS } from "../../render";
 import { DoctrinePanel as FullDoctrinePanel } from "../../DoctrinePanel";
 import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "../../topology-choices";
 import { LAYOUT_CHOICES, layoutChoice } from "../../layout-choices";
@@ -20,7 +20,6 @@ import {
   WAR_RULES,
   type WarColonyMetrics,
   type WarMatchSettings,
-  type WarSimulation,
 } from "./war-simulation";
 import {
   createLocalWarRecorder,
@@ -30,6 +29,7 @@ import {
   parseLocalWarRecord,
   type LocalWarRecord,
 } from "./local-war-recording";
+import { drawWar } from "./war-render";
 
 const EMPTY_METRICS: WarColonyMetrics = {
   population: 0, foodCollected: 0, reserve: 0, hatching: 0,
@@ -38,24 +38,6 @@ const EMPTY_METRICS: WarColonyMetrics = {
 };
 
 type AdjustableSetting = "startingAnts" | "foodSources" | "foodPerSource" | "loopRate" | "tankMax";
-
-function drawWar(ctx: CanvasRenderingContext2D, war: WarSimulation) {
-  render(ctx, war.simulation, "all", 0, "none", null, ant => {
-    const state = war.getAntSnapshot(ant);
-    return state ? 0.3 + 0.7 * Math.max(0, Math.min(1, state.energy / war.rules.maxEnergy)) : 1;
-  });
-  for (const colony of war.simulation.colonies) {
-    for (const ant of colony.ants) {
-      const state = war.getAntSnapshot(ant);
-      if (!state || state.energy > war.rules.retreatEnergy) continue;
-      ctx.beginPath();
-      ctx.arc(ant.x, ant.y, 5.5, 0, Math.PI * 2);
-      ctx.strokeStyle = "#ef4444";
-      ctx.lineWidth = 1.25;
-      ctx.stroke();
-    }
-  }
-}
 
 function Metric({ label, value, warning = false }: { label: string; value: number; warning?: boolean }) {
   return (

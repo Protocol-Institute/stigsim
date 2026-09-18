@@ -1,27 +1,25 @@
 import type { Doctrine } from "@stigsim/sim-core";
 import {
-  ModeRecordingRegistry,
   ModeRunRecorder,
-  ModeTraceRegistry,
-  ModeTraceReplayer,
-  modeRunRecordToTrace,
-  parseModeRunRecord,
   type CommandSource,
-  type ModeRunRecord,
-  type ModeRunRecordParseResult,
   type RunParticipant,
 } from "@stigsim/sim-trace";
-import { warModeConfig, type WarModeConfig } from "./war-mode";
+import { warModeConfig } from "./war-mode";
 import { warRecordingMode } from "./war-recording";
-import type { WarMatchSettings, WarSimulation } from "./war-simulation";
-import { warTraceMode, type WarModeCommand } from "./war-trace";
+import type { WarMatchSettings } from "./war-simulation";
+import {
+  createWarReplay,
+  parseWarRunRecord,
+  warRunRecordFilename,
+  type WarRunRecord,
+} from "./war-run-record";
 
 export const LOCAL_WAR_PARTICIPANTS: RunParticipant[] = [
   { id: "local-colony-0", kind: "player", slot: "colony-0" },
   { id: "local-colony-1", kind: "player", slot: "colony-1" },
 ];
 
-export type LocalWarRecord = ModeRunRecord<WarModeConfig, WarModeCommand>;
+export type LocalWarRecord = WarRunRecord;
 
 export function localWarPlayerSource(colonyId: number): CommandSource {
   if (colonyId !== 0 && colonyId !== 1) throw new RangeError("Local War has only two player colonies.");
@@ -36,27 +34,8 @@ export function createLocalWarRecorder(settings: WarMatchSettings, doctrines: re
 }
 
 /** Parse only exact-version War records, then recover their useful static type. */
-export function parseLocalWarRecord(text: string): ModeRunRecordParseResult & { record?: LocalWarRecord } {
-  const parsed = parseModeRunRecord(
-    text,
-    new ModeRecordingRegistry().register(warRecordingMode),
-  );
-  return parsed.ok
-    ? { ...parsed, record: parsed.record as LocalWarRecord }
-    : parsed;
-}
+export const parseLocalWarRecord = parseWarRunRecord;
 
-export function createLocalWarReplay(record: LocalWarRecord): ModeTraceReplayer<WarSimulation> {
-  return new ModeTraceReplayer<WarSimulation>(
-    modeRunRecordToTrace(record),
-    new ModeTraceRegistry().register(warTraceMode),
-  );
-}
+export const createLocalWarReplay = createWarReplay;
 
-export function localWarRecordFilename(record: LocalWarRecord): string {
-  const seed = record.mode.config.settings.masterSeed
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "custom";
-  return `stigsim-war-${seed}-${record.endTick}.run.json`;
-}
+export const localWarRecordFilename = warRunRecordFilename;

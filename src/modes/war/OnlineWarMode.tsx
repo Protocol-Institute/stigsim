@@ -22,6 +22,8 @@ import { WAR_RULES } from "./war-simulation";
 import { terminalWarCloseMessage, warCloseAction } from "./online-war-connection";
 import { sameWarDoctrine } from "./online-war-doctrine";
 import { settingsForOnlineWarSetup } from "./online-war-setup";
+import { OnlineWarReplay } from "./OnlineWarReplay";
+import { parseWarRunRecord, type WarRunRecord } from "./war-run-record";
 import {
   DEFAULT_ONLINE_WAR_SETTINGS,
   type OnlineWarSettings,
@@ -68,6 +70,14 @@ function warSocketUrl(): string {
   const base = configured || window.location.origin;
   const url = new URL("/api/war/ws", base);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  if (!configured && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) url.port = "3001";
+  return url.toString();
+}
+
+function warApiUrl(path: string): string {
+  const configured = (import.meta.env.VITE_INFINITE_SERVER_URL ?? "").replace(/\/$/, "");
+  const base = configured || window.location.origin;
+  const url = new URL(path, base);
   if (!configured && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) url.port = "3001";
   return url.toString();
 }
@@ -270,7 +280,7 @@ function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mo
   </article>;
 }
 
-function HistoryRow({ record }: { record: WarMatchRecord }) {
+function HistoryRow({ record, loading, onReview }: { record: WarMatchRecord; loading: boolean; onReview: () => void }) {
   const result = record.winner === "draw" ? "Draw" : `${record.playerNames[record.winner] ?? `Colony ${record.winner + 1}`} won`;
   return <article className="mp-match-row past">
     <div className="mp-row-mode"><span>✓</span><strong>{record.matchId}</strong><small>{new Date(record.completedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>
@@ -279,7 +289,7 @@ function HistoryRow({ record }: { record: WarMatchRecord }) {
     <div className="mp-row-stat"><small>Food</small><strong>{record.settings.foodSources}</strong><span>{record.settings.foodPerSource}/source</span></div>
     <div className="mp-row-stat"><small>Speed</small><strong>{record.settings.stepsPerSecond}</strong><span>steps/sec</span></div>
     <div className="mp-row-stat"><small>Field</small><strong>{choiceFor(record.settings.topology).label}</strong><span>{layoutChoice(record.settings.layout).label} · {adoptionChoice(record.settings.adoption).label.toLowerCase()} · ~{Math.round(record.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))} gland</span></div>
-    <div className="mp-row-result"><small>Result</small><strong>{result}</strong><button className="mp-review-action" disabled>Review · Coming soon</button></div>
+    <div className="mp-row-result"><small>Result</small><strong>{result}</strong><button className="mp-review-action" disabled={!record.replayAvailable || loading} onClick={onReview}>{loading ? "Loading…" : record.replayAvailable ? "Review replay" : "Replay unavailable"}</button></div>
   </article>;
 }
 
@@ -307,6 +317,8 @@ export default function OnlineWarMode() {
   const [setupMode, setSetupMode] = useState<"human" | "random" | null>(null);
   const [error, setError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  const [historyReplay, setHistoryReplay] = useState<{ summary: WarMatchRecord; record: WarRunRecord } | null>(null);
+  const [loadingReplayId, setLoadingReplayId] = useState<string | null>(null);
 
   const openSetup = (mode: "human" | "random") => {
     setSettings(current => settingsForOnlineWarSetup(mode, current));
@@ -454,6 +466,23 @@ export default function OnlineWarMode() {
   const waitingMatches = useMemo(() => matches.filter(match => match.phase === "waiting"), [matches]);
   const runningMatches = useMemo(() => matches.filter(match => match.phase === "running"), [matches]);
 
+  const reviewHistory = async (summary: WarMatchRecord) => {
+    if (!summary.replayAvailable || loadingReplayId) return;
+    setLoadingReplayId(summary.recordId);
+    setError("");
+    try {
+      const response = await fetch(warApiUrl(`/api/war/records/${encodeURIComponent(summary.recordId)}`));
+      if (!response.ok) throw new Error(response.status === 404 ? "That replay is no longer available." : "The replay could not be loaded.");
+      const parsed = parseWarRunRecord(await response.text());
+      if (!parsed.ok || !parsed.record) throw new Error(parsed.ok ? "The replay is incomplete." : parsed.error);
+      setHistoryReplay({ summary, record: parsed.record });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The replay could not be loaded.");
+    } finally {
+      setLoadingReplayId(null);
+    }
+  };
+
   if (!nameConfirmed) return <main className="mp-name-gate">
     <form noValidate onSubmit={event => { event.preventDefault(); const name = playerName.trim(); if (!name) return; localStorage.setItem("stigsim-player-name", name); setPlayerName(name); setNameConfirmed(true); }}>
       <span className="mp-name-ant">🐜</span><h1>What should we call you?</h1><p>This name will identify your colony in multiplayer games.</p>
@@ -461,6 +490,8 @@ export default function OnlineWarMode() {
       <button disabled={!playerName.trim()}>Continue to multiplayer</button>
     </form>
   </main>;
+
+  if (historyReplay) return <OnlineWarReplay summary={historyReplay.summary} record={historyReplay.record} onClose={() => setHistoryReplay(null)} />;
 
   if (!matchId) return <main className="mp-page mp-room-page"><div className="mp-directory-shell">
     <header className="mp-directory-header"><div><h1>Online War Mode</h1><p>Find a match, watch one in progress, or create a new challenge.</p></div>
@@ -470,7 +501,7 @@ export default function OnlineWarMode() {
     <div className="mp-directory-sections">
       <section className="mp-directory-section mp-waiting-section"><div className="mp-section-title"><div><span>1</span><h2>Waiting for opponent</h2><p>Enter a room, then choose an open colony.</p></div><strong>{waitingMatches.length}</strong></div><div className="mp-match-rows">{waitingMatches.length ? waitingMatches.map(match => <MatchRow key={match.id} match={match} mode="waiting" ownRoom={Boolean(storedToken(match.id))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No one is waiting yet. Start a new game above.</div>}</div></section>
       <section className="mp-directory-section mp-active-section"><div className="mp-section-title"><div><span>2</span><h2>Active games</h2><p>Drop into a live match as a spectator.</p></div><strong>{runningMatches.length}</strong></div><div className="mp-match-rows">{runningMatches.length ? runningMatches.map(match => <MatchRow key={match.id} match={match} mode="running" ownRoom={Boolean(storedToken(match.id))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No matches are live right now.</div>}</div></section>
-      <section className="mp-directory-section"><div className="mp-section-title"><div><span>3</span><h2>Past games</h2><p>Completed results and match configurations.</p></div><strong>{matchHistory.length}</strong></div><div className="mp-match-rows">{matchHistory.length ? matchHistory.map(record => <HistoryRow key={record.recordId} record={record} />) : <div className="mp-section-empty">Completed games will appear here.</div>}</div></section>
+      <section className="mp-directory-section"><div className="mp-section-title"><div><span>3</span><h2>Past games</h2><p>Completed results, research records, and verified playback.</p></div><strong>{matchHistory.length}</strong></div><div className="mp-match-rows">{matchHistory.length ? matchHistory.map(record => <HistoryRow key={record.recordId} record={record} loading={loadingReplayId === record.recordId} onReview={() => void reviewHistory(record)} />) : <div className="mp-section-empty">Completed games will appear here.</div>}</div></section>
     </div><small className="mp-directory-connection">{connection}</small>
     {setupMode && <SetupModal mode={setupMode} settings={settings} onChange={setSettings} onClose={() => setSetupMode(null)} onStart={() => { send({ type: "create-room", playerName, settings, randomOpponent: setupMode === "random" }); setSetupMode(null); }} />}
   </div></main>;

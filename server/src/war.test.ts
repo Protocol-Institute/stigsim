@@ -3,7 +3,8 @@ import test from "node:test";
 import { DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
-import { completedWarRecord, normalizeWarDoctrine, randomOpponentDoctrine, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { createOnlineWarRecorder } from "../../src/modes/war/online-war-recording";
+import { completedWarRecord, normalizeWarDoctrine, parsePersistedWarMatch, persistedWarMatch, randomOpponentDoctrine, validOnlineWarSettings, validWarDoctrine } from "./war";
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
@@ -77,7 +78,7 @@ test("random-opponent doctrine is deterministic from the match seed", () => {
   assert.equal(validWarDoctrine(first), true);
 });
 
-test("completed records retain results without replay snapshots", () => {
+test("completed records retain compact results and advertise separate replay data", () => {
   const war = new WarSimulation({ masterSeed: "history-test", startingAnts: 1 });
   war.simulation.colonies[1].ants.length = 0;
   war.step();
@@ -96,4 +97,32 @@ test("completed records retain results without replay snapshots", () => {
   assert.deepEqual(record.playerNames, ["Alpha", "Beta"]);
   assert.equal(record.finalMetrics.length, 2);
   assert.equal("checkpoints" in record, false);
+  assert.equal(record.replayAvailable, true);
+});
+
+test("persisted Online War envelopes bind a compact summary to its exact run", () => {
+  const settings = { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "persisted-run-test", startingAnts: 1 };
+  const recorder = createOnlineWarRecorder(settings);
+  recorder.runtime.simulation.colonies[1].ants.length = 0;
+  recorder.step();
+  const summary = completedWarRecord({
+    id: "ABCDE",
+    war: recorder.runtime,
+    settings,
+    players: [
+      { token: "one", socket: null, ready: true, name: "Alpha" },
+      { token: "two", socket: null, ready: true, name: "Beta" },
+    ],
+  });
+  const runRecord = recorder.build();
+  const parsed = parsePersistedWarMatch(persistedWarMatch(summary, runRecord));
+  assert.deepEqual(parsed?.summary, summary);
+  assert.deepEqual(parsed?.runRecord, runRecord);
+
+  const mismatched = parsePersistedWarMatch(persistedWarMatch(
+    { ...summary, settings: { ...summary.settings, masterSeed: "other-seed" } },
+    runRecord,
+  ));
+  assert.equal(mismatched?.summary.replayAvailable, false);
+  assert.equal(mismatched?.runRecord, undefined);
 });

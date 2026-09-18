@@ -24,7 +24,7 @@ export const colonyRecordsTable = pgTable("colony_records", {
 export type ColonyRecord = typeof colonyRecordsTable.$inferSelect;
 export type NewColonyRecord = typeof colonyRecordsTable.$inferInsert;
 
-/** Compact completed Online War results. Replay checkpoints are deliberately excluded. */
+/** Completed Online War results. `data` is a versioned summary + SDK run-record envelope. */
 export const warMatchRecordsTable = pgTable("war_match_records", {
   recordId: text("record_id").primaryKey(),
   matchId: text("match_id").notNull(),

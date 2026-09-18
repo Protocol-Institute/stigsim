@@ -54,6 +54,8 @@ export interface WarMatchRecord {
   finalTick: number;
   finalMetrics: WarMetricsWire[];
   finalDoctrines: Doctrine[];
+  /** True when the full SDK run record can be fetched without putting it in lobby broadcasts. */
+  replayAvailable: boolean;
 }
 
 export interface WarMetricsWire {

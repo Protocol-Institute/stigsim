@@ -8,7 +8,9 @@ intentionally session-lived.
 The WebSocket endpoints are `/api/infinite/ws` and `/api/war/ws`. Online War
 supports match creation, joining, spectating, reconnect tokens, server-validated
 doctrine changes, and rematches. Compact completed-match results are persisted;
-replay checkpoints and playback remain deferred.
+the full SDK research record is stored in the same database row but fetched
+separately from `GET /api/war/records/:recordId` for history playback and
+download. It is never included in lobby WebSocket messages.
 
 ## Persistence boundary
 
@@ -16,6 +18,12 @@ World snapshots preserve walls, food resources, stable colony IDs and settings,
 colony ages, and collected-food scores. Completed leaderboard records are
 stored separately in Postgres. Together these form the durable shared-world
 state used after restarts and deployments.
+
+Each completed Online War row is a versioned envelope containing the compact
+history summary and the replayable `stigsim-run-record`. Legacy summary-only
+rows remain readable and appear with replay unavailable. Run records use stable
+seat-local participant ids and deliberately exclude player names, reconnect
+tokens, addresses, and transport metadata.
 
 If historical leaderboard reads fail, the endpoint remains available with live
 colonies only. The server logs the degraded state at most once per minute and
