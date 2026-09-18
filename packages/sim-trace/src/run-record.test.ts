@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   defineMode,
@@ -156,6 +157,24 @@ test("a run record round-trips and converts back to an exactly replayable mode t
 
   const traceRegistry = new ModeTraceRegistry().register(counterTrace);
   const replay = new ModeTraceReplayer<CounterRuntime>(modeRunRecordToTrace(parsed.record), traceRegistry);
+  while (replay.step());
+  assert.equal(replay.divergedAt, null);
+  assert.equal(replay.runtime.total, 15);
+});
+
+test("the published v1 example stays canonical and replayable", () => {
+  const example = readFileSync(
+    new URL("../../../docs/examples/research-run-record.v1.json", import.meta.url),
+    "utf8",
+  );
+  const parsed = parseModeRunRecord(example, registry());
+  assert.ok(parsed.ok);
+  assert.deepEqual(parsed.record, recordedCounter());
+
+  const replay = new ModeTraceReplayer<CounterRuntime>(
+    modeRunRecordToTrace(parsed.record),
+    new ModeTraceRegistry().register(counterTrace),
+  );
   while (replay.step());
   assert.equal(replay.divergedAt, null);
   assert.equal(replay.runtime.total, 15);

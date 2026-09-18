@@ -4,6 +4,7 @@ import { DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, cloneDoctrine } from "@stigsim/sim-
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
 import { createOnlineWarRecorder } from "../../src/modes/war/online-war-recording";
+import { createWarReplay } from "../../src/modes/war/war-run-record";
 import { completedWarRecord, normalizeWarDoctrine, parsePersistedWarMatch, persistedWarMatch, randomOpponentDoctrine, validOnlineWarSettings, validWarDoctrine } from "./war";
 
 test("online match settings enforce bounded server workloads", () => {
@@ -125,4 +126,61 @@ test("persisted Online War envelopes bind a compact summary to its exact run", (
   ));
   assert.equal(mismatched?.summary.replayAvailable, false);
   assert.equal(mismatched?.runRecord, undefined);
+});
+
+test("capacity-limited Online War records retain their terminal state and replay exactly", () => {
+  const settings = {
+    ...DEFAULT_ONLINE_WAR_SETTINGS,
+    masterSeed: "capacity-limited-online-run",
+    startingAnts: 1,
+    foodSources: 1,
+    foodPerSource: 50,
+    loopRate: 0,
+  };
+  const recorder = createOnlineWarRecorder(settings, [], true, {
+    metrics: { interval: 3, capacity: 2 },
+    agents: { interval: 5, capacity: 2 },
+    fields: { interval: 7, capacity: 2 },
+  });
+
+  while (recorder.runtime.result === null && recorder.runtime.tick < 10_000) {
+    assert.equal(recorder.step(), true);
+  }
+  assert.notEqual(recorder.runtime.result, null, "the deterministic fixture must complete");
+
+  const runRecord = recorder.build();
+  for (const [name, channel] of Object.entries(runRecord.channels)) {
+    assert.equal(channel.truncated, true, `${name} should report lost early samples`);
+    assert.equal(channel.samples.length, channel.capacity, `${name} should remain bounded`);
+    assert.equal(channel.samples.at(-1)?.t, runRecord.endTick, `${name} should retain the terminal sample`);
+  }
+  const terminalMetrics = runRecord.channels.metrics.samples.at(-1)?.data as {
+    result: number | "draw" | null;
+  };
+  assert.equal(terminalMetrics.result, recorder.runtime.result);
+  assert.deepEqual(runRecord.outcome?.data, {
+    winner: recorder.runtime.result,
+    tick: runRecord.endTick,
+    colonies: (runRecord.channels.metrics.samples.at(-1)?.data as { colonies: unknown }).colonies,
+  });
+
+  const summary = completedWarRecord({
+    id: "CAP01",
+    war: recorder.runtime,
+    settings,
+    players: [
+      { token: "one", socket: null, ready: true, name: "Researcher" },
+      { token: "bot", socket: null, ready: true, name: "Generated opponent", isBot: true },
+    ],
+  });
+  const persisted = JSON.parse(JSON.stringify(persistedWarMatch(summary, runRecord))) as unknown;
+  const parsed = parsePersistedWarMatch(persisted);
+  assert.equal(parsed?.summary.replayAvailable, true);
+  assert.ok(parsed?.runRecord);
+
+  const replay = createWarReplay(parsed.runRecord);
+  while (replay.step());
+  assert.equal(replay.divergedAt, null);
+  assert.equal(replay.runtime.tick, runRecord.endTick);
+  assert.equal(replay.runtime.fingerprint(), recorder.runtime.fingerprint());
 });

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-run-record.schema.json",
+  "title": "Stigsim research run record v1",
+  "description": "Generic stigsim-run-record@1 envelope. Mode config, commands, channel samples, and outcomes require the exact registered mode-owned parsers in addition to this structural schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "simVersion",
+    "createdAt",
+    "mode",
+    "participants",
+    "commands",
+    "fingerprints",
+    "channels",
+    "endTick"
+  ],
+  "properties": {
+    "format": { "const": "stigsim-run-record" },
+    "version": { "const": 1 },
+    "simVersion": { "type": "integer" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "mode": { "$ref": "#/$defs/modeReference" },
+    "participants": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/participant" }
+    },
+    "commands": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": { "$ref": "#/$defs/command" }
+    },
+    "fingerprints": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fingerprint" }
+    },
+    "channels": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "maxLength": 100,
+        "pattern": "^[a-z][a-z0-9]*(?:[/-][a-z0-9]+)*$"
+      },
+      "additionalProperties": { "$ref": "#/$defs/channel" }
+    },
+    "outcome": { "$ref": "#/$defs/outcome" },
+    "endTick": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2000000
+    }
+  },
+  "$defs": {
+    "jsonValue": {
+      "type": ["array", "object", "string", "number", "boolean", "null"]
+    },
+    "modeId": {
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[a-z][a-z0-9]*(?:[/-][a-z0-9]+)*$"
+    },
+    "recordId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "modeReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "config"],
+      "properties": {
+        "id": { "$ref": "#/$defs/modeId" },
+        "version": { "$ref": "#/$defs/version" },
+        "config": { "$ref": "#/$defs/jsonValue" }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/recordId" },
+        "kind": { "enum": ["player", "bot", "system"] },
+        "label": { "type": "string", "maxLength": 200 },
+        "slot": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "participantSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "participantId"],
+      "properties": {
+        "kind": { "const": "participant" },
+        "participantId": { "$ref": "#/$defs/recordId" }
+      }
+    },
+    "systemSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "systemId"],
+      "properties": {
+        "kind": { "const": "system" },
+        "systemId": { "$ref": "#/$defs/recordId" }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "sequence", "source", "cmd"],
+      "properties": {
+        "t": { "type": "integer", "minimum": 1, "maximum": 2000001 },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "source": {
+          "oneOf": [
+            { "$ref": "#/$defs/participantSource" },
+            { "$ref": "#/$defs/systemSource" }
+          ]
+        },
+        "cmd": { "$ref": "#/$defs/jsonValue" }
+      }
+    },
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "h"],
+      "properties": {
+        "t": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+        "h": { "type": "string" }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "data"],
+      "properties": {
+        "t": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+        "data": { "$ref": "#/$defs/jsonValue" }
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "interval", "capacity", "truncated", "samples"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "interval": { "type": "integer", "minimum": 1, "maximum": 2000000 },
+        "capacity": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "truncated": { "type": "boolean" },
+        "samples": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": { "$ref": "#/$defs/sample" }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "data"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "data": { "$ref": "#/$defs/jsonValue" }
+      }
+    }
+  }
+}
