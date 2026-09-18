@@ -85,9 +85,10 @@ and command values are bounded by the same guards in
 `packages/sim-core/src/commands.ts` so
 the loader and the command bus cannot drift apart.
 
-`packages/sim-trace/src/fixtures/golden.trace.json` is replayed by
-`pnpm test:client` as a
-regression guard. If that test fails, simulation behaviour changed. The usual
+`packages/sim-trace/src/fixtures/golden.trace.json` is replayed by the explicit
+`pnpm test:replay` regression guard, which the full `pnpm test` CI command runs
+directly. `pnpm test:client` also includes it as part of the broader package
+suite. If that test fails, simulation behaviour changed. The usual
 cause is a new mutation path that does not go through the command bus in
 `packages/sim-core/src/commands.ts`; every way of changing a running simulation
 must be a
