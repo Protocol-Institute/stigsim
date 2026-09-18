@@ -189,3 +189,36 @@ export interface RunConfig {
   /** Absent means `random`, which is what every run before layouts existed used. */
   layout?: MazeLayout;
 }
+
+/** The lifecycle every mode exposes to generic hosts and replay tooling. */
+export interface ModeRuntime {
+  readonly tick: number;
+  step(): unknown;
+}
+
+/** A boundary parser either returns a canonical config or a useful error. */
+export type ModeConfigResult<Config> =
+  | { ok: true; value: Config }
+  | { ok: false; error: string };
+
+/**
+ * A versioned simulation recipe and its runtime factory.
+ *
+ * `parseConfig` owns the untrusted-data boundary. `create` receives only the
+ * canonical, typed result, so browser, server, and replay callers reconstruct
+ * a mode through the same factory without forcing every runtime into one
+ * engine implementation.
+ */
+export interface ModeDefinition<Config, Runtime extends ModeRuntime> {
+  readonly id: string;
+  readonly version: number;
+  parseConfig(value: unknown): ModeConfigResult<Config>;
+  create(config: Config): Runtime;
+}
+
+/** The complete serializable identity required to reconstruct one mode. */
+export interface ModeReference<Config = unknown> {
+  id: string;
+  version: number;
+  config: Config;
+}
