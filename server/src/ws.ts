@@ -17,7 +17,11 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { eq, desc } from "drizzle-orm";
 import { db, worldStateTable, colonyRecordsTable } from "./db";
-import { InfiniteSimulation, type PersistedColony, type PersistedWorld } from "./sim";
+import {
+  infiniteMode,
+  infinitePersistenceCodec,
+  infiniteWireCodec,
+} from "@stigsim/sim-core";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
 import {
@@ -30,10 +34,13 @@ import {
 import { calculateFixedSteps } from "./fixed-step";
 import { ThrottledFailureReporter } from "./degraded-status";
 import { performance } from "node:perf_hooks";
-import { TICKS_PER_SEC } from "../../shared/infinite-contract";
+import { COLONY_COLORS, TICKS_PER_SEC } from "../../shared/infinite-contract";
 import type { LeaderboardEntry } from "../../shared/infinite-contract";
 
-export const sim = new InfiniteSimulation();
+export const sim = infiniteMode.create({
+  randomSeed: null,
+  colorCount: COLONY_COLORS.length,
+});
 
 const WORLD_KEY = "infinite";
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
@@ -49,50 +56,6 @@ const MAX_VOLATILE_BUFFER_BYTES = 512 * 1024;
 const SIM_STEP_MS = 1_000 / TICKS_PER_SEC;
 const MAX_CATCH_UP_STEPS = 5;
 
-type WorldData = {
-  version?: number;
-  nextColonyId?: number;
-  walls?: string[];
-  colonies?: (Partial<PersistedColony> & {
-    nestX: number;
-    nestY: number;
-    params: Record<string, unknown>;
-  })[];
-  foodSources?: { x: number; y: number; remaining: number; total: number }[];
-};
-
-function applyWorldData(data: WorldData) {
-  if (data.version === 1 && Number.isSafeInteger(data.nextColonyId)) {
-    sim.restorePersistence(data as PersistedWorld);
-    return;
-  }
-
-  // Backward compatibility for seeds and snapshots created before v1.
-  for (const w of data.walls ?? []) sim.walls.add(w);
-  for (const c of data.colonies ?? []) {
-    if (Number.isSafeInteger(c.id) && c.id! >= 0) {
-      sim.restoreColony({
-        id: c.id!,
-        nestX: c.nestX,
-        nestY: c.nestY,
-        params: c.params as never,
-        foodCollected: Number.isFinite(c.foodCollected) ? Math.max(0, c.foodCollected!) : 0,
-        ageTicks: Number.isFinite(c.ageTicks) ? Math.max(0, c.ageTicks!) : 0,
-      });
-    } else {
-      sim.addColony(c.nestX, c.nestY, c.params as never);
-    }
-  }
-  if (Number.isSafeInteger(data.nextColonyId) && data.nextColonyId! >= 0) {
-    sim.restoreNextColonyId(data.nextColonyId!);
-  }
-  for (const f of data.foodSources ?? []) {
-    if (f.remaining <= 0) continue;
-    const source = sim.addFood(f.x, f.y, f.remaining);
-    source.total = Math.max(source.remaining, f.total);
-  }
-}
-
 async function loadWorld() {
   // 1. Try DB first — persists across all restarts and redeployments
   if (db) {
@@ -103,8 +66,8 @@ async function loadWorld() {
         .where(eq(worldStateTable.key, WORLD_KEY))
         .limit(1);
       if (row) {
-        const data = JSON.parse(row.data) as WorldData;
-        applyWorldData(data);
+        const restored = infinitePersistenceCodec.restore(sim, JSON.parse(row.data));
+        if (!restored.ok) throw new Error(restored.error);
         console.log(
           `[world] Loaded from database: ${sim.walls.size} walls, ${sim.colonies.length} colonies, ${sim.foodSources.length} food sources`
         );
@@ -118,8 +81,11 @@ async function loadWorld() {
   // 2. No DB row yet (or no DB at all) — load seed file
   if (existsSync(SEED_PATH)) {
     try {
-      const data = JSON.parse(readFileSync(SEED_PATH, "utf8")) as WorldData;
-      applyWorldData(data);
+      const restored = infinitePersistenceCodec.restore(
+        sim,
+        JSON.parse(readFileSync(SEED_PATH, "utf8")),
+      );
+      if (!restored.ok) throw new Error(restored.error);
       console.log(
         `[world] Loaded from seed file: ${sim.walls.size} walls, ${sim.colonies.length} colonies, ${sim.foodSources.length} food sources`
       );
@@ -135,7 +101,7 @@ async function loadWorld() {
 async function saveWorld() {
   if (!db) return; // in-memory mode: nothing to do
   try {
-    const data = JSON.stringify(sim.serializePersistence());
+    const data = JSON.stringify(infinitePersistenceCodec.encode(sim));
     await db
       .insert(worldStateTable)
       .values({ key: WORLD_KEY, data, updatedAt: new Date() })
@@ -194,7 +160,7 @@ const simInterval = setInterval(() => {
 // Broadcast tick at 10 fps
 const tickInterval = setInterval(() => {
   if (clients.size === 0) return;
-  const msg = JSON.stringify({ type: "tick", ...sim.serializeTick() });
+  const msg = JSON.stringify(infiniteWireCodec.tick(sim));
   for (const ws of clients) {
     if (
       ws.readyState === WebSocket.OPEN &&
@@ -211,9 +177,9 @@ const pheroInterval = setInterval(() => {
     sim.dropPheroBookkeeping();
     return;
   }
-  const pheroData = sim.serializePhero();
-  if (!pheroData.some(c => c.chunks.length > 0)) return;
-  const msg = JSON.stringify({ type: "phero", colonies: pheroData });
+  const pheroMessage = infiniteWireCodec.phero(sim);
+  if (!pheroMessage.colonies.some(c => c.chunks.length > 0)) return;
+  const msg = JSON.stringify(pheroMessage);
   for (const ws of clients) {
     if (
       ws.readyState === WebSocket.OPEN &&
@@ -363,7 +329,7 @@ export async function attachInfiniteWs(
     });
     ws.on("pong", () => liveClients.add(ws));
 
-    ws.send(JSON.stringify({ type: "init", ...sim.serializeInit() }));
+    ws.send(JSON.stringify(infiniteWireCodec.init(sim)));
 
     ws.on("message", (raw) => {
       if (++messageCount > MAX_MESSAGES_PER_SECOND) {

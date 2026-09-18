@@ -1,9 +1,11 @@
 import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
-import { ADOPTION_MODES, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, MAZE_LAYOUTS, ROLES, STATES, DenseField, DenseGrid, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
+import { ADOPTION_MODES, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, MAZE_LAYOUTS, ROLES, STATES, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { desc } from "drizzle-orm";
-import { WarSimulation } from "../../src/modes/war/war-simulation";
+import type { WarSimulation } from "../../src/modes/war/war-simulation";
+import { warMode, warModeConfig } from "../../src/modes/war/war-mode";
+import { parseWarMatchRecord, warWireCodec } from "../../src/modes/war/war-boundary";
 import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
@@ -17,7 +19,6 @@ import type {
   WarMatchSummary,
   WarMatchRecord,
   WarServerMessage,
-  WarSnapshot,
 } from "../../shared/war-contract";
 
 const CLOCK_RATE = 60;
@@ -127,27 +128,8 @@ function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
   };
 }
 
-/** Add fields introduced after persisted match records first shipped. */
-export function normalizeStoredWarRecord(value: WarMatchRecord): WarMatchRecord {
-  const settings = value.settings as Partial<OnlineWarSettings>;
-  return {
-    ...value,
-    settings: {
-      ...settings,
-      tankMax: Number.isFinite(settings.tankMax) ? settings.tankMax! : DEFAULT_ONLINE_WAR_SETTINGS.tankMax,
-      topology: isTopology(settings.topology)
-        ? cloneTopology(settings.topology)
-        : cloneTopology(DEFAULT_ONLINE_WAR_SETTINGS.topology),
-      // Records from before these settings existed were played on the only
-      // layout and adoption mode there was, not on today's defaults.
-      layout: (MAZE_LAYOUTS as readonly unknown[]).includes(settings.layout) ? settings.layout! : "random",
-      adoption: (ADOPTION_MODES as readonly unknown[]).includes(settings.adoption) ? settings.adoption! : "nest",
-    } as OnlineWarSettings,
-  };
-}
-
 function makeWar(settings: OnlineWarSettings, doctrines?: Doctrine[]): WarSimulation {
-  return new WarSimulation({
+  return warMode.create(warModeConfig({
     masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
     startingAnts: settings.startingAnts,
     foodSources: settings.foodSources,
@@ -157,7 +139,7 @@ function makeWar(settings: OnlineWarSettings, doctrines?: Doctrine[]): WarSimula
     topology: settings.topology,
     layout: settings.layout,
     adoption: settings.adoption,
-  }, doctrines);
+  }, doctrines));
 }
 
 export function randomOpponentDoctrine(masterSeed: string, topology: Topology = DEFAULT_TOPOLOGY): Doctrine {
@@ -282,7 +264,10 @@ async function loadMatchHistory(): Promise<void> {
   try {
     const rows = await db.select().from(warMatchRecordsTable).orderBy(desc(warMatchRecordsTable.completedAt)).limit(50);
     matchHistory.splice(0, matchHistory.length, ...rows.flatMap(row => {
-      try { return [normalizeStoredWarRecord(JSON.parse(row.data) as WarMatchRecord)]; } catch { return []; }
+      try {
+        const record = parseWarMatchRecord(JSON.parse(row.data));
+        return record ? [record] : [];
+      } catch { return []; }
     }));
   } catch (error) {
     console.warn("[war] Failed to load match history", error);
@@ -332,58 +317,8 @@ function broadcastPlayers(match: WarMatch): void {
   });
 }
 
-function pheromoneWireValues(layer: Float32Array): number[] {
-  return Array.from(layer, value => Math.round(value * 1_000) / 1_000);
-}
-
-export function snapshotWarMatch(match: Pick<WarMatch, "war" | "phase" | "settings">): WarSnapshot {
-  const simulation = match.war.simulation;
-  const grid = simulation.occupancy;
-  if (!(grid instanceof DenseGrid)) throw new Error("Online War requires a bounded dense maze");
-  return {
-    tick: simulation.tick,
-    phase: match.phase,
-    winner: match.war.result,
-    settings: { ...match.settings },
-    grid: grid.cells.map(row => [...row]),
-    foodSources: simulation.foodSources.map(source => ({ ...source })),
-    colonies: simulation.colonies.map(colony => {
-      if (!(colony.field instanceof DenseField)) throw new Error("Online War requires dense pheromone fields");
-      return {
-        id: colony.id,
-        nestX: colony.nestX,
-        nestY: colony.nestY,
-        homePhero: pheromoneWireValues(colony.field.layer("home")),
-        foodPhero: pheromoneWireValues(colony.field.layer("food")),
-        receivedPhero: [...colony.received].map(([from, field]) => {
-          if (!(field instanceof DenseField)) throw new Error("Online War requires dense provenance fields");
-          return { from, home: pheromoneWireValues(field.layer("home")), food: pheromoneWireValues(field.layer("food")) };
-        }),
-        ants: colony.ants.map(ant => {
-          const runtime = match.war.getAntSnapshot(ant);
-          if (!runtime) throw new Error("War ant is missing runtime state");
-          return {
-            id: runtime.id,
-            x: ant.x,
-            y: ant.y,
-            tx: ant.tx,
-            ty: ant.ty,
-            hasFood: ant.hasFood,
-            phase: runtime.phase,
-            energy: runtime.energy,
-            role: runtime.role,
-            doctrineVersion: runtime.doctrineVersion,
-          };
-        }),
-        metrics: match.war.getMetrics(colony.id),
-        doctrine: match.war.getDoctrine(colony.id),
-      };
-    }),
-  };
-}
-
 function broadcastSnapshot(match: WarMatch): void {
-  broadcast(match, { type: "snapshot", snapshot: snapshotWarMatch(match) });
+  broadcast(match, { type: "snapshot", snapshot: warWireCodec.snapshot(match) });
 }
 
 function playerIndex(match: WarMatch, socket: WebSocket): number {
@@ -432,7 +367,7 @@ function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectT
     reconnectToken: colonyId >= 0 ? match.players[colonyId]!.token : undefined,
     phase: match.phase,
   });
-  send(socket, { type: "snapshot", snapshot: snapshotWarMatch(match) });
+  send(socket, { type: "snapshot", snapshot: warWireCodec.snapshot(match) });
   broadcastPlayers(match);
   broadcastLobby();
 }

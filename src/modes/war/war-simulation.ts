@@ -7,6 +7,7 @@ import {
   Simulation,
   cloneDoctrine,
   cloneTopology,
+  fingerprint as coreFingerprint,
   generateMasterSeed,
   makeRng,
   makeSeeds,
@@ -123,6 +124,14 @@ export interface WarColonyMetrics {
 
 export type WarResult = number | "draw" | null;
 
+function hashText(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
 export class WarSimulation {
   readonly simulation: Simulation;
   readonly rules: WarRules;
@@ -132,6 +141,25 @@ export class WarSimulation {
   private readonly economyRng: ReturnType<typeof makeRng>;
   private nextAntId = 0;
   result: WarResult = null;
+
+  get tick(): number {
+    return this.simulation.tick;
+  }
+
+  /** Fingerprint core state plus every continuation-relevant War-owned value. */
+  fingerprint(): string {
+    return hashText(JSON.stringify({
+      core: coreFingerprint(this.simulation),
+      result: this.result,
+      rules: this.rules,
+      nextAntId: this.nextAntId,
+      economyDraws: this.economyRng.draws,
+      colonies: this.colonyRuntime,
+      ants: this.simulation.colonies.map(colony =>
+        colony.ants.map(ant => this.antRuntime.get(ant))
+      ),
+    }));
+  }
 
   constructor(
     settings: Partial<WarMatchSettings> = {},

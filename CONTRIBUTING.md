@@ -39,7 +39,23 @@ Stigsim has a standalone React/Vite simulator and an optional server-authoritati
 - `shared/infinite-contract.ts` is the wire contract shared by browser and server.
 - `server/` contains the authoritative simulation, WebSocket API, and Postgres persistence.
 
+Infinite's authoritative runtime is `infinite@1` in
+`packages/sim-core/src/infinite-mode.ts`; `server/src/sim.ts` is only its
+server compatibility surface. `server/src/legacy-infinite-sim.ts` is a frozen
+test oracle and must never be imported by production code.
+
+Wire encoding and persisted-state parsing are mode-owned boundaries:
+`packages/sim-core/src/infinite-boundary.ts` owns Infinite's sparse chunk wire
+and version-1 world format, while `src/modes/war/war-boundary.ts` owns War's
+dense snapshot wire and completed-record parser. Hosts own WebSocket and JSON
+framing. Do not merge the pheromone encoders: their scaling is intentionally
+different and is part of each deployed protocol.
+
 Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
+
+See [`docs/mode-sdk.md`](docs/mode-sdk.md) for the extension contract, tracing
+workflow, boundary ownership, versioning rules, existing-mode matrix, and the
+verification checklist for adding or migrating a mode.
 
 ## Determinism
 
@@ -76,6 +92,14 @@ every recorded intervention, periodic state fingerprints, and the metrics
 samples. Save one from the Run panel and load it back to replay the run
 exactly.
 
+The original Maze files remain `stigsim-trace@1`. Mode SDK recordings use the
+separate `stigsim-mode-trace@1` envelope: a versioned mode reference, mode-owned
+commands, mode-owned fingerprints, and an end tick. `parseModeTrace` accepts
+both formats and upgrades an old Maze trace to `maze@1` in memory; it never
+rewrites the source file. A traceable mode must validate and canonicalize every
+command and fingerprint all continuation-relevant state it owns outside the
+core simulation. `TRACE_VERSION` and `MODE_TRACE_VERSION` are independent.
+
 A trace is an ordinary file, so `parseTrace` treats one as untrusted: it bounds
 every number against the limits in `packages/sim-core/src/constants.ts` before the trace is
 allowed to become a running simulation. Without those bounds a corrupt or
@@ -85,9 +109,10 @@ and command values are bounded by the same guards in
 `packages/sim-core/src/commands.ts` so
 the loader and the command bus cannot drift apart.
 
-`packages/sim-trace/src/fixtures/golden.trace.json` is replayed by
-`pnpm test:client` as a
-regression guard. If that test fails, simulation behaviour changed. The usual
+`packages/sim-trace/src/fixtures/golden.trace.json` is replayed by the explicit
+`pnpm test:replay` regression guard, which the full `pnpm test` CI command runs
+directly. `pnpm test:client` also includes it as part of the broader package
+suite. If that test fails, simulation behaviour changed. The usual
 cause is a new mutation path that does not go through the command bus in
 `packages/sim-core/src/commands.ts`; every way of changing a running simulation
 must be a

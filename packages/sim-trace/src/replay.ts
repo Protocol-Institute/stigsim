@@ -1,4 +1,4 @@
-import { Simulation } from "@stigsim/sim-core";
+import { mazeMode, type Simulation } from "@stigsim/sim-core";
 import { fingerprint } from "@stigsim/sim-core";
 import { traceToRunConfig, type Trace } from "./trace";
 
@@ -22,7 +22,7 @@ export class Replayer {
   }
 
   private build(): Simulation {
-    const sim = new Simulation(traceToRunConfig(this.trace));
+    const sim = mazeMode.create(traceToRunConfig(this.trace));
     sim.loadSchedule(this.trace.commands);
     return sim;
   }

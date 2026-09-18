@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import {
-  Simulation,
+  mazeMode, type Simulation,
   COLS, ROWS, CELL, W, H, DEPOSIT_RATE, DEPOSITS_PER_CELL, DEFAULT_NUM_ANTS,
   DEFAULT_PARAMS, DEFAULT_NUM_COLONIES, DEFAULT_NUM_FOOD_SOURCES,
   DEFAULT_FOOD_PER_SOURCE, DEFAULT_DOCTRINE, TOPOLOGY_PRIVATE,
@@ -409,7 +409,7 @@ export default function AntSim() {
   const initSim = useCallback(() => {
     const master = seedInputRef.current.trim() || generateMasterSeed();
     setActiveSeed(master);
-    const sim = new Simulation({
+    const sim = mazeMode.create({
       seeds: makeSeeds(master),
       numAnts: numAntsRef.current,
       params: { ...DEFAULT_PARAMS, tankMax: tankMaxRef.current },

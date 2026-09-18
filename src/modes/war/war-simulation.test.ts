@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   CELL, DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY,
@@ -294,6 +295,126 @@ test("colony-level evaporation changes immediately while ants keep old per-ant b
   assert.ok(Math.abs(colony.field.get("home", 0, 0) - 98) < 0.001);
   assert.equal(ant.doctrineVersion, 0);
   assert.equal(antDoctrine(war, ant).forager.follow.searching.food.own, DEFAULT_DOCTRINE.forager.follow.searching.food.own);
+});
+
+test("War behavior remains pinned through doctrine, birth, and death transitions", () => {
+  const firstDoctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+  firstDoctrine.evapRate = 0.012;
+  firstDoctrine.forager.follow.searching.food.own = 7;
+  const secondDoctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+  secondDoctrine.spoilerFraction = 0.2;
+  secondDoctrine.mimicRate = 0.5;
+  const thirdDoctrine = cloneDoctrine(DEFAULT_DOCTRINE);
+  thirdDoctrine.evapRate = 0.003;
+
+  const war = new WarSimulation(
+    {
+      masterSeed: "war-characterization",
+      startingAnts: 6,
+      foodSources: 3,
+      foodPerSource: 800,
+      topology: TOPOLOGY_MIMICRY,
+      layout: "mirrored",
+      adoption: "nest",
+    },
+    undefined,
+    { reproductionCost: 300, emergencyPopulationLimit: 100 },
+  );
+  const changes = new Map<number, readonly [number, typeof firstDoctrine]>([
+    [300, [0, firstDoctrine]],
+    [900, [1, secondDoctrine]],
+    [1_600, [0, thirdDoctrine]],
+  ]);
+  const wanted = new Set([400, 1_200, 2_400]);
+  const checkpoints: unknown[] = [];
+
+  for (let tick = 0; tick < 2_400; tick++) {
+    const change = changes.get(tick);
+    if (change) war.setDoctrine(change[0], change[1]);
+    war.step();
+    if (!wanted.has(tick + 1)) continue;
+
+    checkpoints.push({
+      tick: war.simulation.tick,
+      result: war.result,
+      fingerprint: fingerprint(war.simulation),
+      antsDraws: war.simulation.antsDraws,
+      foodRemaining: war.simulation.foodSources.map(source => source.remaining),
+      metrics: [war.getMetrics(0), war.getMetrics(1)],
+      // The core fingerprint does not know about War's per-ant runtime. Hash
+      // the complete public snapshots so a lifecycle refactor cannot preserve
+      // positions while silently changing energy, phase, identity, or doctrine.
+      runtimeHashes: war.simulation.colonies.map(colony =>
+        createHash("sha256")
+          .update(JSON.stringify(colony.ants.map(ant => war.getAntSnapshot(ant))))
+          .digest("hex")
+          .slice(0, 16)
+      ),
+    });
+  }
+
+  assert.deepEqual(checkpoints, [
+    {
+      tick: 400,
+      result: null,
+      fingerprint: "47381ba3",
+      antsDraws: 1_155,
+      foodRemaining: [799, 784, 790],
+      metrics: [
+        {
+          population: 6, foodCollected: 11, reserve: 243.2799999999999, hatching: 0,
+          searching: 1, carrying: 5, retreating: 0, waiting: 0, lowEnergy: 0,
+          births: 0, deaths: 0, doctrineChanged: true, doctrineAdopted: 1,
+        },
+        {
+          population: 6, foodCollected: 7, reserve: 167.71999999999997, hatching: 0,
+          searching: 2, carrying: 4, retreating: 0, waiting: 0, lowEnergy: 0,
+          births: 0, deaths: 0, doctrineChanged: false, doctrineAdopted: 6,
+        },
+      ],
+      runtimeHashes: ["c6ce74f00ab2fc56", "11caef43476ca8ac"],
+    },
+    {
+      tick: 1_200,
+      result: null,
+      fingerprint: "a2812f2b",
+      antsDraws: 3_614,
+      foodRemaining: [798, 745, 758],
+      metrics: [
+        {
+          population: 8, foodCollected: 50, reserve: 83.50000000000009, hatching: 1,
+          searching: 3, carrying: 5, retreating: 0, waiting: 0, lowEnergy: 0,
+          births: 2, deaths: 0, doctrineChanged: false, doctrineAdopted: 8,
+        },
+        {
+          population: 7, foodCollected: 39, reserve: 172.56000000000003, hatching: 1,
+          searching: 2, carrying: 5, retreating: 0, waiting: 0, lowEnergy: 0,
+          births: 1, deaths: 0, doctrineChanged: true, doctrineAdopted: 6,
+        },
+      ],
+      runtimeHashes: ["1a3490fb26facaa9", "3414d7decfe90d8e"],
+    },
+    {
+      tick: 2_400,
+      result: null,
+      fingerprint: "1f3c5e14",
+      antsDraws: 8_847,
+      foodRemaining: [798, 657, 687],
+      metrics: [
+        {
+          population: 12, foodCollected: 137, reserve: 234.7600000000005, hatching: 2,
+          searching: 6, carrying: 6, retreating: 0, waiting: 0, lowEnergy: 0,
+          births: 6, deaths: 0, doctrineChanged: false, doctrineAdopted: 12,
+        },
+        {
+          population: 10, foodCollected: 107, reserve: 263.2000000000003, hatching: 1,
+          searching: 3, carrying: 7, retreating: 0, waiting: 0, lowEnergy: 0,
+          births: 5, deaths: 1, doctrineChanged: false, doctrineAdopted: 10,
+        },
+      ],
+      runtimeHashes: ["e58d180f6be0ff0c", "697b99c787147f0c"],
+    },
+  ]);
 });
 
 test("same-seed War Mode remains deterministic through doctrine changes", () => {
