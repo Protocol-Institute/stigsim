@@ -19,6 +19,7 @@ import {
   modeRunCommandsToNdjson,
   modeRunRecordToTrace,
   parseModeRunRecord,
+  parseModeRunRecordValue,
   serializeModeRunRecord,
   type ModeRunRecord,
 } from "./index";
@@ -155,6 +156,13 @@ test("a run record round-trips and converts back to an exactly replayable mode t
   assert.ok(parsed.ok);
   assert.deepEqual(parsed.record, record);
 
+  const decoded = structuredClone(record);
+  const parsedValue = parseModeRunRecordValue(decoded, registry());
+  assert.ok(parsedValue.ok);
+  assert.deepEqual(parsedValue.record, record);
+  decoded.mode.config.initial = 99;
+  assert.deepEqual(parsedValue.record.mode.config, { initial: 3 });
+
   const traceRegistry = new ModeTraceRegistry().register(counterTrace);
   const replay = new ModeTraceReplayer<CounterRuntime>(modeRunRecordToTrace(parsed.record), traceRegistry);
   while (replay.step());
@@ -231,6 +239,16 @@ test("record parsing rejects tampered provenance, ordering, samples, and schemas
   }
 });
 
+test("record parsing rejects prototype channel names instead of reading inherited definitions", () => {
+  for (const name of ["constructor", "__proto__"]) {
+    const value = structuredClone(recordedCounter());
+    value.channels = JSON.parse(`{"${name}":{"interval":1,"capacity":1,"truncated":false,"samples":[]}}`) as ModeRunRecord["channels"];
+    const parsed = parseModeRunRecord(JSON.stringify(value), registry());
+    assert.equal(parsed.ok, false, name);
+    if (!parsed.ok) assert.match(parsed.error, new RegExp(name, "i"));
+  }
+});
+
 test("record definitions validate channel metadata and registry identity", () => {
   assert.throws(() => defineResearchChannel({
     version: 0,
@@ -251,4 +269,7 @@ test("record definitions validate channel metadata and registry identity", () =>
   assert.throws(() => new ModeRunRecorder(counterRecording, { initial: 0 }, {
     channels: { missing: false } as never,
   }), /no missing research channel/i);
+  assert.throws(() => new ModeRunRecorder(counterRecording, { initial: 0 }, {
+    channels: JSON.parse('{"constructor":{"interval":1,"capacity":1}}') as never,
+  }), /no constructor research channel/i);
 });

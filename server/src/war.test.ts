@@ -5,7 +5,24 @@ import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
 import { createOnlineWarRecorder } from "../../src/modes/war/online-war-recording";
 import { createWarReplay } from "../../src/modes/war/war-run-record";
-import { completedWarRecord, normalizeWarDoctrine, parsePersistedWarMatch, persistedWarMatch, randomOpponentDoctrine, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { BoundedCache, completedWarArtifacts, completedWarRecord, normalizeWarDoctrine, parsePersistedWarMatch, parsePersistedWarMatchSummary, persistedWarMatch, randomOpponentDoctrine, validOnlineWarSettings, validWarDoctrine } from "./war";
+
+test("the research-record cache is bounded and refreshes recently used entries", () => {
+  const cache = new BoundedCache<string, number>(2);
+  cache.set("old", 1);
+  cache.set("kept", 2);
+  assert.equal(cache.get("old"), 1);
+  cache.set("new", 3);
+
+  assert.equal(cache.size, 2);
+  assert.equal(cache.get("kept"), undefined);
+  assert.equal(cache.get("old"), 1);
+  assert.equal(cache.get("new"), 3);
+  assert.equal(cache.delete("old"), true);
+  cache.clear();
+  assert.equal(cache.size, 0);
+  assert.throws(() => new BoundedCache(0), /positive integer/i);
+});
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
@@ -88,8 +105,8 @@ test("completed records retain compact results and advertise separate replay dat
     war,
     settings: DEFAULT_ONLINE_WAR_SETTINGS,
     players: [
-      { token: "one", socket: null, ready: true, name: "Alpha" },
-      { token: "two", socket: null, ready: true, name: "Beta" },
+      { name: "Alpha" },
+      { name: "Beta" },
     ],
   });
 
@@ -99,6 +116,25 @@ test("completed records retain compact results and advertise separate replay dat
   assert.equal(record.finalMetrics.length, 2);
   assert.equal("checkpoints" in record, false);
   assert.equal(record.replayAvailable, true);
+});
+
+test("a terminal sample failure degrades to summary-only history without throwing", () => {
+  const war = new WarSimulation({ masterSeed: "failed-record-build", startingAnts: 1 });
+  war.simulation.colonies[1].ants.length = 0;
+  war.step();
+  const failure = new Error("terminal capture failed");
+  const artifacts = completedWarArtifacts({
+    id: "FAIL1",
+    war,
+    settings: DEFAULT_ONLINE_WAR_SETTINGS,
+    players: [{ name: "Alpha" }, { name: "Beta" }],
+    recorder: { build: () => { throw failure; } },
+  });
+
+  assert.equal(artifacts.summary.replayAvailable, false);
+  assert.equal(artifacts.runRecord, undefined);
+  assert.equal(artifacts.buildError, failure);
+  assert.equal(artifacts.summary.winner, 0);
 });
 
 test("persisted Online War envelopes bind a compact summary to its exact run", () => {
@@ -111,21 +147,40 @@ test("persisted Online War envelopes bind a compact summary to its exact run", (
     war: recorder.runtime,
     settings,
     players: [
-      { token: "one", socket: null, ready: true, name: "Alpha" },
-      { token: "two", socket: null, ready: true, name: "Beta" },
+      { name: "Alpha" },
+      { name: "Beta" },
     ],
   });
   const runRecord = recorder.build();
   const parsed = parsePersistedWarMatch(persistedWarMatch(summary, runRecord));
   assert.deepEqual(parsed?.summary, summary);
   assert.deepEqual(parsed?.runRecord, runRecord);
+  assert.deepEqual(parsePersistedWarMatchSummary(persistedWarMatch(summary, runRecord)), summary);
 
-  const mismatched = parsePersistedWarMatch(persistedWarMatch(
+  const mismatchedEnvelope = persistedWarMatch(
     { ...summary, settings: { ...summary.settings, masterSeed: "other-seed" } },
     runRecord,
-  ));
+  );
+  const mismatched = parsePersistedWarMatch(mismatchedEnvelope);
   assert.equal(mismatched?.summary.replayAvailable, false);
   assert.equal(mismatched?.runRecord, undefined);
+  assert.equal(parsePersistedWarMatchSummary(mismatchedEnvelope)?.replayAvailable, true);
+});
+
+test("history summary parsing never validates or retains the full research record", () => {
+  const war = new WarSimulation({ masterSeed: "summary-only-load", startingAnts: 1 });
+  war.simulation.colonies[1].ants.length = 0;
+  war.step();
+  const summary = completedWarRecord({
+    id: "SUM01",
+    war,
+    settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "summary-only-load", startingAnts: 1 },
+    players: [{ name: "Alpha" }, { name: "Beta" }],
+  });
+  const envelope = { version: 2, summary, runRecord: { malformed: true } };
+
+  assert.deepEqual(parsePersistedWarMatchSummary(envelope), summary);
+  assert.equal(parsePersistedWarMatch(envelope)?.summary.replayAvailable, false);
 });
 
 test("capacity-limited Online War records retain their terminal state and replay exactly", () => {
@@ -169,8 +224,8 @@ test("capacity-limited Online War records retain their terminal state and replay
     war: recorder.runtime,
     settings,
     players: [
-      { token: "one", socket: null, ready: true, name: "Researcher" },
-      { token: "bot", socket: null, ready: true, name: "Generated opponent", isBot: true },
+      { name: "Researcher" },
+      { name: "Generated opponent" },
     ],
   });
   const persisted = JSON.parse(JSON.stringify(persistedWarMatch(summary, runRecord))) as unknown;

@@ -24,10 +24,11 @@ export const colonyRecordsTable = pgTable("colony_records", {
 export type ColonyRecord = typeof colonyRecordsTable.$inferSelect;
 export type NewColonyRecord = typeof colonyRecordsTable.$inferInsert;
 
-/** Completed Online War results. `data` is a versioned summary + SDK run-record envelope. */
+/** Completed Online War results. `summary` supports light history reads; `data` retains the full envelope. */
 export const warMatchRecordsTable = pgTable("war_match_records", {
   recordId: text("record_id").primaryKey(),
   matchId: text("match_id").notNull(),
+  summary: text("summary"),
   data: text("data").notNull(),
   completedAt: timestamp("completed_at").notNull().defaultNow(),
 });

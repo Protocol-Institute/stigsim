@@ -16,6 +16,7 @@ import type { MetricsSample } from "@stigsim/sim-trace";
 import { render, COLONY_COLORS } from "./render";
 import type { ViewMode, EditMode } from "./render";
 import { ParamCard } from "./ParamCard";
+import { downloadText } from "./client-utils";
 
 // ─── Simple control row ───────────────────────────────────────────────────────
 function ControlCard({
@@ -72,8 +73,7 @@ const DPAD_CHEVRONS: Record<string, string> = {
 function DPadButton({ dir, onPress }: { dir: "up" | "down" | "left" | "right"; onPress: () => void }) {
   return (
     <button
-      type="button"
-      onClick={onPress}
+      onPointerDown={e => { e.preventDefault(); onPress(); }}
       aria-label={dir}
       style={{
         width: 64,
@@ -249,16 +249,6 @@ export default function AntSim() {
     const sim = simRef.current;
     const ctx = canvasRef.current?.getContext("2d");
     if (sim && ctx) render(ctx, sim, viewModeRef.current, watchedAntIdxRef.current, editModeRef.current, hoverCellRef.current);
-  }, []);
-
-  const download = useCallback((contents: string, filename: string, mime: string) => {
-    const blob = new Blob([contents], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
   }, []);
 
   const send = useCallback((cmd: Command) => {
@@ -1013,7 +1003,7 @@ export default function AntSim() {
               type="button"
               onClick={() => {
                 const csv = metricsToCsv(metricsRef.current.samples);
-                download(csv, `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`, "text/csv");
+                downloadText(csv, `stigsim-${activeSeed}-${simRef.current?.tick ?? 0}.csv`, "text/csv");
               }}
               disabled={replaying}
               title={replaying ? "Exit replay to export the live run's metrics" : undefined}
@@ -1032,7 +1022,7 @@ export default function AntSim() {
                 const sim = simRef.current;
                 if (!sim) return;
                 const trace = buildTrace(sim, metricsRef.current);
-                download(serializeTrace(trace), traceFilename(trace), "application/json");
+                downloadText(serializeTrace(trace), traceFilename(trace), "application/json");
               }}
               disabled={replaying}
               title={replaying ? "Exit replay to save the live run's trace" : undefined}

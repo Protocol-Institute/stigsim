@@ -25,6 +25,10 @@ rows remain readable and appear with replay unavailable. Run records use stable
 seat-local participant ids and deliberately exclude player names, reconnect
 tokens, addresses, and transport metadata.
 
+The compact summary is also stored in its own nullable column so lobby startup
+does not fetch or parse full research records. Rows written before that column
+was populated fall back to their existing compact `data` payload.
+
 If historical leaderboard reads fail, the endpoint remains available with live
 colonies only. The server logs the degraded state at most once per minute and
 logs once when database reads recover.
@@ -106,7 +110,8 @@ DATABASE_URL="postgresql://..." pnpm --dir server db:push
 ```
 
 Run this after deploying the Online War history change so the
-`war_match_records` table is created before completed matches are recorded.
+`war_match_records` table and its compact `summary` column exist before
+completed matches are recorded.
 
 `railway.json` builds from the repository root because the server and frontend
 share `shared/infinite-contract.ts`. Configure one Railway replica and use

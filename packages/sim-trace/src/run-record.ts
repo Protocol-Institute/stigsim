@@ -12,7 +12,7 @@ import {
   MODE_TRACE_VERSION,
   ModeTraceRecorder,
   ModeTraceRegistry,
-  parseModeTrace,
+  parseModeTraceValue,
   type ModeTrace,
   type TraceModeDefinition,
 } from "./mode-trace";
@@ -306,12 +306,17 @@ export class ModeRunRecorder<
       options.fingerprintInterval,
     );
 
-    for (const name of Object.keys(options.channels ?? {})) {
-      if (!(name in definition.channels)) throw new RangeError(`Recording mode has no ${name} research channel.`);
+    const channelOptions = options.channels;
+    for (const name of Object.keys(channelOptions ?? {})) {
+      if (!Object.hasOwn(definition.channels, name)) {
+        throw new RangeError(`Recording mode has no ${name} research channel.`);
+      }
     }
 
     for (const [name, channel] of Object.entries(definition.channels)) {
-      const selected = options.channels?.[name as keyof Channels & string];
+      const selected = channelOptions && Object.hasOwn(channelOptions, name)
+        ? channelOptions[name as keyof Channels & string]
+        : undefined;
       if (selected === false) continue;
       const interval = selected?.interval ?? channel.defaultInterval;
       const capacity = selected?.capacity ?? channel.defaultCapacity;
@@ -443,7 +448,9 @@ function validateChannels(
   }
   const channels: Record<string, ResearchChannelRecord> = {};
   for (const [name, rawValue] of Object.entries(rawChannels)) {
-    const channelDefinition = definition.channels[name];
+    const channelDefinition = Object.hasOwn(definition.channels, name)
+      ? definition.channels[name]
+      : undefined;
     const rawChannel = record(rawValue);
     if (!channelDefinition || !rawChannel || rawChannel.version !== channelDefinition.version ||
         !positiveBoundedInteger(rawChannel.interval, MAX_TICKS) ||
@@ -478,14 +485,8 @@ function validateChannels(
   return { ok: true, value: channels };
 }
 
-/** Parse an untrusted research record through the exact mode and channel versions that created it. */
-export function parseModeRunRecord(text: string, registry: ModeRecordingRegistry): ModeRunRecordParseResult {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return { ok: false, error: "That file could not be read as JSON." };
-  }
+/** Validate an already-decoded record through the exact mode and channel versions that created it. */
+export function parseModeRunRecordValue(raw: unknown, registry: ModeRecordingRegistry): ModeRunRecordParseResult {
   const candidate = record(raw);
   if (!candidate || candidate.format !== MODE_RUN_RECORD_FORMAT) {
     return { ok: false, error: "That file is not a Stigsim run record." };
@@ -510,7 +511,7 @@ export function parseModeRunRecord(text: string, registry: ModeRecordingRegistry
   }
 
   const traceRegistry = new ModeTraceRegistry().register(definition.trace);
-  const traceResult = parseModeTrace(JSON.stringify({
+  const traceResult = parseModeTraceValue({
     format: MODE_TRACE_FORMAT,
     version: MODE_TRACE_VERSION,
     simVersion: candidate.simVersion,
@@ -519,7 +520,7 @@ export function parseModeRunRecord(text: string, registry: ModeRecordingRegistry
     commands: rawCommands.map(command => ({ t: command!.t, cmd: command!.cmd })),
     fingerprints: candidate.fingerprints,
     endTick: candidate.endTick,
-  }), traceRegistry);
+  }, traceRegistry);
   if (!traceResult.ok) return traceResult;
 
   const participants = parseParticipants(candidate.participants);
@@ -582,6 +583,17 @@ export function parseModeRunRecord(text: string, registry: ModeRecordingRegistry
     },
     ...(traceResult.warning === undefined ? {} : { warning: traceResult.warning }),
   };
+}
+
+/** Parse an untrusted research record through the exact mode and channel versions that created it. */
+export function parseModeRunRecord(text: string, registry: ModeRecordingRegistry): ModeRunRecordParseResult {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, error: "That file could not be read as JSON." };
+  }
+  return parseModeRunRecordValue(raw, registry);
 }
 
 /** Drop research-only fields and recover the deterministic replay primitive. */

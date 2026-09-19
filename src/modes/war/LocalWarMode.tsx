@@ -30,6 +30,8 @@ import {
   type LocalWarRecord,
 } from "./local-war-recording";
 import { drawWar } from "./war-render";
+import { ReplayScrubber } from "./ReplayScrubber";
+import { downloadText } from "../../client-utils";
 
 const EMPTY_METRICS: WarColonyMetrics = {
   population: 0, foodCollected: 0, reserve: 0, hatching: 0,
@@ -340,22 +342,12 @@ export default function LocalWarMode() {
     refreshStats();
   };
 
-  const download = useCallback((contents: string, filename: string) => {
-    const blob = new Blob([contents], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, []);
-
   const saveRecord = useCallback(() => {
     if (replayRef.current) return;
     const record = recorderRef.current.build();
-    download(serializeModeRunRecord(record), localWarRecordFilename(record));
+    downloadText(serializeModeRunRecord(record), localWarRecordFilename(record), "application/json");
     setRecordMessage(`Saved a replayable research record through tick ${record.endTick}.`);
-  }, [download]);
+  }, []);
 
   const enterReplay = useCallback((text: string) => {
     const parsed = parseLocalWarRecord(text);
@@ -531,13 +523,11 @@ export default function LocalWarMode() {
               <button className="war-button" onClick={exitReplay}>Exit replay</button>
             </div>
           </div>
-          <input
-            aria-label="Replay tick"
-            type="range"
-            min={0}
-            max={replayState.endTick}
+          <ReplayScrubber
+            label="Replay tick"
             value={replayState.tick}
-            onChange={event => seekReplay(Number(event.target.value))}
+            max={replayState.endTick}
+            onCommit={seekReplay}
           />
           {replayState.divergedAt !== null && (
             <p className="war-replay__error">

@@ -18,6 +18,7 @@ import { TOPOLOGY_CHOICES, choiceFor, conformDoctrine } from "../../topology-cho
 import { LAYOUT_CHOICES, layoutChoice } from "../../layout-choices";
 import { ADOPTION_CHOICES, adoptionChoice } from "../../adoption-choices";
 import { appHref } from "../../routes";
+import { simulationApiUrl, simulationWebSocketUrl } from "../../client-utils";
 import { WAR_RULES } from "./war-simulation";
 import { terminalWarCloseMessage, warCloseAction } from "./online-war-connection";
 import { sameWarDoctrine } from "./online-war-doctrine";
@@ -63,23 +64,6 @@ function storeToken(matchId: string, token: string): void {
 function removeStoredToken(matchId: string): void {
   localStorage.removeItem(tokenKey(matchId));
   sessionStorage.removeItem(tokenKey(matchId));
-}
-
-function warSocketUrl(): string {
-  const configured = (import.meta.env.VITE_INFINITE_SERVER_URL ?? "").replace(/\/$/, "");
-  const base = configured || window.location.origin;
-  const url = new URL("/api/war/ws", base);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  if (!configured && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) url.port = "3001";
-  return url.toString();
-}
-
-function warApiUrl(path: string): string {
-  const configured = (import.meta.env.VITE_INFINITE_SERVER_URL ?? "").replace(/\/$/, "");
-  const base = configured || window.location.origin;
-  const url = new URL(path, base);
-  if (!configured && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) url.port = "3001";
-  return url.toString();
 }
 
 function drawSnapshot(canvas: HTMLCanvasElement, snapshot: WarSnapshot, previousSnapshot: WarSnapshot | null = null, interpolation = 1): void {
@@ -340,7 +324,7 @@ export default function OnlineWarMode() {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const connect = () => {
       setConnection("Connecting…");
-      const socket = new WebSocket(warSocketUrl());
+      const socket = new WebSocket(simulationWebSocketUrl("/api/war/ws"));
       socketRef.current = socket;
       socket.onopen = () => {
         setConnection("Connected");
@@ -471,7 +455,7 @@ export default function OnlineWarMode() {
     setLoadingReplayId(summary.recordId);
     setError("");
     try {
-      const response = await fetch(warApiUrl(`/api/war/records/${encodeURIComponent(summary.recordId)}`));
+      const response = await fetch(simulationApiUrl(`/api/war/records/${encodeURIComponent(summary.recordId)}`));
       if (!response.ok) throw new Error(response.status === 404 ? "That replay is no longer available." : "The replay could not be loaded.");
       const parsed = parseWarRunRecord(await response.text());
       if (!parsed.ok || !parsed.record) throw new Error(parsed.ok ? "The replay is incomplete." : parsed.error);

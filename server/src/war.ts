@@ -2,14 +2,14 @@ import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import { ADOPTION_MODES, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, MAZE_LAYOUTS, ROLES, STATES, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type { WarSimulation } from "../../src/modes/war/war-simulation";
 import { parseWarMatchRecord, warWireCodec } from "../../src/modes/war/war-boundary";
 import {
   createOnlineWarRecorder,
   onlineWarPlayerSource,
 } from "../../src/modes/war/online-war-recording";
-import { parseWarRunRecord, type WarRunRecord } from "../../src/modes/war/war-run-record";
+import { parseWarRunRecordValue, type WarRunRecord } from "../../src/modes/war/war-run-record";
 import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
@@ -33,6 +33,47 @@ const MAX_MATCHES = 100;
 const MAX_MESSAGES_PER_SECOND = 30;
 const MAX_MESSAGES_HARD_LIMIT = MAX_MESSAGES_PER_SECOND * 10;
 const MAX_BUFFERED_BYTES = 512 * 1_024;
+const MAX_CACHED_RESEARCH_RECORDS = 50;
+
+export class BoundedCache<Key, Value> {
+  private readonly entries = new Map<Key, Value>();
+
+  constructor(private readonly capacity: number) {
+    if (!Number.isSafeInteger(capacity) || capacity < 1) {
+      throw new RangeError("Cache capacity must be a positive integer.");
+    }
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+
+  get(key: Key): Value | undefined {
+    const value = this.entries.get(key);
+    if (value === undefined) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, value);
+    return value;
+  }
+
+  set(key: Key, value: Value): void {
+    this.entries.delete(key);
+    this.entries.set(key, value);
+    while (this.entries.size > this.capacity) {
+      const oldest = this.entries.keys().next().value as Key | undefined;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+  }
+
+  delete(key: Key): boolean {
+    return this.entries.delete(key);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
 
 interface PlayerSlot {
   token: string;
@@ -63,7 +104,7 @@ const socketMatches = new Map<WebSocket, WarMatch>();
 const socketNames = new Map<WebSocket, string>();
 const roomCreatedBySocket = new WeakSet<WebSocket>();
 const matchHistory: WarMatchRecord[] = [];
-const researchRecords = new Map<string, WarRunRecord>();
+const researchRecords = new BoundedCache<string, WarRunRecord>(MAX_CACHED_RESEARCH_RECORDS);
 let activeWss: WebSocketServer | null = null;
 let unregisterUpgradeRoute: (() => void) | null = null;
 let clock: ReturnType<typeof setInterval> | null = null;
@@ -242,7 +283,11 @@ function lobbyMessage(): WarServerMessage {
   };
 }
 
-export function completedWarRecord(match: Pick<WarMatch, "id" | "war" | "settings" | "players">): WarMatchRecord {
+type CompletedWarSummarySource = Pick<WarMatch, "id" | "war" | "settings"> & {
+  players: Array<Pick<PlayerSlot, "name"> | null>;
+};
+
+export function completedWarRecord(match: CompletedWarSummarySource): WarMatchRecord {
   if (match.war.result === null) throw new Error("Cannot record an unfinished War match");
   return {
     recordId: randomUUID(),
@@ -256,6 +301,17 @@ export function completedWarRecord(match: Pick<WarMatch, "id" | "war" | "setting
     finalDoctrines: match.war.simulation.colonies.map(colony => match.war.getDoctrine(colony.id)),
     replayAvailable: true,
   };
+}
+
+export function completedWarArtifacts(
+  match: CompletedWarSummarySource & { recorder: Pick<ReturnType<typeof createOnlineWarRecorder>, "build"> },
+): { summary: WarMatchRecord; runRecord?: WarRunRecord; buildError?: unknown } {
+  const summary = completedWarRecord(match);
+  try {
+    return { summary, runRecord: match.recorder.build() as WarRunRecord };
+  } catch (buildError) {
+    return { summary: { ...summary, replayAvailable: false }, buildError };
+  }
 }
 
 export interface PersistedWarMatch {
@@ -293,12 +349,27 @@ export function parsePersistedWarMatch(value: unknown): { summary: WarMatchRecor
   }
   const summary = parseWarMatchRecord(candidate.summary);
   if (!summary) return null;
-  const encodedRun = JSON.stringify(candidate.runRecord);
-  const parsedRun = typeof encodedRun === "string" ? parseWarRunRecord(encodedRun) : null;
+  const parsedRun = parseWarRunRecordValue(candidate.runRecord);
   if (!parsedRun || !parsedRun.ok || !parsedRun.record || !runMatchesSummary(parsedRun.record, summary)) {
     return { summary: { ...summary, replayAvailable: false } };
   }
   return { summary: { ...summary, replayAvailable: true }, runRecord: parsedRun.record };
+}
+
+/** Parse only the compact lobby history view; full run validation stays lazy on record fetch. */
+export function parsePersistedWarMatchSummary(value: unknown): WarMatchRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.version !== 2) {
+    const legacy = parseWarMatchRecord(value);
+    return legacy ? { ...legacy, replayAvailable: false } : null;
+  }
+  const summary = parseWarMatchRecord(candidate.summary);
+  if (!summary) return null;
+  return {
+    ...summary,
+    replayAvailable: summary.replayAvailable && candidate.runRecord !== undefined,
+  };
 }
 
 export function persistedWarMatch(summary: WarMatchRecord, runRecord: WarRunRecord): PersistedWarMatch {
@@ -308,12 +379,26 @@ export function persistedWarMatch(summary: WarMatchRecord, runRecord: WarRunReco
 async function loadMatchHistory(): Promise<void> {
   if (!db) return;
   try {
-    const rows = await db.select().from(warMatchRecordsTable).orderBy(desc(warMatchRecordsTable.completedAt)).limit(50);
+    const rows = await db.select({
+      recordId: warMatchRecordsTable.recordId,
+      summary: warMatchRecordsTable.summary,
+    }).from(warMatchRecordsTable).orderBy(desc(warMatchRecordsTable.completedAt)).limit(50);
+    const legacyIds = rows.flatMap(row => row.summary === null ? [row.recordId] : []);
+    const legacyRows = legacyIds.length === 0
+      ? []
+      : await db.select({
+          recordId: warMatchRecordsTable.recordId,
+          data: warMatchRecordsTable.data,
+        }).from(warMatchRecordsTable).where(inArray(warMatchRecordsTable.recordId, legacyIds));
+    const legacyData = new Map(legacyRows.map(row => [row.recordId, row.data]));
     matchHistory.splice(0, matchHistory.length, ...rows.flatMap(row => {
       try {
-        const persisted = parsePersistedWarMatch(JSON.parse(row.data));
-        if (persisted?.runRecord) researchRecords.set(persisted.summary.recordId, persisted.runRecord);
-        return persisted ? [persisted.summary] : [];
+        const encoded = row.summary ?? legacyData.get(row.recordId);
+        if (!encoded) return [];
+        const summary = row.summary === null
+          ? parsePersistedWarMatchSummary(JSON.parse(encoded))
+          : parseWarMatchRecord(JSON.parse(encoded));
+        return summary ? [summary] : [];
       } catch { return []; }
     }));
   } catch (error) {
@@ -324,22 +409,25 @@ async function loadMatchHistory(): Promise<void> {
 async function recordCompletedMatch(match: WarMatch): Promise<void> {
   if (match.resultRecorded || match.war.result === null) return;
   match.resultRecorded = true;
-  const record = completedWarRecord(match);
-  const runRecord = match.recorder.build() as WarRunRecord;
-  researchRecords.set(record.recordId, runRecord);
-  matchHistory.unshift(record);
-  for (const removed of matchHistory.splice(50)) researchRecords.delete(removed.recordId);
-  broadcastLobby();
-  if (!db) return;
   try {
+    const { summary, runRecord, buildError } = completedWarArtifacts(match);
+    if (buildError) {
+      console.error(`[war] Failed to build research record for match ${match.id}`, buildError);
+    }
+    if (runRecord) researchRecords.set(summary.recordId, runRecord);
+    matchHistory.unshift(summary);
+    for (const removed of matchHistory.splice(50)) researchRecords.delete(removed.recordId);
+    broadcastLobby();
+    if (!db) return;
     await db.insert(warMatchRecordsTable).values({
-      recordId: record.recordId,
-      matchId: record.matchId,
-      data: JSON.stringify(persistedWarMatch(record, runRecord)),
-      completedAt: new Date(record.completedAt),
+      recordId: summary.recordId,
+      matchId: summary.matchId,
+      summary: JSON.stringify(summary),
+      data: JSON.stringify(runRecord ? persistedWarMatch(summary, runRecord) : summary),
+      completedAt: new Date(summary.completedAt),
     });
   } catch (error) {
-    console.warn("[war] Failed to persist completed match", error);
+    console.error(`[war] Failed to record completed match ${match.id}`, error);
   }
 }
 

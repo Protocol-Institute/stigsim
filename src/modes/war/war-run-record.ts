@@ -4,6 +4,7 @@ import {
   ModeTraceReplayer,
   modeRunRecordToTrace,
   parseModeRunRecord,
+  parseModeRunRecordValue,
   type ModeRunRecord,
   type ModeRunRecordParseResult,
 } from "@stigsim/sim-trace";
@@ -14,12 +15,21 @@ import { warTraceMode, type WarModeCommand } from "./war-trace";
 
 export type WarRunRecord = ModeRunRecord<WarModeConfig, WarModeCommand>;
 
+function recordingRegistry(): ModeRecordingRegistry {
+  return new ModeRecordingRegistry().register(warRecordingMode);
+}
+
 /** Parse an untrusted War run record through the exact recording-mode version it names. */
 export function parseWarRunRecord(text: string): ModeRunRecordParseResult & { record?: WarRunRecord } {
-  const parsed = parseModeRunRecord(
-    text,
-    new ModeRecordingRegistry().register(warRecordingMode),
-  );
+  const parsed = parseModeRunRecord(text, recordingRegistry());
+  return parsed.ok
+    ? { ...parsed, record: parsed.record as WarRunRecord }
+    : parsed;
+}
+
+/** Validate a decoded War record without serializing the persistence envelope again. */
+export function parseWarRunRecordValue(value: unknown): ModeRunRecordParseResult & { record?: WarRunRecord } {
+  const parsed = parseModeRunRecordValue(value, recordingRegistry());
   return parsed.ok
     ? { ...parsed, record: parsed.record as WarRunRecord }
     : parsed;
