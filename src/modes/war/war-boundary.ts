@@ -1,6 +1,7 @@
 import {
   ADOPTION_MODES,
   MAZE_LAYOUTS,
+  TOPOLOGY_PRIVATE,
   DenseField,
   DenseGrid,
   cloneDoctrine,
@@ -114,11 +115,12 @@ function parseSettings(value: unknown): OnlineWarSettings | null {
     tankMax: finite(settings.tankMax)
       ? settings.tankMax
       : DEFAULT_ONLINE_WAR_SETTINGS.tankMax,
+    // Records written before these fields existed were played on the only
+    // topology, layout, and adoption mode available then, not on today's
+    // defaults.
     topology: isTopology(settings.topology)
       ? cloneTopology(settings.topology)
-      : cloneTopology(DEFAULT_ONLINE_WAR_SETTINGS.topology),
-    // Records written before these fields existed were played on the only
-    // layout and adoption mode available then, not on today's defaults.
+      : cloneTopology(TOPOLOGY_PRIVATE),
     layout: (MAZE_LAYOUTS as readonly unknown[]).includes(settings.layout)
       ? settings.layout as OnlineWarSettings["layout"]
       : "random",

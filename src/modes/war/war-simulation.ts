@@ -3,8 +3,8 @@ import {
   CELL,
   DEFAULT_DOCTRINE,
   DEFAULT_PARAMS,
-  DEFAULT_TOPOLOGY,
   Simulation,
+  TOPOLOGY_MIMICRY,
   cloneDoctrine,
   cloneTopology,
   fingerprint as coreFingerprint,
@@ -69,17 +69,21 @@ export interface WarMatchSettings {
 
 export const DEFAULT_WAR_SETTINGS: WarMatchSettings = {
   masterSeed: "",
-  startingAnts: 20,
-  loopRate: 0.1,
-  foodSources: 1,
-  foodPerSource: 500,
+  startingAnts: 40,
+  loopRate: 0.2,
+  // Five sources on a mirrored map: one at the centre and two rotated pairs.
+  foodSources: 5,
+  foodPerSource: 200,
   tankMax: DEFAULT_PARAMS.tankMax,
-  topology: cloneTopology(DEFAULT_TOPOLOGY),
+  // Mimicry by default so a match exercises spoilers and enemy-trail sensing
+  // without first opening the topology setting.
+  topology: cloneTopology(TOPOLOGY_MIMICRY),
   // Mirrored by default: a War match is a comparison between two doctrines,
   // and the comparison means nothing if the map favoured one nest.
   layout: "mirrored",
-  // On-return is what War has always run; instant is there to be tried.
-  adoption: "nest",
+  // Instant so a doctrine edit is visible on the next tick; on-return is
+  // what War originally ran and is still a match setting.
+  adoption: "instant",
 };
 
 interface AntRuntime {

@@ -4,10 +4,12 @@ import { DEFAULT_DOCTRINE, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_WAR_SETTINGS, WarSimulation } from "./war-simulation";
 import { ADOPTION_CHOICES, adoptionChoice } from "../../adoption-choices";
 
-test("a War match adopts on return to the nest by default", () => {
-  assert.equal(DEFAULT_WAR_SETTINGS.adoption, "nest");
+test("a War match adopts instantly by default and can still adopt on return to the nest", () => {
+  assert.equal(DEFAULT_WAR_SETTINGS.adoption, "instant");
   const war = new WarSimulation({ masterSeed: "adoption-default", startingAnts: 3 });
-  assert.equal(war.simulation.adoption, "nest");
+  assert.equal(war.simulation.adoption, "instant");
+  const onReturn = new WarSimulation({ masterSeed: "adoption-default", startingAnts: 3, adoption: "nest" });
+  assert.equal(onReturn.simulation.adoption, "nest");
 });
 
 test("under instant adoption every ant switches doctrine at once, wherever it is", () => {
