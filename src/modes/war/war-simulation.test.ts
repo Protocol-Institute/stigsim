@@ -44,7 +44,7 @@ test("gland size is fixed once per match and shared by both colonies", () => {
 
 test("doctrine changes wait until an ant returns to its nest", () => {
   const war = new WarSimulation(
-    { masterSeed: "doctrine-test", startingAnts: 1 },
+    { masterSeed: "doctrine-test", startingAnts: 1, adoption: "nest" },
     [DEFAULT_DOCTRINE, DEFAULT_DOCTRINE],
     { maxEnergy: 3, retreatEnergy: 2, minDepartEnergy: 2 },
   );
@@ -70,7 +70,7 @@ test("doctrine changes wait until an ant returns to its nest", () => {
 });
 
 test("metrics account for every living ant and current doctrine adoption", () => {
-  const war = new WarSimulation({ masterSeed: "metrics-test", startingAnts: 3 });
+  const war = new WarSimulation({ masterSeed: "metrics-test", startingAnts: 3, adoption: "nest" });
   const initial = war.getMetrics(0);
 
   assert.deepEqual(initial, {
@@ -281,7 +281,7 @@ test("an empty colony uses its pending doctrine for pheromone evaporation", () =
 });
 
 test("colony-level evaporation changes immediately while ants keep old per-ant behavior", () => {
-  const war = new WarSimulation({ masterSeed: "split-adoption", startingAnts: 1 });
+  const war = new WarSimulation({ masterSeed: "split-adoption", startingAnts: 1, adoption: "nest" });
   const colony = war.simulation.colonies[0];
   const ant = colony.ants[0];
   const changed = cloneDoctrine(DEFAULT_DOCTRINE);
@@ -311,6 +311,7 @@ test("War behavior remains pinned through doctrine, birth, and death transitions
     {
       masterSeed: "war-characterization",
       startingAnts: 6,
+      loopRate: 0.1,
       foodSources: 3,
       foodPerSource: 800,
       topology: TOPOLOGY_MIMICRY,

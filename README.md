@@ -108,8 +108,13 @@ placing the much larger record in routine lobby broadcasts.
 Local and Online War share the same four field topologies, symmetric match-level
 gland size, and per-colony doctrine model. Evaporation and mimic rate apply at
 the next tick. When the follow and lay tables and the spoiler roles reach the
-ants is a match setting: on return to the nest, the default, or instantly on
-the next tick for every ant wherever it is.
+ants is a match setting: instantly on the next tick for every ant wherever it
+is, the default, or on return to the nest.
+
+A new War match starts from the same defaults in both flavours: 40 ants per
+colony, five food sources of 200 food each, a 20% maze loop rate, the mirrored
+map layout, instant doctrine adoption, and the Mimicry topology. Every one of
+these is a match setting.
 
 Local War records every accepted doctrine change with its player and tick. Its
 Save record action downloads a replayable research file containing metrics,
