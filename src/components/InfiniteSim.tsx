@@ -8,15 +8,7 @@ import {
   type ColonyInfo,
   type LeaderboardEntry,
 } from "../../shared/infinite-contract";
-
-const INFINITE_SERVER_URL = (import.meta.env.VITE_INFINITE_SERVER_URL ?? "").replace(/\/$/, "");
-const infiniteApiUrl = (path: string) => `${INFINITE_SERVER_URL}${path}`;
-const infiniteWsUrl = () => {
-  const base = INFINITE_SERVER_URL || location.origin;
-  const url = new URL("/api/infinite/ws", base);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-};
+import { simulationApiUrl, simulationWebSocketUrl } from "../client-utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tool = "pan" | "wall" | "food" | "colony";
@@ -1010,7 +1002,7 @@ export default function InfiniteSim({ simulationsHref }: { simulationsHref: stri
 
   // ── Leaderboard fetch ──────────────────────────────────────────────────────
   const fetchLeaderboard = useCallback(() => {
-    fetch(infiniteApiUrl("/api/infinite/leaderboard"))
+    fetch(simulationApiUrl("/api/infinite/leaderboard"))
       .then(r => r.json())
       .then((data: LeaderboardEntry[]) => setLeaderboard(data))
       .catch(() => {});
@@ -1024,7 +1016,7 @@ export default function InfiniteSim({ simulationsHref }: { simulationsHref: stri
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    const url = infiniteWsUrl();
+    const url = simulationWebSocketUrl("/api/infinite/ws");
     let ws: WebSocket;
     let retry: ReturnType<typeof setTimeout>;
     let stopped = false;

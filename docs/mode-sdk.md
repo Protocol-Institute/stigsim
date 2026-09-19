@@ -11,7 +11,7 @@ API.
 | Layer | Owns | Does not own |
 | --- | --- | --- |
 | `@stigsim/sim-core` | Mode identity, config parsing, runtime construction, shared simulation primitives | React, DOM APIs, network or database framing |
-| `@stigsim/sim-trace` | Mode trace envelopes, command parsing hooks, recording, replay and divergence checks | Mode-specific commands or hidden state |
+| `@stigsim/sim-trace` | Mode trace envelopes, command parsing hooks, recording, replay, divergence checks, and versioned research records | Mode-specific commands, observations, or hidden state |
 | Mode boundary | Mode-specific wire encoding and persistence parsing | WebSocket, HTTP, JSON or database lifecycle |
 | Host | UI, clocks, connections, JSON framing and storage calls | Simulation behavior or unvalidated reconstruction |
 
@@ -125,6 +125,75 @@ Legacy Maze files remain in the `stigsim-trace` envelope identified by
 reference in memory. New mode-aware files use
 `stigsim-mode-trace@1`.
 
+## Add research recording
+
+Replay and research are related but different contracts. A `ModeTrace` is the
+small deterministic primitive: construction config, canonical commands,
+fingerprints, and an end tick. A `ModeRunRecord` adds recording-local
+participants, the source and within-tick order of each accepted command,
+versioned observation channels, and an optional outcome.
+
+Define research views beside the mode rather than exposing its runtime object:
+
+```ts
+import {
+  ModeRunRecorder,
+  defineRecordingMode,
+  defineResearchChannel,
+} from "@stigsim/sim-trace";
+
+export const exampleRecordingMode = defineRecordingMode({
+  trace: exampleTraceMode,
+  channels: {
+    population: defineResearchChannel({
+      version: 1,
+      defaultInterval: 10,
+      defaultCapacity: 20_000,
+      capture: runtime => ({ count: runtime.population }),
+      parse: parsePopulationObservation,
+    }),
+  },
+  outcome: {
+    version: 1,
+    capture: runtime => runtime.finished ? { winner: runtime.winner } : undefined,
+    parse: parseExampleOutcome,
+  },
+});
+
+const recorder = new ModeRunRecorder(exampleRecordingMode, config, {
+  participants: [{ id: "colony-a", kind: "player", slot: "colony-0" }],
+});
+recorder.command(
+  { kind: "participant", participantId: "colony-a" },
+  { kind: "set-rate", value: 2 },
+);
+recorder.step();
+const record = recorder.build();
+```
+
+The recorder is the mutation gateway: it validates and applies a mode command,
+then records its authoritative tick, source, and sequence among other commands
+at that tick. Server-backed modes record only commands the authority accepted,
+not raw or rejected transport messages.
+
+A research channel is a stable semantic view, not a dump of the runtime. Its
+parser canonicalizes untrusted files and its independent version changes when
+the observation's shape or meaning changes. Sampling interval and capacity are
+recorded in the file; a capped channel reports `truncated: true`. The recorder
+also takes per-run interval, capacity, or channel-disable overrides.
+
+`parseModeRunRecord` resolves the exact mode version through a
+`ModeRecordingRegistry`. `modeRunRecordToTrace` recovers a standard
+`ModeTrace`, so research records use the same replay and divergence checks.
+`modeRunCommandsToNdjson` and `modeRunChannelToNdjson` provide stream-friendly
+analysis exports.
+
+War is the first complete example in `src/modes/war/war-recording.ts`. Its
+`metrics@1`, `agents@1`, and `fields@1` channels separately expose lightweight
+colony measures, individual ant state, and full-precision pheromone layers.
+See [`Research run records`](research-run-records.md) for the file contract,
+privacy boundary, and researcher workflow.
+
 ## Own wire and persistence boundaries
 
 Network and persisted values are untrusted even when TypeScript types describe
@@ -151,6 +220,8 @@ There are separate version levers because they answer different questions:
 | --- | --- | --- |
 | `mode.version` | One mode's simulation behavior | The same config and commands intentionally produce different state |
 | `MODE_TRACE_VERSION` | Generic mode-trace envelope | A reader must understand a new required envelope shape |
+| `MODE_RUN_RECORD_VERSION` | Generic research-record envelope | Participants, provenance, channels, or outcomes require a different outer shape |
+| Research channel version | One named observation schema | That channel's shape or semantic meaning changes |
 | `TRACE_VERSION` | Legacy Maze trace envelope | The legacy file format makes an incompatible change |
 | `SIM_VERSION` | Existing shared simulation behavior marker | A deliberate core behavior change invalidates old expectations |
 | Persistence version | One deployed stored-state shape | Stored state needs a migration |

@@ -3,7 +3,26 @@ import test from "node:test";
 import { DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
-import { completedWarRecord, normalizeWarDoctrine, randomOpponentDoctrine, validOnlineWarSettings, validWarDoctrine } from "./war";
+import { createOnlineWarRecorder } from "../../src/modes/war/online-war-recording";
+import { createWarReplay } from "../../src/modes/war/war-run-record";
+import { BoundedCache, completedWarArtifacts, completedWarRecord, normalizeWarDoctrine, parsePersistedWarMatch, parsePersistedWarMatchSummary, persistedWarMatch, randomOpponentDoctrine, validOnlineWarSettings, validWarDoctrine } from "./war";
+
+test("the research-record cache is bounded and refreshes recently used entries", () => {
+  const cache = new BoundedCache<string, number>(2);
+  cache.set("old", 1);
+  cache.set("kept", 2);
+  assert.equal(cache.get("old"), 1);
+  cache.set("new", 3);
+
+  assert.equal(cache.size, 2);
+  assert.equal(cache.get("kept"), undefined);
+  assert.equal(cache.get("old"), 1);
+  assert.equal(cache.get("new"), 3);
+  assert.equal(cache.delete("old"), true);
+  cache.clear();
+  assert.equal(cache.size, 0);
+  assert.throws(() => new BoundedCache(0), /positive integer/i);
+});
 
 test("online match settings enforce bounded server workloads", () => {
   assert.equal(validOnlineWarSettings(DEFAULT_ONLINE_WAR_SETTINGS), true);
@@ -77,7 +96,7 @@ test("random-opponent doctrine is deterministic from the match seed", () => {
   assert.equal(validWarDoctrine(first), true);
 });
 
-test("completed records retain results without replay snapshots", () => {
+test("completed records retain compact results and advertise separate replay data", () => {
   const war = new WarSimulation({ masterSeed: "history-test", startingAnts: 1 });
   war.simulation.colonies[1].ants.length = 0;
   war.step();
@@ -86,8 +105,8 @@ test("completed records retain results without replay snapshots", () => {
     war,
     settings: DEFAULT_ONLINE_WAR_SETTINGS,
     players: [
-      { token: "one", socket: null, ready: true, name: "Alpha" },
-      { token: "two", socket: null, ready: true, name: "Beta" },
+      { name: "Alpha" },
+      { name: "Beta" },
     ],
   });
 
@@ -96,4 +115,127 @@ test("completed records retain results without replay snapshots", () => {
   assert.deepEqual(record.playerNames, ["Alpha", "Beta"]);
   assert.equal(record.finalMetrics.length, 2);
   assert.equal("checkpoints" in record, false);
+  assert.equal(record.replayAvailable, true);
+});
+
+test("a terminal sample failure degrades to summary-only history without throwing", () => {
+  const war = new WarSimulation({ masterSeed: "failed-record-build", startingAnts: 1 });
+  war.simulation.colonies[1].ants.length = 0;
+  war.step();
+  const failure = new Error("terminal capture failed");
+  const artifacts = completedWarArtifacts({
+    id: "FAIL1",
+    war,
+    settings: DEFAULT_ONLINE_WAR_SETTINGS,
+    players: [{ name: "Alpha" }, { name: "Beta" }],
+    recorder: { build: () => { throw failure; } },
+  });
+
+  assert.equal(artifacts.summary.replayAvailable, false);
+  assert.equal(artifacts.runRecord, undefined);
+  assert.equal(artifacts.buildError, failure);
+  assert.equal(artifacts.summary.winner, 0);
+});
+
+test("persisted Online War envelopes bind a compact summary to its exact run", () => {
+  const settings = { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "persisted-run-test", startingAnts: 1 };
+  const recorder = createOnlineWarRecorder(settings);
+  recorder.runtime.simulation.colonies[1].ants.length = 0;
+  recorder.step();
+  const summary = completedWarRecord({
+    id: "ABCDE",
+    war: recorder.runtime,
+    settings,
+    players: [
+      { name: "Alpha" },
+      { name: "Beta" },
+    ],
+  });
+  const runRecord = recorder.build();
+  const parsed = parsePersistedWarMatch(persistedWarMatch(summary, runRecord));
+  assert.deepEqual(parsed?.summary, summary);
+  assert.deepEqual(parsed?.runRecord, runRecord);
+  assert.deepEqual(parsePersistedWarMatchSummary(persistedWarMatch(summary, runRecord)), summary);
+
+  const mismatchedEnvelope = persistedWarMatch(
+    { ...summary, settings: { ...summary.settings, masterSeed: "other-seed" } },
+    runRecord,
+  );
+  const mismatched = parsePersistedWarMatch(mismatchedEnvelope);
+  assert.equal(mismatched?.summary.replayAvailable, false);
+  assert.equal(mismatched?.runRecord, undefined);
+  assert.equal(parsePersistedWarMatchSummary(mismatchedEnvelope)?.replayAvailable, true);
+});
+
+test("history summary parsing never validates or retains the full research record", () => {
+  const war = new WarSimulation({ masterSeed: "summary-only-load", startingAnts: 1 });
+  war.simulation.colonies[1].ants.length = 0;
+  war.step();
+  const summary = completedWarRecord({
+    id: "SUM01",
+    war,
+    settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "summary-only-load", startingAnts: 1 },
+    players: [{ name: "Alpha" }, { name: "Beta" }],
+  });
+  const envelope = { version: 2, summary, runRecord: { malformed: true } };
+
+  assert.deepEqual(parsePersistedWarMatchSummary(envelope), summary);
+  assert.equal(parsePersistedWarMatch(envelope)?.summary.replayAvailable, false);
+});
+
+test("capacity-limited Online War records retain their terminal state and replay exactly", () => {
+  const settings = {
+    ...DEFAULT_ONLINE_WAR_SETTINGS,
+    masterSeed: "capacity-limited-online-run",
+    startingAnts: 1,
+    foodSources: 1,
+    foodPerSource: 50,
+    loopRate: 0,
+  };
+  const recorder = createOnlineWarRecorder(settings, [], true, {
+    metrics: { interval: 3, capacity: 2 },
+    agents: { interval: 5, capacity: 2 },
+    fields: { interval: 7, capacity: 2 },
+  });
+
+  while (recorder.runtime.result === null && recorder.runtime.tick < 10_000) {
+    assert.equal(recorder.step(), true);
+  }
+  assert.notEqual(recorder.runtime.result, null, "the deterministic fixture must complete");
+
+  const runRecord = recorder.build();
+  for (const [name, channel] of Object.entries(runRecord.channels)) {
+    assert.equal(channel.truncated, true, `${name} should report lost early samples`);
+    assert.equal(channel.samples.length, channel.capacity, `${name} should remain bounded`);
+    assert.equal(channel.samples.at(-1)?.t, runRecord.endTick, `${name} should retain the terminal sample`);
+  }
+  const terminalMetrics = runRecord.channels.metrics.samples.at(-1)?.data as {
+    result: number | "draw" | null;
+  };
+  assert.equal(terminalMetrics.result, recorder.runtime.result);
+  assert.deepEqual(runRecord.outcome?.data, {
+    winner: recorder.runtime.result,
+    tick: runRecord.endTick,
+    colonies: (runRecord.channels.metrics.samples.at(-1)?.data as { colonies: unknown }).colonies,
+  });
+
+  const summary = completedWarRecord({
+    id: "CAP01",
+    war: recorder.runtime,
+    settings,
+    players: [
+      { name: "Researcher" },
+      { name: "Generated opponent" },
+    ],
+  });
+  const persisted = JSON.parse(JSON.stringify(persistedWarMatch(summary, runRecord))) as unknown;
+  const parsed = parsePersistedWarMatch(persisted);
+  assert.equal(parsed?.summary.replayAvailable, true);
+  assert.ok(parsed?.runRecord);
+
+  const replay = createWarReplay(parsed.runRecord);
+  while (replay.step());
+  assert.equal(replay.divergedAt, null);
+  assert.equal(replay.runtime.tick, runRecord.endTick);
+  assert.equal(replay.runtime.fingerprint(), recorder.runtime.fingerprint());
 });

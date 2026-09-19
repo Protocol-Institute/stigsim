@@ -128,6 +128,7 @@ function recordFixture(): WarMatchRecord {
     finalTick: 12,
     finalMetrics: war.simulation.colonies.map(colony => war.getMetrics(colony.id)),
     finalDoctrines: war.simulation.colonies.map(colony => war.getDoctrine(colony.id)),
+    replayAvailable: true,
   };
 }
 
@@ -168,6 +169,11 @@ test("War history migrates records written before PR 20 settings existed", () =>
   assert.ok(modern);
   assert.equal(modern.settings.layout, "mirrored");
   assert.equal(modern.settings.adoption, "instant");
+});
+
+test("War history treats records written before research playback as unavailable", () => {
+  const { replayAvailable: _omitted, ...legacy } = recordFixture();
+  assert.equal(parseWarMatchRecord(legacy)?.replayAvailable, false);
 });
 
 test("War history rejects malformed persisted records", () => {

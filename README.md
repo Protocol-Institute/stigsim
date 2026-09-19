@@ -101,14 +101,27 @@ other players have helped create. The leaderboard records colony lifespans.
 War Mode is a bounded two-colony survival match powered by the shared
 simulation core. It can run locally in one browser or authoritatively on the
 server. The server owns the clock, validates doctrine changes, and persists
-compact completed-match results. Replay checkpoints and playback are deferred.
+compact completed-match results alongside SDK research records. Past Online
+War matches expose verified playback and a downloadable research file without
+placing the much larger record in routine lobby broadcasts.
 
 Local and Online War share the same four field topologies, symmetric match-level
 gland size, and per-colony doctrine model. Evaporation and mimic rate apply at
 the next tick. When the follow and lay tables and the spoiler roles reach the
 ants is a match setting: on return to the nest, the default, or instantly on
-the next tick for every ant wherever it is. War tracing remains deliberately
-deferred.
+the next tick for every ant wherever it is.
+
+Local War records every accepted doctrine change with its player and tick. Its
+Save record action downloads a replayable research file containing metrics,
+individual ant observations, and full-precision pheromone samples; Load record
+opens verified playback with pause, speed, restart, and tick seeking. Replay
+stops and reports the tick if a fingerprint diverges.
+
+Online War uses the same record and replay contract, but the authoritative
+server is the recorder. Only server-accepted doctrine changes enter the command
+stream. Its bounded storage profile samples metrics every 10 ticks, agents
+every 50, and full pheromone fields every 250, with a fixed capacity per
+channel.
 
 By default a War match uses the mirrored map layout: the maze equals its own
 180-degree rotation about the centre cell, so both nests face the same maze,

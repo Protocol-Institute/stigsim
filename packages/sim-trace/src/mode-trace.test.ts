@@ -18,6 +18,7 @@ import {
   defineTraceMode,
   mazeTraceMode,
   parseModeTrace,
+  parseModeTraceValue,
   serializeModeTrace,
   type ModeTrace,
 } from "./index";
@@ -107,6 +108,7 @@ test("mode traces record canonical config, commands, checkpoints, and a final fi
     endTick: 5,
   });
   assert.deepEqual(JSON.parse(serializeModeTrace(trace)), trace);
+  assert.deepEqual(parseModeTraceValue(trace, registry()), { ok: true, trace });
 });
 
 test("mode trace replay applies commands at their recorded tick and supports seeking", () => {

@@ -2,10 +2,14 @@ import { randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import { ADOPTION_MODES, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY, DOCTRINE_CHANNELS, MAZE_LAYOUTS, ROLES, STATES, cloneDoctrine, cloneTopology, deriveStreamSeed, generateMasterSeed, isDoctrine, isTopology, makeRng, type Doctrine, type Topology } from "@stigsim/sim-core";
 import { WebSocket, WebSocketServer } from "ws";
-import { desc } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type { WarSimulation } from "../../src/modes/war/war-simulation";
-import { warMode, warModeConfig } from "../../src/modes/war/war-mode";
 import { parseWarMatchRecord, warWireCodec } from "../../src/modes/war/war-boundary";
+import {
+  createOnlineWarRecorder,
+  onlineWarPlayerSource,
+} from "../../src/modes/war/online-war-recording";
+import { parseWarRunRecordValue, type WarRunRecord } from "../../src/modes/war/war-run-record";
 import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
@@ -29,6 +33,47 @@ const MAX_MATCHES = 100;
 const MAX_MESSAGES_PER_SECOND = 30;
 const MAX_MESSAGES_HARD_LIMIT = MAX_MESSAGES_PER_SECOND * 10;
 const MAX_BUFFERED_BYTES = 512 * 1_024;
+const MAX_CACHED_RESEARCH_RECORDS = 50;
+
+export class BoundedCache<Key, Value> {
+  private readonly entries = new Map<Key, Value>();
+
+  constructor(private readonly capacity: number) {
+    if (!Number.isSafeInteger(capacity) || capacity < 1) {
+      throw new RangeError("Cache capacity must be a positive integer.");
+    }
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+
+  get(key: Key): Value | undefined {
+    const value = this.entries.get(key);
+    if (value === undefined) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, value);
+    return value;
+  }
+
+  set(key: Key, value: Value): void {
+    this.entries.delete(key);
+    this.entries.set(key, value);
+    while (this.entries.size > this.capacity) {
+      const oldest = this.entries.keys().next().value as Key | undefined;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+  }
+
+  delete(key: Key): boolean {
+    return this.entries.delete(key);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
 
 interface PlayerSlot {
   token: string;
@@ -42,6 +87,7 @@ interface WarMatch {
   id: string;
   settings: OnlineWarSettings;
   war: WarSimulation;
+  recorder: ReturnType<typeof createOnlineWarRecorder>;
   phase: "waiting" | "running" | "finished";
   players: Array<PlayerSlot | null>;
   spectators: Set<WebSocket>;
@@ -58,6 +104,7 @@ const socketMatches = new Map<WebSocket, WarMatch>();
 const socketNames = new Map<WebSocket, string>();
 const roomCreatedBySocket = new WeakSet<WebSocket>();
 const matchHistory: WarMatchRecord[] = [];
+const researchRecords = new BoundedCache<string, WarRunRecord>(MAX_CACHED_RESEARCH_RECORDS);
 let activeWss: WebSocketServer | null = null;
 let unregisterUpgradeRoute: (() => void) | null = null;
 let clock: ReturnType<typeof setInterval> | null = null;
@@ -128,18 +175,9 @@ function onlineWarSettings(value: OnlineWarSettings): OnlineWarSettings {
   };
 }
 
-function makeWar(settings: OnlineWarSettings, doctrines?: Doctrine[]): WarSimulation {
-  return warMode.create(warModeConfig({
-    masterSeed: settings.masterSeed.trim() || generateMasterSeed(),
-    startingAnts: settings.startingAnts,
-    foodSources: settings.foodSources,
-    foodPerSource: settings.foodPerSource,
-    loopRate: settings.loopRate,
-    tankMax: settings.tankMax,
-    topology: settings.topology,
-    layout: settings.layout,
-    adoption: settings.adoption,
-  }, doctrines));
+function makeRecordedWar(settings: OnlineWarSettings, doctrines?: Doctrine[], secondIsBot = false) {
+  const recorder = createOnlineWarRecorder(settings, doctrines, secondIsBot);
+  return { recorder, war: recorder.runtime };
 }
 
 export function randomOpponentDoctrine(masterSeed: string, topology: Topology = DEFAULT_TOPOLOGY): Doctrine {
@@ -151,10 +189,11 @@ export function randomOpponentDoctrine(masterSeed: string, topology: Topology = 
 
 function createMatch(settings: OnlineWarSettings): WarMatch {
   const normalized = onlineWarSettings(settings);
+  const recorded = makeRecordedWar(normalized);
   const match: WarMatch = {
     id: roomCode(),
     settings: normalized,
-    war: makeWar(normalized),
+    ...recorded,
     phase: "waiting",
     players: [null, null],
     spectators: new Set(),
@@ -244,7 +283,11 @@ function lobbyMessage(): WarServerMessage {
   };
 }
 
-export function completedWarRecord(match: Pick<WarMatch, "id" | "war" | "settings" | "players">): WarMatchRecord {
+type CompletedWarSummarySource = Pick<WarMatch, "id" | "war" | "settings"> & {
+  players: Array<Pick<PlayerSlot, "name"> | null>;
+};
+
+export function completedWarRecord(match: CompletedWarSummarySource): WarMatchRecord {
   if (match.war.result === null) throw new Error("Cannot record an unfinished War match");
   return {
     recordId: randomUUID(),
@@ -256,17 +299,106 @@ export function completedWarRecord(match: Pick<WarMatch, "id" | "war" | "setting
     finalTick: match.war.simulation.tick,
     finalMetrics: match.war.simulation.colonies.map(colony => match.war.getMetrics(colony.id)),
     finalDoctrines: match.war.simulation.colonies.map(colony => match.war.getDoctrine(colony.id)),
+    replayAvailable: true,
   };
+}
+
+export function completedWarArtifacts(
+  match: CompletedWarSummarySource & { recorder: Pick<ReturnType<typeof createOnlineWarRecorder>, "build"> },
+): { summary: WarMatchRecord; runRecord?: WarRunRecord; buildError?: unknown } {
+  const summary = completedWarRecord(match);
+  try {
+    return { summary, runRecord: match.recorder.build() as WarRunRecord };
+  } catch (buildError) {
+    return { summary: { ...summary, replayAvailable: false }, buildError };
+  }
+}
+
+export interface PersistedWarMatch {
+  version: 2;
+  summary: WarMatchRecord;
+  runRecord: WarRunRecord;
+}
+
+function runMatchesSummary(runRecord: WarRunRecord, summary: WarMatchRecord): boolean {
+  const settings = runRecord.mode.config.settings;
+  const sameSettings = settings.masterSeed === summary.settings.masterSeed
+    && settings.startingAnts === summary.settings.startingAnts
+    && settings.foodSources === summary.settings.foodSources
+    && settings.foodPerSource === summary.settings.foodPerSource
+    && settings.loopRate === summary.settings.loopRate
+    && settings.tankMax === summary.settings.tankMax
+    && settings.layout === summary.settings.layout
+    && settings.adoption === summary.settings.adoption
+    && JSON.stringify(settings.topology) === JSON.stringify(summary.settings.topology);
+  const outcome = runRecord.outcome?.data;
+  const outcomeRecord = outcome && typeof outcome === "object" && !Array.isArray(outcome)
+    ? outcome as Record<string, unknown>
+    : null;
+  return sameSettings && runRecord.endTick === summary.finalTick
+    && Boolean(outcomeRecord
+      && outcomeRecord.tick === summary.finalTick && outcomeRecord.winner === summary.winner);
+}
+
+export function parsePersistedWarMatch(value: unknown): { summary: WarMatchRecord; runRecord?: WarRunRecord } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.version !== 2) {
+    const legacy = parseWarMatchRecord(value);
+    return legacy ? { summary: { ...legacy, replayAvailable: false } } : null;
+  }
+  const summary = parseWarMatchRecord(candidate.summary);
+  if (!summary) return null;
+  const parsedRun = parseWarRunRecordValue(candidate.runRecord);
+  if (!parsedRun || !parsedRun.ok || !parsedRun.record || !runMatchesSummary(parsedRun.record, summary)) {
+    return { summary: { ...summary, replayAvailable: false } };
+  }
+  return { summary: { ...summary, replayAvailable: true }, runRecord: parsedRun.record };
+}
+
+/** Parse only the compact lobby history view; full run validation stays lazy on record fetch. */
+export function parsePersistedWarMatchSummary(value: unknown): WarMatchRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.version !== 2) {
+    const legacy = parseWarMatchRecord(value);
+    return legacy ? { ...legacy, replayAvailable: false } : null;
+  }
+  const summary = parseWarMatchRecord(candidate.summary);
+  if (!summary) return null;
+  return {
+    ...summary,
+    replayAvailable: summary.replayAvailable && candidate.runRecord !== undefined,
+  };
+}
+
+export function persistedWarMatch(summary: WarMatchRecord, runRecord: WarRunRecord): PersistedWarMatch {
+  return { version: 2, summary, runRecord };
 }
 
 async function loadMatchHistory(): Promise<void> {
   if (!db) return;
   try {
-    const rows = await db.select().from(warMatchRecordsTable).orderBy(desc(warMatchRecordsTable.completedAt)).limit(50);
+    const rows = await db.select({
+      recordId: warMatchRecordsTable.recordId,
+      summary: warMatchRecordsTable.summary,
+    }).from(warMatchRecordsTable).orderBy(desc(warMatchRecordsTable.completedAt)).limit(50);
+    const legacyIds = rows.flatMap(row => row.summary === null ? [row.recordId] : []);
+    const legacyRows = legacyIds.length === 0
+      ? []
+      : await db.select({
+          recordId: warMatchRecordsTable.recordId,
+          data: warMatchRecordsTable.data,
+        }).from(warMatchRecordsTable).where(inArray(warMatchRecordsTable.recordId, legacyIds));
+    const legacyData = new Map(legacyRows.map(row => [row.recordId, row.data]));
     matchHistory.splice(0, matchHistory.length, ...rows.flatMap(row => {
       try {
-        const record = parseWarMatchRecord(JSON.parse(row.data));
-        return record ? [record] : [];
+        const encoded = row.summary ?? legacyData.get(row.recordId);
+        if (!encoded) return [];
+        const summary = row.summary === null
+          ? parsePersistedWarMatchSummary(JSON.parse(encoded))
+          : parseWarMatchRecord(JSON.parse(encoded));
+        return summary ? [summary] : [];
       } catch { return []; }
     }));
   } catch (error) {
@@ -277,20 +409,45 @@ async function loadMatchHistory(): Promise<void> {
 async function recordCompletedMatch(match: WarMatch): Promise<void> {
   if (match.resultRecorded || match.war.result === null) return;
   match.resultRecorded = true;
-  const record = completedWarRecord(match);
-  matchHistory.unshift(record);
-  matchHistory.splice(50);
-  broadcastLobby();
-  if (!db) return;
   try {
+    const { summary, runRecord, buildError } = completedWarArtifacts(match);
+    if (buildError) {
+      console.error(`[war] Failed to build research record for match ${match.id}`, buildError);
+    }
+    if (runRecord) researchRecords.set(summary.recordId, runRecord);
+    matchHistory.unshift(summary);
+    for (const removed of matchHistory.splice(50)) researchRecords.delete(removed.recordId);
+    broadcastLobby();
+    if (!db) return;
     await db.insert(warMatchRecordsTable).values({
-      recordId: record.recordId,
-      matchId: record.matchId,
-      data: JSON.stringify(record),
-      completedAt: new Date(record.completedAt),
+      recordId: summary.recordId,
+      matchId: summary.matchId,
+      summary: JSON.stringify(summary),
+      data: JSON.stringify(runRecord ? persistedWarMatch(summary, runRecord) : summary),
+      completedAt: new Date(summary.completedAt),
     });
   } catch (error) {
-    console.warn("[war] Failed to persist completed match", error);
+    console.error(`[war] Failed to record completed match ${match.id}`, error);
+  }
+}
+
+/** Resolve a completed match's full research record without placing it in lobby messages. */
+export async function getWarResearchRecord(recordId: string): Promise<WarRunRecord | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(recordId)) return null;
+  const cached = researchRecords.get(recordId);
+  if (cached) return cached;
+  if (!db) return null;
+  try {
+    const rows = await db.select().from(warMatchRecordsTable)
+      .where(eq(warMatchRecordsTable.recordId, recordId)).limit(1);
+    if (!rows[0]) return null;
+    const persisted = parsePersistedWarMatch(JSON.parse(rows[0].data));
+    if (!persisted?.runRecord || persisted.summary.recordId !== recordId) return null;
+    researchRecords.set(recordId, persisted.runRecord);
+    return persisted.runRecord;
+  } catch (error) {
+    console.warn(`[war] Failed to load research record ${recordId}`, error);
+    return null;
   }
 }
 
@@ -417,7 +574,9 @@ function resetMatch(match: WarMatch): void {
   const doctrines = match.players.map(player => player?.isBot
     ? randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)
     : DEFAULT_DOCTRINE);
-  match.war = makeWar(match.settings, doctrines);
+  const recorded = makeRecordedWar(match.settings, doctrines, Boolean(match.players[1]?.isBot));
+  match.recorder = recorded.recorder;
+  match.war = recorded.war;
   match.phase = "waiting";
   match.finishedAt = null;
   match.simulationAccumulator = 0;
@@ -467,7 +626,13 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     const { match, token } = createWaitingMatch(socket, name, message.settings);
     match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
     match.players[0]!.ready = true;
-    match.war = makeWar(match.settings, [DEFAULT_DOCTRINE, randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)]);
+    const recorded = makeRecordedWar(
+      match.settings,
+      [DEFAULT_DOCTRINE, randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)],
+      true,
+    );
+    match.recorder = recorded.recorder;
+    match.war = recorded.war;
     match.phase = "running";
     enterMatch(socket, match, name, token);
     return;
@@ -497,10 +662,15 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     broadcastSnapshot(match);
     broadcastLobby();
   } else if (message.type === "set-doctrine") {
+    if (match.phase === "finished") return send(socket, { type: "error", message: "That match has finished" });
     if (!validWarDoctrine(message.doctrine)) {
       return send(socket, { type: "error", message: "Doctrine values are outside the allowed range" });
     }
-    match.war.setDoctrine(colonyId, normalizeWarDoctrine(message.doctrine, match.settings.topology));
+    match.recorder.command(onlineWarPlayerSource(colonyId), {
+      kind: "set-doctrine",
+      colonyId,
+      doctrine: normalizeWarDoctrine(message.doctrine, match.settings.topology),
+    });
     if (match.phase === "waiting") broadcastSnapshot(match);
   } else if (message.type === "reset" && match.phase === "finished") {
     resetMatch(match);
@@ -519,7 +689,7 @@ function advanceMatches(): void {
       if (match.phase !== "running") continue;
       match.simulationAccumulator += match.settings.stepsPerSecond / CLOCK_RATE;
       while (match.simulationAccumulator >= 1 && match.war.result === null) {
-        match.war.step();
+        match.recorder.step();
         match.simulationAccumulator--;
       }
       if (match.war.result !== null) {
@@ -620,4 +790,5 @@ export function shutdownWar(): void {
   socketMatches.clear();
   socketNames.clear();
   matchHistory.splice(0);
+  researchRecords.clear();
 }

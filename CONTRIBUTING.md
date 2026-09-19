@@ -27,8 +27,9 @@ Stigsim has a standalone React/Vite simulator and an optional server-authoritati
   - `doctrine.ts` is the vocabulary of colony behaviour, `topology.ts` the field
     settings, and `score.ts` the response side. `sim.ts` owns laying, roles,
     and adoption.
-- `packages/sim-trace/` contains run metrics, the trace format, and replay. It
-  depends on `sim-core`; nothing in `sim-core` may depend on it.
+- `packages/sim-trace/` contains run metrics, trace and research-record formats,
+  recording, replay, and divergence checks. It depends on `sim-core`; nothing
+  in `sim-core` may depend on it.
 - `src/render.ts` draws a simulation to a canvas.
 - `src/AntSim.tsx` is the standalone simulator interface.
 - `src/App.tsx` is the application entry component.

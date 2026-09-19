@@ -197,5 +197,6 @@ export function parseWarMatchRecord(value: unknown): WarMatchRecord | null {
     finalTick: candidate.finalTick as number,
     finalMetrics,
     finalDoctrines,
+    replayAvailable: candidate.replayAvailable === true,
   };
 }

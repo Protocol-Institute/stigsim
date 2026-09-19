@@ -64,6 +64,9 @@ importers:
       '@stigsim/sim-core':
         specifier: workspace:*
         version: link:../packages/sim-core
+      '@stigsim/sim-trace':
+        specifier: workspace:*
+        version: link:../packages/sim-trace
       cors:
         specifier: ^2.8.5
         version: 2.8.6
