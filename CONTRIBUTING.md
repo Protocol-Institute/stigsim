@@ -52,6 +52,13 @@ dense snapshot wire and completed-record parser. Hosts own WebSocket and JSON
 framing. Do not merge the pheromone encoders: their scaling is intentionally
 different and is part of each deployed protocol.
 
+War and Infinite currently retain separate lifecycle policies. `WarSimulation`
+owns War energy, reserve, reproduction, hatching, and death behavior, while
+Infinite owns its starvation and colony-extinction behavior. Shared energy and
+death mechanics may be consolidated in the future, but reproduction remains an
+intentional War-specific policy. Preserve those mode differences when changing
+either implementation.
+
 Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
 
 See [`docs/mode-sdk.md`](docs/mode-sdk.md) for the extension contract, tracing
@@ -162,10 +169,3 @@ never populated `discoveredSources` before removing a source.
 ## Shared-world mode
 
 Run `pnpm dev:server` alongside `pnpm dev`. Production must use one server replica and Postgres persistence; see `server/README.md`.
-
-War and Infinite currently retain separate lifecycle policies. `WarSimulation`
-owns War energy, reserve, reproduction, hatching, and death behavior, while
-Infinite owns its starvation and colony-extinction behavior. Shared energy and
-death mechanics may be consolidated in the future, but reproduction remains an
-intentional War-specific policy. Preserve those mode differences when changing
-either implementation.

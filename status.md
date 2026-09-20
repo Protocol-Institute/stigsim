@@ -13,17 +13,21 @@
 
 ## Done
 
+- **2026-09-20** — Verified the production deployment: the Cloudflare-managed
+  `stigsim.protocol-institute.org` CNAME resolves to GitHub Pages, and Infinite
+  Mode runs on one Railway replica with Neon Postgres persistence. (Daniel)
 - **2026-09-20** — Added the versioned `stigsim-run-record@1` research envelope,
   bounded research channels, JSON Schema and example fixture, and shared export
-  and validation tooling for mode recordings. (PR #23)
+  and validation tooling for mode recordings, including replayable Local War
+  recording and authoritative Online War recording, history playback, and
+  downloads. (PR #23)
 - **2026-09-18** — Changed the War match defaults for both Local and Online War: 40 starting ants, five food sources at 200 food each, a 20% maze loop rate, instant doctrine adoption, and the Mimicry topology; the mirrored layout stays the default. Records saved before the topology setting existed now load on the Private topology they were played on, instead of whatever the current default is. (Patrick)
-- **2026-09-18** — Added replayable research recording to Local War and
-  authoritative recording, history playback, and downloads to Online War.
+- **2026-09-14** — Completed the shared doctrine, adoption, topology, and
+  symmetric gland integration for Local and Online War. (PR #19)
 - **2026-09-12** — Added the mirrored map layout and made it the War Mode default: the maze equals its own 180-degree rotation, food is placed in rotated pairs weighted toward the crossings between the halves, with one pair near the nests when there are more than two sources and a single source at the centre. The asymmetric layout remains a match setting; the maze sandbox and the trace format default to it unchanged. Also exposed doctrine adoption (on return to nest, the default, or instant) as a War match setting so both can be playtested. (Patrick)
-- **2026-09-11** — Completed the shared doctrine, adoption, topology, and
-  symmetric gland integration for Local and Online War.
-- **2026-09-07** — Integrated server-authoritative Online War with create,
+- **2026-09-09** — Integrated server-authoritative Online War with create,
   join, spectate, reconnect, rematch, and compact completed-match history.
+  (PR #15)
 - **2026-09-07** — Ported local two-player War Mode onto `@stigsim/sim-core`, preserving its survival behavior in a separately tested mode layer. (PR #11)
 - **2026-08-27** — Made Maze Simulator runs reproducible from a seed: seeded PRNG streams, a command bus every mutation routes through, periodic state fingerprints, and a downloadable trace file that replays exactly with seek and divergence reporting. Added a Run panel (seed, save trace, load trace, replay bar, CSV export) and automated tests for core simulation behavior, including a golden-trace regression fixture (`pnpm golden`). Closes the "Add automated tests for core simulation behavior" item that was under Upcoming. (Patrick)
 - **2026-08-20** — Added persistent multiplayer Infinite Mode backed by one

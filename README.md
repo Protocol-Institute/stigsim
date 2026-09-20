@@ -153,9 +153,9 @@ Maze traces and War research records preserve the configuration, accepted
 commands, timing, and fingerprints needed for deterministic replay. Research
 records additionally provide versioned observations of metrics, agents, and
 pheromone fields for external analysis. See the
-[`research-record guide`](docs/research-run-records.md), its
-[`JSON Schema`](docs/research-run-record.schema.json), and the
-[`Mode SDK guide`](docs/mode-sdk.md) for the formats and compatibility rules.
+[research-record guide](docs/research-run-records.md), its
+[JSON Schema](docs/research-run-record.schema.json), and the
+[Mode SDK guide](docs/mode-sdk.md) for the formats and compatibility rules.
 
 Persistence differs by mode. Maze and Local War remain local unless you
 download their trace or research record. Active Online War matches live on the
