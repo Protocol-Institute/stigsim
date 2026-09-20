@@ -5,8 +5,6 @@
 - Reconcile the energy, starvation, death, and colony-extinction mechanics
   shared by War and Infinite Mode; War reproduction remains an explicit
   mode-specific policy.
-- Harden the shared `WarSimulation` Online War experience across create, join,
-  spectate, reconnect, rematch, compact history, and replayable research records.
 
 ## Upcoming
 
