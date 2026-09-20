@@ -52,6 +52,13 @@ dense snapshot wire and completed-record parser. Hosts own WebSocket and JSON
 framing. Do not merge the pheromone encoders: their scaling is intentionally
 different and is part of each deployed protocol.
 
+War and Infinite currently retain separate lifecycle policies. `WarSimulation`
+owns War energy, reserve, reproduction, hatching, and death behavior, while
+Infinite owns its starvation and colony-extinction behavior. Shared energy and
+death mechanics may be consolidated in the future, but reproduction remains an
+intentional War-specific policy. Preserve those mode differences when changing
+either implementation.
+
 Keep the core simulation logic independent of React where practical. Preserve the standalone mode when changing Infinite Mode.
 
 See [`docs/mode-sdk.md`](docs/mode-sdk.md) for the extension contract, tracing
@@ -122,10 +129,11 @@ command, or traces stop reproducing.
 A doctrine, an adoption mode, or a topology change is a command like any
 other: `setDoctrine` carries the whole doctrine as data, validated by
 `isDoctrine` on both the bus and the loader. Trace-producing modes must never
-change a colony's doctrine outside `apply`. War Mode is the temporary explicit
-exception: it is not traced yet, and its authoritative boundary calls
-`setColonyDoctrine`. Moving War doctrine changes onto the recorded command bus
-belongs to the tracing/replay package that removes this exception.
+change a colony's doctrine outside `apply`. Local War records accepted doctrine
+changes in the browser, while Online War records only changes accepted by the
+authoritative server. Both produce replayable research records through the
+mode recording adapter described in
+[`docs/research-run-records.md`](docs/research-run-records.md).
 
 If the change was deliberate, bump
 `SIM_VERSION` in `packages/sim-trace/src/trace.ts` and regenerate the fixture with

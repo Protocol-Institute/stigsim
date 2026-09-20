@@ -10,7 +10,12 @@ central controller. In Stigsim, ants explore mazes, discover food, and reinforce
 useful routes with pheromone trails. The project includes private experiments,
 head-to-head War matches, and a persistent multiplayer world.
 
-## Play online
+## Try Stigsim
+
+### [Open Stigsim →](https://stigsim.protocol-institute.org/)
+
+Start at the simulation index to compare all four modes and choose an
+experience.
 
 ### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/maze)
 
@@ -22,6 +27,11 @@ browser. This is the original, self-contained Stigsim experience.
 Join one shared, persistent simulation with other players. Changes made by one
 player become part of the world everyone inhabits.
 
+### [Play Local War →](https://stigsim.protocol-institute.org/war)
+
+Run a two-colony survival match in one browser, adjust both doctrines, and save
+or replay the result without connecting to the simulation server.
+
 ### [Play Online War →](https://stigsim.protocol-institute.org/multiplayer)
 
 Create or join a two-colony match, invite another player, spectate a running
@@ -29,19 +39,19 @@ game, or practice against a randomized colony.
 
 ## Simulation modes
 
-| | Maze Simulator | Infinite World |
-| --- | --- | --- |
-| **Experience** | A configurable maze sandbox | One continuous shared world |
-| **Players** | Single-player | Multiplayer |
-| **Simulation authority** | Runs entirely in your browser | Runs on the shared simulation server |
-| **World state** | Starts fresh and remains local to the tab | Shared by all connected players and saved to Postgres |
-| **World shape** | Generated, bounded mazes | An expandable world that persists between visits |
-| **Best for** | Controlled experiments and parameter tuning | Emergent collaboration, competition, and long-running colonies |
+| Mode | Players | Authority | Persistence | Best for |
+| --- | --- | --- | --- | --- |
+| **Maze Simulator** | One player, up to four colonies | Browser | Local file export | Exploring how colonies find food, form trails, and adapt to environmental changes |
+| **Local War** | One or two people sharing a browser | Browser | Local file export | Head-to-head experimentation and reproducible matches |
+| **Online War** | Two players plus spectators | Shared simulation server | Server-stored match history | Networked competition and spectating |
+| **Infinite World** | Multiplayer | Shared simulation server | Server-persisted shared world | Emergent collaboration, competition, and long-running colonies |
 
 ### Maze Simulator
 
-The Maze Simulator is a laboratory you control. Generate a new maze, add up to
-four competing colonies, and tune the conditions while the simulation runs.
+The Maze Simulator is an open-ended sandbox for exploring how colonies find
+food and form routes, rather than a survival match. Generate a new maze, add up
+to four competing colonies, reshape walls and food while the simulation runs,
+or control an individual ant to experience its local information constraints.
 Because the model executes locally, no account or server connection is needed
 and your experiment is not visible to anyone else.
 
@@ -137,11 +147,22 @@ the other, which in a maze means the crossings between the two halves. The
 asymmetric layout, one seed-generated maze with no symmetry and food placed
 anywhere, is still available as a match setting.
 
-The lifecycle half of work package 4 also remains open. War still owns its
-energy, reserve, reproduction, hatching, and death policies in `WarSimulation`,
-while Infinite Mode retains its existing starvation lifecycle. Unifying their
-shared energy/death mechanics without erasing intentional mode differences is
-follow-up architecture work, separate from this doctrine/topology integration.
+## Research and reproducibility
+
+Maze traces and War research records preserve the configuration, accepted
+commands, timing, and fingerprints needed for deterministic replay. Research
+records additionally provide versioned observations of metrics, agents, and
+pheromone fields for external analysis. See the
+[research-record guide](docs/research-run-records.md), its
+[JSON Schema](docs/research-run-record.schema.json), and the
+[Mode SDK guide](docs/mode-sdk.md) for the formats and compatibility rules.
+
+Persistence differs by mode. Maze and Local War remain local unless you
+download their trace or research record. Active Online War matches live on the
+server for the match session; completed summaries and research records are
+stored for later playback. Infinite persists terrain, food, colonies, scores,
+and leaderboard records, but individual ant positions and pheromone trails are
+rebuilt after a server restart.
 
 ## How the shared world works
 
@@ -237,6 +258,10 @@ work and the roadmap. Mode authors should also read the
 
 ## Privacy
 
-Stigsim does not include analytics or tracking. Maze Simulator activity remains
-inside your browser. Infinite World sends the actions required to participate in
-the shared simulation to its server.
+Stigsim does not include analytics or tracking. Maze Simulator and Local War
+activity remain inside your browser unless you choose to download a trace or
+research record. Infinite World sends world actions to the shared simulation
+server; Online War sends match participation and doctrine changes to that
+server. Online War research records use recording-local participant ids and
+exclude player names, reconnect tokens, network addresses, and transport
+metadata.
