@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, cloneDoctrine } from "@stigsim/sim-core";
+import { DEFAULT_DOCTRINE, TOPOLOGY_MIMICRY, TOPOLOGY_PRIVATE, cloneDoctrine } from "@stigsim/sim-core";
 import { DEFAULT_ONLINE_WAR_SETTINGS } from "../../shared/war-contract";
 import { WarSimulation } from "../../src/modes/war/war-simulation";
 import { createOnlineWarRecorder } from "../../src/modes/war/online-war-recording";
@@ -46,8 +46,8 @@ test("online match settings accept both map layouts and nothing else", () => {
 });
 
 test("online match settings accept both adoption modes and nothing else", () => {
-  assert.equal(DEFAULT_ONLINE_WAR_SETTINGS.adoption, "nest");
-  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "instant" }), true);
+  assert.equal(DEFAULT_ONLINE_WAR_SETTINGS.adoption, "instant");
+  assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "nest" }), true);
   assert.equal(validOnlineWarSettings({ ...DEFAULT_ONLINE_WAR_SETTINGS, adoption: "eventually" }), false);
   const { adoption: _dropped, ...withoutAdoption } = DEFAULT_ONLINE_WAR_SETTINGS;
   assert.equal(validOnlineWarSettings(withoutAdoption), false);
@@ -80,7 +80,7 @@ test("online doctrines are conformed to the match topology", () => {
   doctrine.spoilerFraction = 0.2;
   doctrine.mimicRate = 0.5;
   doctrine.forager.follow.searching.food.enemy = 2;
-  const normalized = normalizeWarDoctrine(doctrine, DEFAULT_ONLINE_WAR_SETTINGS.topology);
+  const normalized = normalizeWarDoctrine(doctrine, TOPOLOGY_PRIVATE);
   assert.equal(normalized.spoilerFraction, 0);
   assert.equal(normalized.mimicRate, 0);
   assert.equal(normalized.forager.follow.searching.food.enemy, 0);

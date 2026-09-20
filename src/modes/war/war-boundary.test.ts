@@ -5,6 +5,7 @@ import {
   ROWS,
   DEFAULT_DOCTRINE,
   TOPOLOGY_MIMICRY,
+  TOPOLOGY_PRIVATE,
   DenseField,
   cloneDoctrine,
 } from "@stigsim/sim-core";
@@ -158,7 +159,7 @@ test("War history migrates records written before PR 20 settings existed", () =>
   const parsed = parseWarMatchRecord({ ...current, settings: legacySettings });
   assert.ok(parsed);
   assert.equal(parsed.settings.tankMax, DEFAULT_ONLINE_WAR_SETTINGS.tankMax);
-  assert.deepEqual(parsed.settings.topology, DEFAULT_ONLINE_WAR_SETTINGS.topology);
+  assert.deepEqual(parsed.settings.topology, TOPOLOGY_PRIVATE);
   assert.equal(parsed.settings.layout, "random");
   assert.equal(parsed.settings.adoption, "nest");
 

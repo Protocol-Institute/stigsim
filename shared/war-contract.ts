@@ -1,4 +1,4 @@
-import { DEFAULT_PARAMS, DEFAULT_TOPOLOGY, cloneTopology } from "@stigsim/sim-core";
+import { DEFAULT_PARAMS, TOPOLOGY_MIMICRY, cloneTopology } from "@stigsim/sim-core";
 import type { AdoptionMode, Doctrine, MazeLayout, Role, Topology } from "@stigsim/sim-core";
 
 export const WAR_RECONNECTED_ELSEWHERE_CODE = 4001;
@@ -14,6 +14,7 @@ export interface OnlineWarSettings {
   foodPerSource: number;
   loopRate: number;
   tankMax: number;
+  /** Stored records from before this setting existed lack it on disk; the server fills in the private topology on load. */
   topology: Topology;
   /** Stored records from before this setting existed lack it on disk; the server fills in `random` on load. */
   layout: MazeLayout;
@@ -24,14 +25,14 @@ export interface OnlineWarSettings {
 export const DEFAULT_ONLINE_WAR_SETTINGS: OnlineWarSettings = {
   masterSeed: "",
   stepsPerSecond: 15,
-  startingAnts: 20,
-  foodSources: 1,
-  foodPerSource: 500,
-  loopRate: 0.1,
+  startingAnts: 40,
+  foodSources: 5,
+  foodPerSource: 200,
+  loopRate: 0.2,
   tankMax: DEFAULT_PARAMS.tankMax,
-  topology: cloneTopology(DEFAULT_TOPOLOGY),
+  topology: cloneTopology(TOPOLOGY_MIMICRY),
   layout: "mirrored",
-  adoption: "nest",
+  adoption: "instant",
 };
 
 export interface WarMatchSummary {
