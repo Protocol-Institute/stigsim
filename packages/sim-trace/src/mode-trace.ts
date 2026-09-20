@@ -248,6 +248,11 @@ function validateModeTrace(raw: unknown, registry: ModeTraceRegistry): ModeTrace
       };
 }
 
+/** Validate an already-decoded mode trace without an avoidable JSON round-trip. */
+export function parseModeTraceValue(value: unknown, registry: ModeTraceRegistry): ModeTraceParseResult {
+  return validateModeTrace(value, registry);
+}
+
 /** Parse a mode trace, or upgrade an existing v1 Maze trace in memory. */
 export function parseModeTrace(text: string, registry: ModeTraceRegistry): ModeTraceParseResult {
   let raw: unknown;
@@ -258,7 +263,7 @@ export function parseModeTrace(text: string, registry: ModeTraceRegistry): ModeT
   }
   if (typeof raw === "object" && raw !== null && !Array.isArray(raw) &&
       (raw as Record<string, unknown>).format === MODE_TRACE_FORMAT) {
-    return validateModeTrace(raw, registry);
+    return parseModeTraceValue(raw, registry);
   }
   const legacy = parseTrace(text);
   if (!legacy.ok) return legacy;

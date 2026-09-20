@@ -1,0 +1,95 @@
+{
+  "format": "stigsim-run-record",
+  "version": 1,
+  "simVersion": 3,
+  "createdAt": "2026-09-18T12:00:00.000Z",
+  "mode": {
+    "id": "research-counter",
+    "version": 1,
+    "config": {
+      "initial": 3
+    }
+  },
+  "participants": [
+    {
+      "id": "player-1",
+      "kind": "player",
+      "label": "Researcher",
+      "slot": "colony-0"
+    },
+    {
+      "id": "bot-1",
+      "kind": "bot",
+      "slot": "colony-1"
+    }
+  ],
+  "commands": [
+    {
+      "t": 1,
+      "sequence": 0,
+      "source": {
+        "kind": "participant",
+        "participantId": "player-1"
+      },
+      "cmd": {
+        "kind": "add",
+        "value": 5
+      }
+    },
+    {
+      "t": 1,
+      "sequence": 1,
+      "source": {
+        "kind": "system",
+        "systemId": "match-controller"
+      },
+      "cmd": {
+        "kind": "add",
+        "value": 2
+      }
+    }
+  ],
+  "fingerprints": [
+    {
+      "t": 2,
+      "h": "2:12"
+    },
+    {
+      "t": 4,
+      "h": "4:14"
+    },
+    {
+      "t": 5,
+      "h": "5:15"
+    }
+  ],
+  "channels": {
+    "state": {
+      "version": 1,
+      "interval": 2,
+      "capacity": 2,
+      "truncated": true,
+      "samples": [
+        {
+          "t": 4,
+          "data": {
+            "total": 14
+          }
+        },
+        {
+          "t": 5,
+          "data": {
+            "total": 15
+          }
+        }
+      ]
+    }
+  },
+  "outcome": {
+    "version": 1,
+    "data": {
+      "total": 15
+    }
+  },
+  "endTick": 5
+}

@@ -8,7 +8,9 @@ intentionally session-lived.
 The WebSocket endpoints are `/api/infinite/ws` and `/api/war/ws`. Online War
 supports match creation, joining, spectating, reconnect tokens, server-validated
 doctrine changes, and rematches. Compact completed-match results are persisted;
-replay checkpoints and playback remain deferred.
+the full SDK research record is stored in the same database row but fetched
+separately from `GET /api/war/records/:recordId` for history playback and
+download. It is never included in lobby WebSocket messages.
 
 ## Persistence boundary
 
@@ -16,6 +18,16 @@ World snapshots preserve walls, food resources, stable colony IDs and settings,
 colony ages, and collected-food scores. Completed leaderboard records are
 stored separately in Postgres. Together these form the durable shared-world
 state used after restarts and deployments.
+
+Each completed Online War row is a versioned envelope containing the compact
+history summary and the replayable `stigsim-run-record`. Legacy summary-only
+rows remain readable and appear with replay unavailable. Run records use stable
+seat-local participant ids and deliberately exclude player names, reconnect
+tokens, addresses, and transport metadata.
+
+The compact summary is also stored in its own nullable column so lobby startup
+does not fetch or parse full research records. Rows written before that column
+was populated fall back to their existing compact `data` payload.
 
 If historical leaderboard reads fail, the endpoint remains available with live
 colonies only. The server logs the degraded state at most once per minute and
@@ -98,7 +110,8 @@ DATABASE_URL="postgresql://..." pnpm --dir server db:push
 ```
 
 Run this after deploying the Online War history change so the
-`war_match_records` table is created before completed matches are recorded.
+`war_match_records` table and its compact `summary` column exist before
+completed matches are recorded.
 
 `railway.json` builds from the repository root because the server and frontend
 share `shared/infinite-contract.ts`. Configure one Railway replica and use
