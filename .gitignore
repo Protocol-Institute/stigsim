@@ -14,3 +14,4 @@ __pycache__/
 .context
 .superpowers/
 .claude/worktrees/
+preview/

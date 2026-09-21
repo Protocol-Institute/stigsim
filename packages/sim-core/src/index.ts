@@ -16,3 +16,5 @@ export * from "./sdk";
 export * from "./maze-mode";
 export * from "./infinite-mode";
 export * from "./infinite-boundary";
+export * from "./web";
+export * from "./web-transpile";
