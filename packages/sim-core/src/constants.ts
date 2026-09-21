@@ -83,6 +83,18 @@ export const MAX_EVAP_RATE = 1;
 export const MAX_TRAIL_POWER = 32;
 export const MAX_TANK = 1e6;
 /**
+ * Amplitude a single layPheromone may write, matching MAX_FOOD_AMOUNT and
+ * MAX_TANK so the file's caps stay one order of magnitude.
+ *
+ * This bounds what is *stored*, not what scoreCell can produce: odor already
+ * reads at ODOR_LEVEL, and four (read + 1) ^ MAX_TRAIL_POWER terms overflow to
+ * Infinity from values far below this. Extreme doctrine exponents remain the
+ * dominant overflow risk, exactly as they are for odor today. What this stops
+ * is a corrupt or hand-written trace writing 1e30 into a cell, which would
+ * swamp every real trail and saturate the renderer's normalisation on contact.
+ */
+export const MAX_PHEROMONE = 1e6;
+/**
  * Ticks a trace may claim to end at. The replay bar offers endTick as a seek
  * target and Replayer.seek runs there synchronously, so this is what stands
  * between a corrupt trace and a frozen tab: at the measured rate, a billion

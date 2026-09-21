@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   Simulation, DEFAULT_PARAMS, makeSeeds, isCommand, validParams, MAX_ANTS_PER_COLONY, DEFAULT_DOCTRINE, DEFAULT_TOPOLOGY,
+  isPheromoneAmount, fingerprint, MAX_COLONIES, MAX_PHEROMONE,
 } from "./index";
-import type { RunConfig, Command } from "./index";
+import type { RunConfig, Command, TimedCommand } from "./index";
 
 function config(overrides: Partial<RunConfig> = {}): RunConfig {
   return {
@@ -336,4 +337,127 @@ test("enqueue refuses a command that fails validation and records nothing", () =
   sim.step();
   assert.deepEqual(sim.commandLog.map(c => c.cmd.kind), ["setDoctrine"]);
   assert.equal(sim.colonies[0].doctrineVersion, 1);
+});
+
+// ─── layPheromone ────────────────────────────────────────────────────────────
+//
+// An authoring primitive: it writes a starting condition into a colony's
+// field without going through the laying path. These cover the validator
+// boundary and the three cells the applier refuses.
+
+/** A closed cell, for the rejection test. */
+function closedCell(sim: Simulation): [number, number] {
+  for (let y = 1; y < 30; y++) {
+    for (let x = 1; x < 30; x++) if (!sim.occupancy.isOpen(x, y)) return [x, y];
+  }
+  throw new Error("no closed cell found");
+}
+
+test("isCommand accepts layPheromone on the layable channels and rejects the rest", () => {
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0, channel: "home", x: 3, y: 4, amount: 100 }), true);
+  assert.equal(isCommand({ kind: "layPheromone", colony: 3, channel: "food", x: 3, y: 4, amount: 0 }), true);
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0, channel: "food", x: 3, y: 4, amount: MAX_PHEROMONE }), true);
+
+  // `caut` is storage-only wherever a doctrine runs, so it is not layable.
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0, channel: "caut", x: 3, y: 4, amount: 100 }), false);
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0, channel: "nope", x: 3, y: 4, amount: 100 }), false);
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0, x: 3, y: 4, amount: 100 }), false);
+
+  assert.equal(isCommand({ kind: "layPheromone", colony: MAX_COLONIES, channel: "home", x: 3, y: 4, amount: 1 }), false);
+  assert.equal(isCommand({ kind: "layPheromone", colony: -1, channel: "home", x: 3, y: 4, amount: 1 }), false);
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0.5, channel: "home", x: 3, y: 4, amount: 1 }), false);
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0, channel: "home", x: 3.5, y: 4, amount: 1 }), false);
+  assert.equal(isCommand({ kind: "layPheromone", colony: 0, channel: "home", x: 3, y: "4", amount: 1 }), false);
+});
+
+test("layPheromone rejects an amplitude outside the supported range", () => {
+  assert.equal(isPheromoneAmount(0), true);
+  assert.equal(isPheromoneAmount(MAX_PHEROMONE), true);
+  assert.equal(isPheromoneAmount(MAX_PHEROMONE + 1), false);
+  assert.equal(isPheromoneAmount(-1), false, "this raises a cell, it never scrubs one");
+  assert.equal(isPheromoneAmount(Number.POSITIVE_INFINITY), false);
+  assert.equal(isPheromoneAmount(Number.NaN), false);
+  assert.equal(isPheromoneAmount("100"), false);
+});
+
+test("layPheromone raises the named cell of the named colony and channel only", () => {
+  const sim = new Simulation(config({ numColonies: 2 }));
+  const [x, y] = editableCell(sim);
+
+  sim.enqueue({ kind: "layPheromone", colony: 1, channel: "food", x, y, amount: 250 });
+  assert.equal(sim.colonies[1].field.get("food", x, y), 0, "not applied before the step");
+
+  sim.step();
+  // One decay pass runs between the command and this read.
+  assert.ok(sim.colonies[1].field.get("food", x, y) > 0, "applied during the step");
+  assert.equal(sim.colonies[1].field.get("home", x, y), 0, "the other channel is untouched");
+  assert.equal(sim.colonies[0].field.get("food", x, y), 0, "the other colony is untouched");
+  assert.deepEqual(sim.commandLog.map(c => c.cmd.kind), ["layPheromone"]);
+});
+
+test("layPheromone takes the maximum, so a repeated write cannot compound", () => {
+  const sim = new Simulation(config());
+  const [x, y] = editableCell(sim);
+
+  sim.apply({ kind: "layPheromone", colony: 0, channel: "home", x, y, amount: 400 });
+  const once = sim.colonies[0].field.get("home", x, y);
+  assert.equal(once, 400);
+
+  sim.apply({ kind: "layPheromone", colony: 0, channel: "home", x, y, amount: 400 });
+  assert.equal(sim.colonies[0].field.get("home", x, y), once, "re-applying does not add");
+
+  sim.apply({ kind: "layPheromone", colony: 0, channel: "home", x, y, amount: 100 });
+  assert.equal(sim.colonies[0].field.get("home", x, y), once, "a weaker write does not lower the cell");
+
+  sim.apply({ kind: "layPheromone", colony: 0, channel: "home", x, y, amount: 900 });
+  assert.equal(sim.colonies[0].field.get("home", x, y), 900, "a stronger write raises it");
+});
+
+test("layPheromone ignores an unknown colony, an out-of-bounds cell, and a closed cell", () => {
+  const sim = new Simulation(config());
+  const [cx, cy] = closedCell(sim);
+
+  // Each of these must be a no-op rather than a throw: a trace is an ordinary
+  // file and may name a cell or colony this run does not have.
+  sim.apply({ kind: "layPheromone", colony: 3, channel: "home", x: 5, y: 5, amount: 500 });
+  assert.equal(sim.colonies.length, 1);
+
+  sim.apply({ kind: "layPheromone", colony: 0, channel: "home", x: 999, y: 999, amount: 500 });
+  assert.equal(sim.colonies[0].field.get("home", 999, 999), 0);
+
+  sim.apply({ kind: "layPheromone", colony: 0, channel: "home", x: cx, y: cy, amount: 500 });
+  assert.equal(sim.colonies[0].field.get("home", cx, cy), 0, "a closed cell holds nothing");
+});
+
+test("a preload laid before the first step is on the field when the ants first read it", () => {
+  const sim = new Simulation(config());
+  const [x, y] = editableCell(sim);
+
+  // Tick 0, nothing has moved: this is the preload case.
+  assert.equal(sim.tick, 0);
+  sim.enqueue({ kind: "layPheromone", colony: 0, channel: "food", x, y, amount: 800 });
+  sim.flushPending();
+
+  assert.equal(sim.colonies[0].field.get("food", x, y), 800);
+  assert.deepEqual(sim.commandLog, [
+    { t: 1, cmd: { kind: "layPheromone", colony: 0, channel: "food", x, y, amount: 800 } },
+  ], "a paused edit is recorded at the top of the next tick, where replay applies it");
+});
+
+test("a run preloaded with pheromone replays identically from its command log", () => {
+  const [x, y] = editableCell(new Simulation(config()));
+  const preload: TimedCommand[] = [
+    { t: 0, cmd: { kind: "layPheromone", colony: 0, channel: "food", x, y, amount: 900 } },
+    { t: 0, cmd: { kind: "layPheromone", colony: 0, channel: "home", x: x + 1, y, amount: 300 } },
+  ];
+
+  const run = (cmds: TimedCommand[]) => {
+    const sim = new Simulation(config());
+    sim.loadSchedule(cmds);
+    for (let i = 0; i < 200; i++) sim.step();
+    return fingerprint(sim);
+  };
+
+  assert.equal(run(preload), run(preload), "same preload, same run");
+  assert.notEqual(run(preload), run([]), "the preload actually changed the run");
 });

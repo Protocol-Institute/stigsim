@@ -409,7 +409,30 @@ export class Simulation {
       case "setDoctrine":   this._applySetDoctrine(cmd.colony, cmd.doctrine); break;
       case "setAdoption":   this.adoption = cmd.mode; break;
       case "setTopology":   this.topology = cloneTopology(cmd.topology); break;
+      case "layPheromone":  this._applyLayPheromone(cmd.colony, cmd.channel, cmd.x, cmd.y, cmd.amount); break;
     }
+  }
+
+  /**
+   * Raise one cell of one colony's field to at least `amount`.
+   *
+   * `max` rather than `add` so the write is idempotent: a brush dragged slowly
+   * over a cell and one dragged quickly leave the same field, and re-applying
+   * a recorded stroke cannot compound it. That keeps an authored starting
+   * condition a property of the command list rather than of how fast a mouse
+   * moved.
+   *
+   * Closed cells are rejected, following setFood: an ant can never read one,
+   * so writing there only leaves a deposit to surface later if the wall is
+   * reopened. Nest cells are allowed — returning ants lay home pheromone on
+   * the nest themselves, so there is nothing unusual about finding it there.
+   */
+  private _applyLayPheromone(index: number, channel: DoctrineChannel, gx: number, gy: number, amount: number) {
+    const colony = this.colonies[index];
+    if (!colony) return;
+    if (!inBounds(this.occupancy, gx, gy)) return;
+    if (!this.occupancy.isOpen(gx, gy)) return;
+    colony.field.max(channel, gx, gy, amount);
   }
 
   private _applySetWall(gx: number, gy: number, open: boolean) {
