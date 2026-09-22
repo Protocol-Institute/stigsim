@@ -410,6 +410,41 @@ test("a random-opponent game seats its creator and starts immediately", async t 
   assert.equal(player.messages.slice(rejoinStart).filter(message => message.type === "player-state").length, 1);
 });
 
+test("an agent-opponent game exposes a versioned OODA journal", async t => {
+  const { attachWarWs, shutdownWar } = await import("./war");
+  const server = createServer();
+  await attachWarWs(server, [TEST_ORIGIN], true);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const player = await connect(`ws://127.0.0.1:${address.port}/api/war/ws`);
+  t.after(async () => {
+    player.ws.close();
+    shutdownWar();
+    await closeServer(server);
+  });
+
+  const start = player.messages.length;
+  player.ws.send(JSON.stringify({
+    type: "create-room",
+    playerName: "Alpha",
+    settings: { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "agent-match-test" },
+    opponent: "agent",
+  }));
+  const joined = await player.waitFor(message => message.type === "joined", start);
+  assert.equal(joined.colonyId, 0);
+  const running = await player.waitFor(
+    message => message.type === "snapshot" && Boolean((message.snapshot as { agent?: unknown }).agent),
+    start,
+  );
+  const agent = (running.snapshot as { agent: { protocol: string; version: number; currentPreset: string; decisions: unknown[] } }).agent;
+  assert.equal(agent.protocol, "stigsim-war-agent");
+  assert.equal(agent.version, 1);
+  assert.equal(agent.currentPreset, "Default");
+  assert.deepEqual(agent.decisions, []);
+});
+
 test("one connection cannot accumulate waiting rooms", async t => {
   const { attachWarWs, shutdownWar } = await import("./war");
   const server = createServer();

@@ -13,6 +13,11 @@
 
 ## Done
 
+- **2026-09-21** — Added a transparent deterministic OODA opponent for Online
+  War, including versioned agent contracts, server-side state analysis,
+  preset-scored doctrine decisions, an in-match decision journal, and the
+  `Play against agent` flow. (Codex)
+
 - **2026-09-20** — Verified the production deployment: the Cloudflare-managed
   `stigsim.protocol-institute.org` CNAME resolves to GitHub Pages, and Infinite
   Mode runs on one Railway replica with Neon Postgres persistence. (Daniel)

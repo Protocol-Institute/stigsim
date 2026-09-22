@@ -11,6 +11,11 @@ test("opening random-opponent setup generates a fresh seed", () => {
   });
 });
 
+test("opening agent-opponent setup generates a fresh seed", () => {
+  const settings = { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "previous-seed" };
+  assert.equal(settingsForOnlineWarSetup("agent", settings, () => "agent-seed").masterSeed, "agent-seed");
+});
+
 test("opening human setup preserves its current settings", () => {
   const settings = { ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: "chosen-seed" };
   assert.equal(settingsForOnlineWarSetup("human", settings, () => "unused-seed"), settings);
