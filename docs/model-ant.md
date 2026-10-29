@@ -310,9 +310,11 @@ navigation; authoring is a separate condition with additional capabilities.
 ## Protected hosted preview
 
 `pnpm preview:model-ant` serves the built site and Model Ant API on one origin,
-without attaching multiplayer services or connecting a database. Use the
-`railway.preview.json` config for a separate Railway service; do not change the
-production world service. Configure `NODE_ENV=production`,
+without attaching multiplayer services or connecting a database. Create a separate Railway service with build command
+`pnpm install --frozen-lockfile && pnpm build`, start command
+`pnpm preview:model-ant`, and health check `/api/healthz`. New Railway services
+use service settings rather than the deprecated config-as-code files. Do not
+change the production world service. Configure `NODE_ENV=production`,
 `MODEL_ANT_PREVIEW_ENABLED=true`, and `MODEL_ANT_PREVIEW_PASSWORD` (at least 16
 characters), plus the existing server-only model gateway variables. The browser
 prompts for username `preview` and the shared password. Every page and model API
@@ -323,3 +325,11 @@ Model requests remain disabled in normal production deployments. The explicit
 preview flag plus password enables the protected API. Runs are in memory and
 are lost on redeployment; download records first. The isolated preview requires
 no `DATABASE_URL` and must not receive production database credentials.
+
+
+The shared preview is deployed from `codex/model-ant-preview` in Railway's
+`model-ant-preview` environment, service `stigsim-model-ant-preview`:
+https://stigsim-model-ant-preview-model-ant-preview.up.railway.app/model-ant
+Gateway credentials and the shared access password live in service variables.
+A local ignored `.env.model-ant-preview.local` retains the generated password
+for the owner. Never commit that file or include the password in the URL.

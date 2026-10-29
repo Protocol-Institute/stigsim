@@ -13,6 +13,10 @@
 
 ## Done
 
+- **2026-10-29** — Published the Model Ant feature branch and configured an
+  isolated, password-protected Railway preview from GitHub. Production world
+  services and database settings are unchanged.
+
 - **2026-10-29** — Streamlined Model Ant run layout: consolidated configuration
   and New experiment in the header card, moved execution controls above the
   maze, and separated reference explanations from the live rail.
