@@ -1,3 +1,4 @@
+import ModelAnt from "./modes/model-ant/ModelAnt";
 import AntSim from "./AntSim";
 import InfiniteSim from "./components/InfiniteSim";
 import NotFound from "./components/NotFound";
@@ -14,7 +15,8 @@ export default function App() {
   if (route === "index") return <SimulationIndex href={href} />;
 
   let content;
-  if (route === "war") content = <LocalWarMode />;
+  if (route === "model-ant") content = <ModelAnt />;
+  else if (route === "war") content = <LocalWarMode />;
   else if (route === "multiplayer") content = <OnlineWarMode />;
   else if (route === "not-found") content = <NotFound href={href} />;
   else content = route === "maze" ? <AntSim /> : <InfiniteSim simulationsHref={href("/")} />;

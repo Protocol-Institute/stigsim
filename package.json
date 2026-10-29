@@ -9,7 +9,7 @@
     "dev:server": "pnpm --dir server dev",
     "build": "tsc --noEmit && vite build && node scripts/prepare-static-routes.mjs",
     "test": "pnpm typecheck && pnpm test:app && pnpm test:presets && pnpm test:replay && pnpm test:coverage && pnpm test:server",
-    "test:app": "tsx --test src/routes.test.ts src/modes/war/*.test.ts",
+    "test:app": "tsx --test src/routes.test.ts src/modes/war/*.test.ts src/modes/model-ant/*.test.ts",
     "test:routes": "tsx --test src/routes.test.ts",
     "test:presets": "tsx --test src/doctrine-presets.test.ts src/topology-choices.test.ts",
     "test:client": "tsx --test packages/sim-core/src/*.test.ts packages/sim-trace/src/*.test.ts",
@@ -18,9 +18,11 @@
     "golden": "tsx packages/sim-trace/src/fixtures/make-golden.ts",
     "matchup": "tsx scripts/doctrine-matchup.ts",
     "test:persistence": "pnpm --dir server exec tsx --test src/sim.persistence.test.ts",
-    "test:server": "pnpm --dir server exec tsx --test src/degraded-status.test.ts src/fixed-step.test.ts src/infinite-mode.equivalence.test.ts src/sim.equivalence.test.ts src/sim.persistence.test.ts src/sim.phero-bookkeeping.test.ts src/sim.starvation.test.ts src/security.test.ts src/transport.test.ts src/war-agent.test.ts src/war.test.ts src/war.integration.test.ts src/ws.integration.test.ts",
+    "test:server": "pnpm --dir server exec tsx --test src/degraded-status.test.ts src/fixed-step.test.ts src/infinite-mode.equivalence.test.ts src/sim.equivalence.test.ts src/sim.persistence.test.ts src/sim.phero-bookkeeping.test.ts src/sim.starvation.test.ts src/security.test.ts src/transport.test.ts src/war-agent.test.ts src/war.test.ts src/war.integration.test.ts src/ws.integration.test.ts src/model-ant.test.ts",
     "typecheck": "tsc --noEmit && pnpm --dir packages/sim-core typecheck && pnpm --dir packages/sim-trace typecheck && pnpm --dir server typecheck",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "preview:model-ant": "node --import tsx server/src/model-ant-preview.ts",
+    "dev:model-ant": "node --env-file=.env.model-ant.local --import tsx server/src/index.ts"
   },
   "dependencies": {
     "@stigsim/sim-core": "workspace:*",

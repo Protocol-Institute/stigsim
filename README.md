@@ -14,7 +14,7 @@ head-to-head War matches, and a persistent multiplayer world.
 
 ### [Open Stigsim →](https://stigsim.protocol-institute.org/)
 
-Start at the simulation index to compare all four modes and choose an
+Start at the simulation index to compare the modes and choose an
 experience.
 
 ### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/maze)
@@ -272,3 +272,10 @@ server; Online War sends match participation and doctrine changes to that
 server. Online War research records use recording-local participant ids and
 exclude player names, reconnect tokens, network addresses, and transport
 metadata.
+
+### Model Ant experiment
+
+Open `/model-ant` to watch one language model navigate a maze using only adjacent
+cells and its own bounded memory. Step through decisions, run up to 200 moves,
+and download the decision journal. Requires a configured local inference
+connection; see [Model Ant setup](docs/model-ant.md).
