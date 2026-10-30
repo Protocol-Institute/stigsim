@@ -36,3 +36,6 @@
 @media(max-width:760px){.ant-header,.ant-guide-grid{grid-template-columns:1fr}.ant-guide{padding:18px}.ant-config-facts>div{grid-template-columns:80px minmax(0,1fr)}}
 .ant-pacing-status { height:3.2em; line-height:1.6; margin:0 0 12px; text-align:left; font-variant-numeric:tabular-nums; }
 .ant-pacing-status>span { display:block; }
+
+.ant-setup label.ant-setup-toggle { display:flex; align-items:center; gap:10px; }
+.ant-setup .ant-setup-toggle input[type=checkbox] { width:16px; height:16px; padding:0; margin:0; flex-shrink:0; accent-color:#bef264; }

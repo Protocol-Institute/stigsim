@@ -43,3 +43,40 @@ test('team API isolates each model history, rotates agents and caches duplicate 
   await post(path,{turn:2});assert.equal(JSON.parse(bodies[2].messages[1].content).history.length,1);
  }finally{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 });
+
+test('notebooks stay private, edits persist, and origin metadata survives transport without changing baseline input',()=>{
+ const state=createSwarm({...config,privateNotebooks:true,inscriptionOrigins:true,mechanicsFeedback:true});
+ applySwarmAction(state,{direction:'south',pebbleAction:'drop',pebbleId:null,message:'Original nest marker',notebook:'PRIVATE A: explore east'});
+ const pebble=state.pebbles.find(p=>p.carrier===null)!;
+ assert.deepEqual(pebble.messages[0].origin,{x:1,y:1});
+ state.nextAgent='ant-2';const other=swarmObservation(state);
+ assert.equal(other.privateNotebook?.text,'');assert.doesNotMatch(JSON.stringify(other),/PRIVATE A/);
+ assert.deepEqual(other.writablePebbles?.withoutTransfer,[pebble.id]);assert.equal(other.writablePebbles?.carriedCount,12);
+ applySwarmAction(state,{direction:'south',pebbleAction:'pick',pebbleId:pebble.id,message:'Collected',notebook:'PRIVATE B'});
+ applySwarmAction(state,{direction:'south',pebbleAction:'drop',pebbleId:pebble.id,message:'New site',notebook:null});
+ assert.deepEqual(pebble.messages[0].origin,{x:1,y:1});assert.deepEqual(pebble.messages[2].origin,{x:1,y:2});
+ assert.equal(pebble.y,2);assert.equal(state.agents[1].notebook,'PRIVATE B');assert.equal(state.agents[1].notebookRevision,1);
+ state.nextAgent='ant-1';assert.equal(swarmObservation(state).privateNotebook?.text,'PRIVATE A: explore east');
+ state.config.privateNotebooks=false;state.config.inscriptionOrigins=false;state.config.mechanicsFeedback=false;
+ const baseline=swarmObservation(state);assert.equal(baseline.privateNotebook,undefined);assert.equal(baseline.writablePebbles,undefined);
+ assert.equal(baseline.pebbles.here[0].messages[0].origin,undefined);assert.deepEqual(pebble.messages[0].origin,{x:1,y:1});
+});
+
+test('invalid notebook response is atomic and private notes never enter a teammate request',async()=>{
+ const payloads:any[]=[];let calls=0;
+ const mock:typeof fetch=async(_url,options)=>{const b=JSON.parse(String(options?.body));payloads.push(b);calls++;
+ const notebook=calls===1?'x'.repeat(2001):calls===2?'SECRET agent one route':null;
+ return Response.json({choices:[{message:{tool_calls:[{function:{name:'act',arguments:JSON.stringify({direction:'south',pebbleAction:'drop',pebbleId:null,message:'Marker',notebook})}}]}}]});};
+ const app=express();app.use(express.json());app.use(swarmAntRouter({ANT_MODEL:'gpt-5-mini',ANT_MODEL_BASE_URL:'http://test/v1',ANT_ALLOWED_MODELS:'gpt-5-mini,claude-sonnet-4-6'},mock));
+ const server=app.listen(0,'127.0.0.1');await new Promise<void>(resolve=>server.once('listening',resolve));const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+ const post=async(path:string,body:unknown)=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ try{
+  assert.equal((await post('/runs',{...config,privateNotebooks:'yes'})).status,400);
+  const state=await(await post('/runs',{...config,privateNotebooks:true,inscriptionOrigins:true,mechanicsFeedback:true})).json() as any;const path=`/runs/${state.id}/step`;
+  assert.equal((await post(path,{turn:0})).status,502);
+  const failed=await(await fetch(base+`/runs/${state.id}`)).json() as any;assert.equal(failed.entries.length,0);assert.equal(failed.agents[0].notebook,'');assert.equal(failed.pebbles.filter((p:any)=>p.carrier===null).length,0);
+  const one=await(await post(path,{turn:0})).json() as any;assert.equal(one.agents[0].notebook,'SECRET agent one route');
+  await post(path,{turn:1});assert.doesNotMatch(payloads[2].messages[1].content,/SECRET agent one route/);
+  await post(path,{turn:2});const own=JSON.parse(payloads[3].messages[1].content);assert.equal(own.observation.privateNotebook.text,'SECRET agent one route');assert.ok(payloads[3].tools[0].function.parameters.properties.notebook);
+ }finally{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
+});

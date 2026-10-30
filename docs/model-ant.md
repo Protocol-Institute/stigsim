@@ -370,3 +370,28 @@ The observer may inspect any agent's local pebble view and carried messages;
 observer access does not change model input. Version-1 `stigsim-swarm-ant`
 downloads contain configuration, rules, observations, actions, pebbles,
 inscriptions, outcomes, usage and pricing metadata.
+
+### Optional coordination aids (team record version 2)
+
+New team setups default to three independently selectable aids. Disable all
+three for the original model-input baseline; settings stay fixed per run.
+
+- **Private notebooks:** each agent may replace or clear a 2,000-character
+  notebook through its act tool, or omit/pass null to keep it. The notebook and
+  revision are supplied only to its owner on subsequent turns. Edits commit
+  with valid actions; malformed edits commit neither movement nor messages.
+  Notebooks are observer-visible research artifacts, not hidden reasoning.
+- **Inscription origins:** every new inscription stores immutable coordinates
+  where its author stood before the move, including inscriptions during pickup.
+  Enabled runs expose them to models. Disabled runs omit origins from model
+  observations while preserving this provenance in observer records. A moved
+  pebble retains both its old inscriptions and their original locations.
+- **Writable-pebble feedback:** observations explicitly list carried count and
+  eligible IDs for inscriptions with no transfer, drop, and pickup. These are
+  mechanics facts, not suggested moves or marking conventions.
+
+Version-2 downloads preserve the aid settings, exact condition-specific rules,
+private notebook edits and observation snapshots, and inscription origins.
+No initial team planning exchange or shared notebook is added. Agents still
+communicate only through locally visible pebbles; observers can inspect each
+agent's notebook separately. The original no-aid inputs remain available.

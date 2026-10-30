@@ -13,6 +13,11 @@
 
 ## Done
 
+- **2026-10-29** — Added optional Shared Pebbles coordination aids: private
+  editable notebooks, immutable inscription origins and explicit writable-ID
+  feedback, with baseline toggles, isolation tests and version-2 team exports.
+  Team planning remains deferred.
+
 - **2026-10-29** — Added Shared Pebbles (`/swarm-ant`): mixed-model teams,
   private local histories, shared movable pebbles with timestamped inscriptions,
   round-robin turns, team victory, observer inspection and research downloads.
