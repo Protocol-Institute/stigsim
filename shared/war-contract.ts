@@ -1,5 +1,8 @@
 import { DEFAULT_PARAMS, TOPOLOGY_MIMICRY, cloneTopology } from "@stigsim/sim-core";
 import type { AdoptionMode, Doctrine, MazeLayout, Role, Topology } from "@stigsim/sim-core";
+import type { WarAgentState, WarOpponentType } from "./war-agent-contract";
+
+export type { WarAgentDecision, WarAgentState, WarOpponentType } from "./war-agent-contract";
 
 export const WAR_RECONNECTED_ELSEWHERE_CODE = 4001;
 export const WAR_MATCH_REMOVED_CODE = 4002;
@@ -108,10 +111,12 @@ export interface WarSnapshot {
   grid: number[][];
   foodSources: Array<{ x: number; y: number; remaining: number; total: number }>;
   colonies: WarColonyWire[];
+  /** Present for matches with a transparent server-side opponent. */
+  agent?: WarAgentState;
 }
 
 export type WarClientMessage =
-  | { type: "create-room"; playerName: string; settings: OnlineWarSettings; randomOpponent?: boolean }
+  | { type: "create-room"; playerName: string; settings: OnlineWarSettings; opponent?: WarOpponentType; randomOpponent?: boolean }
   | { type: "join-room"; matchId: string; playerName: string; reconnectToken?: string }
   | { type: "claim-seat"; colonyId: number }
   | { type: "stand-up" }

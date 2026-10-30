@@ -34,6 +34,7 @@ import {
   type WarMetricsWire,
   type WarServerMessage,
   type WarSnapshot,
+  type WarAgentState,
 } from "../../../shared/war-contract";
 
 const EMPTY_METRICS: WarMetricsWire = {
@@ -168,7 +169,7 @@ function drawSnapshot(canvas: HTMLCanvasElement, snapshot: WarSnapshot, previous
   }
 }
 
-function ColonyPanel({ colonyId, name, metrics, doctrine, topology, adoption, editable, status, onClaim, onStandUp, onCommit }: {
+function ColonyPanel({ colonyId, name, metrics, doctrine, topology, adoption, editable, status, agentState, agentActive = false, onClaim, onStandUp, onCommit }: {
   colonyId: number;
   name: string | null;
   metrics: WarMetricsWire;
@@ -177,6 +178,8 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, topology, adoption, ed
   adoption: OnlineWarSettings["adoption"] | undefined;
   editable: boolean;
   status: string;
+  agentState?: WarAgentState;
+  agentActive?: boolean;
   onClaim?: () => void;
   onStandUp?: () => void;
   onCommit: (colonyId: number, doctrine: Doctrine) => void;
@@ -187,6 +190,7 @@ function ColonyPanel({ colonyId, name, metrics, doctrine, topology, adoption, ed
     {onClaim && <button className="war-button online-war-claim" onClick={onClaim}>Join Colony {colonyId + 1}</button>}
     {onStandUp && <button className="online-war-stand-up" onClick={onStandUp}>Stand up</button>}
     <div className="war-colony__hero"><span>Total ants</span><strong>{metrics.population}</strong></div>
+    {agentState && <AgentOodaPanel state={agentState} active={agentActive} />}
     <div className="war-metrics">
       {[["Reserve", Math.floor(metrics.reserve)], ["Food total", metrics.foodCollected], ["Hatching", metrics.hatching], ["Searching", metrics.searching], ["Carrying", metrics.carrying], ["Retreating", metrics.retreating], ["Waiting", metrics.waiting], ["Low energy", metrics.lowEnergy], ["Born", metrics.births], ["Died", metrics.deaths]].map(([label, value]) =>
         <div className="war-metric" key={label}><span>{label}</span><strong className={["Retreating", "Waiting", "Low energy", "Died"].includes(String(label)) && Number(value) > 0 ? "war-metric--warning" : ""}>{value}</strong></div>)}
@@ -232,7 +236,7 @@ function SettingsForm({ settings, onChange }: { settings: OnlineWarSettings; onC
 }
 
 function SetupModal({ mode, settings, onChange, onClose, onStart }: {
-  mode: "human" | "random";
+  mode: "human" | "random" | "agent";
   settings: OnlineWarSettings;
   onChange: (settings: OnlineWarSettings) => void;
   onClose: () => void;
@@ -241,14 +245,40 @@ function SetupModal({ mode, settings, onChange, onClose, onStart }: {
   return <div className="mp-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="mp-setup-modal" role="dialog" aria-modal="true" aria-labelledby="match-setup-title">
       <button className="mp-modal-close" aria-label="Close match setup" onClick={onClose}>×</button>
-      <span className="mp-modal-kicker">{mode === "random" ? "Solo match" : "Multiplayer match"}</span>
+      <span className="mp-modal-kicker">{mode === "human" ? "Multiplayer match" : "Solo match"}</span>
       <h2 id="match-setup-title">Set up your game</h2>
-      <p>{mode === "random" ? "Choose the rules, then play immediately against a colony with a randomized doctrine." : "Choose the rules before opening a seat for your opponent."}</p>
+      <p>{mode === "random" ? "Choose the rules, then play immediately against a colony with a randomized doctrine." : mode === "agent" ? "Face a transparent OODA agent that observes the match, explains its assessment, and changes doctrine." : "Choose the rules before opening a seat for your opponent."}</p>
       <SettingsForm settings={settings} onChange={onChange} />
-      <div className="mp-modal-actions"><button onClick={onClose}>Cancel</button><button className="primary" onClick={onStart}>{mode === "random" ? "Start against random" : "Create game"}</button></div>
+      <div className="mp-modal-actions"><button onClick={onClose}>Cancel</button><button className="primary" onClick={onStart}>{mode === "random" ? "Start against random" : mode === "agent" ? "Start against agent" : "Create game"}</button></div>
       <small>These settings are locked once the game is created.</small>
     </section>
   </div>;
+}
+
+function AgentOodaPanel({ state, active }: { state: WarAgentState; active: boolean }) {
+  const latest = state.decisions.at(-1);
+  const [stage, setStage] = useState(0);
+  const stages = ["Observe", "Orient", "Decide", "Act"] as const;
+  useEffect(() => {
+    if (!active) return;
+    // The agent can review faster than one full visual cycle at high sim
+    // speeds. Keep presentation time independent from decision arrivals so a
+    // fresh decision cannot repeatedly reset the loop before Act is shown.
+    const timer = window.setInterval(() => setStage(current => (current + 1) % 4), 2_400);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return <section className="war-agent-panel" aria-label="Agent OODA loop">
+    <header><span>Agent live</span><small>Next review at tick {state.nextReviewTick}</small></header>
+    {!latest ? <p className="war-agent-empty">Observing the opening. First review at tick {state.nextReviewTick}.</p> : <>
+      <nav className="war-agent-loop" aria-label="OODA stage">{stages.map((label, index) => <button type="button" key={label} className={stage === index ? "is-active" : ""} onClick={() => setStage(index)}><i />{label}</button>)}</nav>
+      <div className="war-agent-stage" aria-live="polite" key={stage}>
+        {stage === 0 && <article><span>Observe</span><ul>{latest.observe.map(item => <li key={item.signal} className={`is-${item.severity}`}><strong>{item.value}</strong>{item.description}</li>)}</ul></article>}
+        {stage === 1 && <article><span>Orient</span><h3>{latest.orient.situation.replaceAll("-", " ")}</h3><p>{latest.orient.summary}</p></article>}
+        {stage === 2 && <article><span>Decide</span><ol>{latest.decide.candidates.slice(0, 4).map(candidate => <li key={candidate.preset}><strong>{candidate.preset}</strong><meter min="0" max="1" value={candidate.score}>{candidate.score}</meter><em>{Math.round(candidate.score * 100)}%</em><small>{candidate.reasons[0]}</small></li>)}</ol></article>}
+        {stage === 3 && <article><span>Act</span><h3>{latest.act.changed ? `${latest.act.previousPreset} → ${latest.act.nextPreset}` : `Hold ${latest.act.previousPreset}`}</h3><p>{latest.expected}</p><small>{Math.round(latest.decide.confidence * 100)}% confidence · tick {latest.tick}</small></article>}
+      </div>
+    </>}
+  </section>;
 }
 
 function MatchRow({ match, mode, ownRoom, onJoin }: { match: WarMatchSummary; mode: "waiting" | "running"; ownRoom: boolean; onJoin: () => void }) {
@@ -298,13 +328,13 @@ export default function OnlineWarMode() {
   const [names, setNames] = useState<Array<string | null>>([null, null]);
   const [spectators, setSpectators] = useState<string[]>([]);
   const [settings, setSettings] = useState<OnlineWarSettings>(() => ({ ...DEFAULT_ONLINE_WAR_SETTINGS, masterSeed: generateMasterSeed() }));
-  const [setupMode, setSetupMode] = useState<"human" | "random" | null>(null);
+  const [setupMode, setSetupMode] = useState<"human" | "random" | "agent" | null>(null);
   const [error, setError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [historyReplay, setHistoryReplay] = useState<{ summary: WarMatchRecord; record: WarRunRecord } | null>(null);
   const [loadingReplayId, setLoadingReplayId] = useState<string | null>(null);
 
-  const openSetup = (mode: "human" | "random") => {
+  const openSetup = (mode: "human" | "random" | "agent") => {
     setSettings(current => settingsForOnlineWarSetup(mode, current));
     setSetupMode(mode);
   };
@@ -479,7 +509,7 @@ export default function OnlineWarMode() {
 
   if (!matchId) return <main className="mp-page mp-room-page"><div className="mp-directory-shell">
     <header className="mp-directory-header"><div><h1>Online War Mode</h1><p>Find a match, watch one in progress, or create a new challenge.</p></div>
-      <div className="mp-directory-actions"><div className="mp-saved-identity"><span>Playing as</span><strong>{playerName}</strong><button onClick={() => { localStorage.removeItem("stigsim-player-name"); setPlayerName(""); setNameConfirmed(false); }}>Change</button></div><button disabled={connection !== "Connected"} className="mp-create-room" onClick={() => openSetup("human")}>New game</button><button disabled={connection !== "Connected"} className="mp-random-room" onClick={() => openSetup("random")}>Play against random</button></div></header>
+      <div className="mp-directory-actions"><div className="mp-saved-identity"><span>Playing as</span><strong>{playerName}</strong><button onClick={() => { localStorage.removeItem("stigsim-player-name"); setPlayerName(""); setNameConfirmed(false); }}>Change</button></div><button disabled={connection !== "Connected"} className="mp-create-room" onClick={() => openSetup("human")}>New game</button><button disabled={connection !== "Connected"} className="mp-random-room" onClick={() => openSetup("random")}>Play against random</button><button disabled={connection !== "Connected"} className="mp-agent-room" onClick={() => openSetup("agent")}>Play against agent</button></div></header>
     {error && <div className="online-war-error">{error}</div>}
     {initialInvite && <section className="mp-invite-join"><span>Invitation to room <strong>{initialInvite}</strong></span><button onClick={() => join(initialInvite)}>Join room</button></section>}
     <div className="mp-directory-sections">
@@ -487,7 +517,7 @@ export default function OnlineWarMode() {
       <section className="mp-directory-section mp-active-section"><div className="mp-section-title"><div><span>2</span><h2>Active games</h2><p>Drop into a live match as a spectator.</p></div><strong>{runningMatches.length}</strong></div><div className="mp-match-rows">{runningMatches.length ? runningMatches.map(match => <MatchRow key={match.id} match={match} mode="running" ownRoom={Boolean(storedToken(match.id))} onJoin={() => join(match.id)} />) : <div className="mp-section-empty">No matches are live right now.</div>}</div></section>
       <section className="mp-directory-section"><div className="mp-section-title"><div><span>3</span><h2>Past games</h2><p>Completed results, research records, and verified playback.</p></div><strong>{matchHistory.length}</strong></div><div className="mp-match-rows">{matchHistory.length ? matchHistory.map(record => <HistoryRow key={record.recordId} record={record} loading={loadingReplayId === record.recordId} onReview={() => void reviewHistory(record)} />) : <div className="mp-section-empty">Completed games will appear here.</div>}</div></section>
     </div><small className="mp-directory-connection">{connection}</small>
-    {setupMode && <SetupModal mode={setupMode} settings={settings} onChange={setSettings} onClose={() => setSetupMode(null)} onStart={() => { send({ type: "create-room", playerName, settings, randomOpponent: setupMode === "random" }); setSetupMode(null); }} />}
+    {setupMode && <SetupModal mode={setupMode} settings={settings} onChange={setSettings} onClose={() => setSetupMode(null)} onStart={() => { send({ type: "create-room", playerName, settings, opponent: setupMode }); setSetupMode(null); }} />}
   </div></main>;
 
   const inviteUrl = new URL(appHref(`/multiplayer?match=${matchId}`, import.meta.env.BASE_URL), location.origin).toString();
@@ -515,12 +545,12 @@ export default function OnlineWarMode() {
     {error && <div className="online-war-error">{error}</div>}
     {snapshot && <section className="war-matchbar" aria-label="Locked match settings"><div className="war-matchbar__group"><strong>Match settings</strong><div className="war-matchbar__summary"><span>{snapshot.settings.startingAnts} ants / colony</span><span>~{Math.round(snapshot.settings.tankMax / (DEPOSIT_RATE * DEPOSITS_PER_CELL))}-cell gland</span><span>{snapshot.settings.foodSources} food {snapshot.settings.foodSources === 1 ? "source" : "sources"}</span><span>{snapshot.settings.foodPerSource} food / source</span><span>{Math.round(snapshot.settings.loopRate * 100)}% maze loops</span><span>{layoutChoice(snapshot.settings.layout).label} map</span><span>{choiceFor(snapshot.settings.topology).label} topology</span><span>Doctrine: {adoptionChoice(snapshot.settings.adoption).label.toLowerCase()}</span><span className="war-matchbar__seed" title={snapshot.settings.masterSeed}>Seed: {snapshot.settings.masterSeed}</span></div></div><div className="war-matchbar__group war-matchbar__group--controls"><strong>Simulation</strong><div className="war-matchbar__summary"><span>{snapshot.settings.stepsPerSecond} steps / sec</span></div></div></section>}
     <section className="war-arena">
-      <ColonyPanel colonyId={0} name={names[0]} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} topology={snapshot?.settings.topology ?? settings.topology} adoption={snapshot?.settings.adoption ?? settings.adoption} editable={colonyId === 0} status={playerStatus(0)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 0 ? () => send({ type: "stand-up" }) : undefined} onCommit={changeDoctrine} />
+      <ColonyPanel colonyId={0} name={names[0]} metrics={snapshot?.colonies[0]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(0)} topology={snapshot?.settings.topology ?? settings.topology} adoption={snapshot?.settings.adoption ?? settings.adoption} editable={colonyId === 0} status={playerStatus(0)} agentState={snapshot?.agent?.colonyId === 0 ? snapshot.agent : undefined} agentActive={snapshot?.phase === "running"} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[0] ? () => send({ type: "claim-seat", colonyId: 0 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 0 ? () => send({ type: "stand-up" }) : undefined} onCommit={changeDoctrine} />
       <div className="war-maze online-war-maze"><canvas ref={canvasRef} width={W} height={H} />
         {snapshot?.phase === "waiting" && <div className="online-war-overlay"><span>Room {matchId}</span><h2>{waitingTitle}</h2><p>{waitingMessage}</p><div>{!connected.every(Boolean) && <button className="war-button" onClick={() => void shareInvite()}>{shareCopied ? "Link copied" : "Share invite"}</button>}{colonyId !== null && connected.every(Boolean) && <button className="war-button war-button--primary" disabled={ready[colonyId]} onClick={() => send({ type: "ready" })}>{ready[colonyId] ? "Ready — waiting" : "Ready up"}</button>}</div></div>}
         {snapshot?.phase === "finished" && <div className="online-war-overlay"><span>Match complete</span><h2>{status}</h2><p>The match has ended. Replay these conditions or return to the match rooms.</p><div>{colonyId !== null && <button className="war-button war-button--primary" onClick={() => send({ type: "reset" })}>Rematch same seed</button>}<a className="war-button" href={appHref("/multiplayer", import.meta.env.BASE_URL)}>Match rooms</a></div></div>}
         <div className="war-maze__legend"><span>Blue: Colony 1</span><span>Yellow: carrying food</span><span>White ring: spoiler</span><span>Inset: false-trail provenance</span><span>Red ring: low energy</span><span>Red: Colony 2</span></div></div>
-      <ColonyPanel colonyId={1} name={names[1]} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} topology={snapshot?.settings.topology ?? settings.topology} adoption={snapshot?.settings.adoption ?? settings.adoption} editable={colonyId === 1} status={playerStatus(1)} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 1 ? () => send({ type: "stand-up" }) : undefined} onCommit={changeDoctrine} />
+      <ColonyPanel colonyId={1} name={names[1]} metrics={snapshot?.colonies[1]?.metrics ?? EMPTY_METRICS} doctrine={doctrine(1)} topology={snapshot?.settings.topology ?? settings.topology} adoption={snapshot?.settings.adoption ?? settings.adoption} editable={colonyId === 1} status={playerStatus(1)} agentState={snapshot?.agent?.colonyId === 1 ? snapshot.agent : undefined} agentActive={snapshot?.phase === "running"} onClaim={snapshot?.phase === "waiting" && colonyId === null && !connected[1] ? () => send({ type: "claim-seat", colonyId: 1 }) : undefined} onStandUp={snapshot?.phase === "waiting" && colonyId === 1 ? () => send({ type: "stand-up" }) : undefined} onCommit={changeDoctrine} />
     </section>
   </main>;
 }

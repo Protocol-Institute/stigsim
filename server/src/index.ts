@@ -1,3 +1,4 @@
+import { swarmAntRouter } from './swarm-ant';
 import { createServer } from "http";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -5,6 +6,7 @@ import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import router from "./routes";
+import { modelAntRouter } from "./model-ant";
 import { attachInfiniteWs, shutdownInfinite } from "./ws";
 import { attachWarWs, shutdownWar } from "./war";
 import { closeDb } from "./db";
@@ -36,6 +38,8 @@ app.use(cors({
   },
 }));
 app.use(express.json({ limit: "16kb" }));
+app.use("/api/model-ant", modelAntRouter());
+app.use("/api/swarm-ant", swarmAntRouter());
 app.use("/api", router);
 
 // Preview environments can host the built client and authoritative server on

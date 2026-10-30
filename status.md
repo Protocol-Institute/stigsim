@@ -13,6 +13,93 @@
 
 ## Done
 
+- **2026-10-29** — Added optional Shared Pebbles coordination aids: private
+  editable notebooks, immutable inscription origins and explicit writable-ID
+  feedback, with baseline toggles, isolation tests and version-2 team exports.
+  Team planning remains deferred.
+
+- **2026-10-29** — Added Shared Pebbles (`/swarm-ant`): mixed-model teams,
+  private local histories, shared movable pebbles with timestamped inscriptions,
+  round-robin turns, team victory, observer inspection and research downloads.
+
+- **2026-10-29** — Published the Model Ant feature branch and configured an
+  isolated, password-protected Railway preview from GitHub. Production world
+  services and database settings are unchanged.
+
+- **2026-10-29** — Streamlined Model Ant run layout: consolidated configuration
+  and New experiment in the header card, moved execution controls above the
+  maze, and separated reference explanations from the live rail.
+
+- **2026-10-29** — Clarified Model Ant upstream HTTP 5xx errors with safe
+  retry guidance instead of implying a configuration or quota diagnosis.
+
+- **2026-10-29** — Exposed policy-authoring agents alongside action-only Model
+  Ant comparisons, with capability validation for Jev, explicit setup
+  constraints, restored policy/revision views, and version-11 exports.
+
+- **2026-10-29** — Added Model Ant experiment setup with server-approved model
+  selection, seed and loop settings, information conditions, right-hand and
+  exploration presets, custom instructions, fixed run summaries and version-10
+  configuration exports. New experiments open paused; no branch was created.
+
+- **2026-10-28** — Made supplied-policy compliance explicit in the Model Ant
+  decision question, with per-step instruction recording and version-9 exports.
+
+- **2026-10-28** — Added a supplied exploration-policy condition for Model Ant,
+  with observed-map-only compliance checks, visible departure counts, and
+  version-8 exports. Model choices are never overridden.
+
+- **2026-10-28** — Added optional observed-map assistance for Model Ant selection
+  comparisons: observed cell types and entry counts only, fixed per run, with
+  inspectable request snapshots and version-7 exports.
+
+- **2026-10-28** — Added token-aware Model Ant request pacing and visible
+  60-second rate-limit cooldowns, with automatic retries during running
+  experiments and a pause after three consecutive 429 responses.
+
+- **2026-10-28** — Added Jev/OpenJev decision adapters and a navigation-only
+  comparison mode shared with GPT/Claude: 12 joint actions, full local history,
+  reported confidence/probabilities, input-only Jev costs and version-6 exports.
+
+- **2026-10-28** — Added per-run tokens and estimated USD spending to Model Ant’s
+  main stats, with catalog-rate snapshots, partial-total handling, and exported
+  accounting metadata.
+
+- **2026-10-28** — Configured the local Model Ant comparison for Claude Sonnet
+  4.6 and added a gateway compatibility guard for its unsupported
+  `parallel_tool_calls` option.
+
+- **2026-10-28** — Added Model Ant’s blank, model-authored persistent policy
+  workspace and `update_policy` tool. Policies survive context compaction;
+  current text and revision history are visible and exported in version 5.
+
+- **2026-10-28** — Model Ant now uses the browser-only Maze Simulator’s shared
+  31 × 31 generator, seed streams, and 0–50% loop control (10% default), with
+  version-4 environment metadata in experiment downloads.
+
+- **2026-10-28** — Model Ant now uses a persistent tool-driven conversation,
+  model-chosen context compaction, a speed/usage objective, optional public
+  explanations, and version-3 usage-aware exports. The automatic notebook is
+  no longer supplied to the model; memory and journal rewrites are not required.
+
+- **2026-10-28** — Added model-controlled reusable pebbles to Model Ant, with
+  local sensing, finite inventory, drop/pick actions, visible markers, action
+  outcomes, and version-2 experiment exports.
+
+- **2026-10-27** — Model Ant now retains an automatic notebook of personally
+  observed cells and entry counts, without revealing unseen terrain or choosing
+  moves for the model.
+
+- **2026-10-27** — Added the local Model Ant prototype: one model-controlled ant,
+  seeded maze, adjacent-cell observations, bounded model memory, step/run
+  controls, decision journal and export, and a server-side inference adapter.
+  Live inference requires a configured model endpoint.
+
+- **2026-09-21** — Added a transparent deterministic OODA opponent for Online
+  War, including versioned agent contracts, server-side state analysis,
+  preset-scored doctrine decisions, an in-match decision journal, and the
+  `Play against agent` flow. (Codex)
+
 - **2026-09-20** — Verified the production deployment: the Cloudflare-managed
   `stigsim.protocol-institute.org` CNAME resolves to GitHub Pages, and Infinite
   Mode runs on one Railway replica with Neon Postgres persistence. (Daniel)

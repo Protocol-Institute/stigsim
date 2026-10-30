@@ -14,7 +14,7 @@ head-to-head War matches, and a persistent multiplayer world.
 
 ### [Open Stigsim →](https://stigsim.protocol-institute.org/)
 
-Start at the simulation index to compare all four modes and choose an
+Start at the simulation index to compare the modes and choose an
 experience.
 
 ### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/maze)
@@ -35,7 +35,8 @@ or replay the result without connecting to the simulation server.
 ### [Play Online War →](https://stigsim.protocol-institute.org/multiplayer)
 
 Create or join a two-colony match, invite another player, spectate a running
-game, or practice against a randomized colony.
+game, practice against a randomized colony, or face a transparent OODA agent
+that explains and applies its doctrine decisions.
 
 ## Simulation modes
 
@@ -137,6 +138,12 @@ server is the recorder. Only server-accepted doctrine changes enter the command
 stream. Its bounded storage profile samples metrics every 10 ticks, agents
 every 50, and full pheromone fields every 250, with a fixed capacity per
 channel.
+
+The built-in Online War agent is also server-authoritative. It periodically
+derives bounded evidence from match state, scores the available doctrine
+presets, and exposes an Observe–Orient–Decide–Act journal alongside the match.
+Its applied doctrine changes use the normal recorded command path, so replay
+remains deterministic. See the [War agent guide](docs/war-agents.md).
 
 By default a War match uses the mirrored map layout: the maze equals its own
 180-degree rotation about the centre cell, so both nests face the same maze,
@@ -265,3 +272,16 @@ server; Online War sends match participation and doctrine changes to that
 server. Online War research records use recording-local participant ids and
 exclude player names, reconnect tokens, network addresses, and transport
 metadata.
+
+### Model Ant experiment
+
+Open `/model-ant` to watch one language model navigate a maze using only adjacent
+cells and its own bounded memory. Step through decisions, run up to 200 moves,
+and download the decision journal. Requires a configured local inference
+connection; see [Model Ant setup](docs/model-ant.md).
+
+### Shared Pebbles experiment
+
+Open `/swarm-ant` to configure 2–4 model agents exploring one maze. Agents
+coordinate through shared pebbles and timestamped inscriptions; any agent
+finding the exit wins for the team. See [experiment details](docs/model-ant.md).

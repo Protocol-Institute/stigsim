@@ -14,3 +14,7 @@ __pycache__/
 .context
 .superpowers/
 .claude/worktrees/
+
+# Local experiment artifacts and package cache
+/tmp/
+/.pnpm-store/

@@ -14,6 +14,7 @@ import { db } from "./db";
 import { warMatchRecordsTable } from "./schema";
 import { isAllowedWebSocketOrigin } from "./security";
 import { registerWebSocketRoute } from "./upgrade-router";
+import { DeterministicOodaWarAgent, type WarAgentController } from "./war-agent";
 import { DEFAULT_ONLINE_WAR_SETTINGS, WAR_MATCH_REMOVED_CODE, WAR_RECONNECTED_ELSEWHERE_CODE } from "../../shared/war-contract";
 import { PRESETS } from "../../src/doctrine-presets";
 import { conformDoctrine, isNamedTopology } from "../../src/topology-choices";
@@ -81,6 +82,7 @@ interface PlayerSlot {
   ready: boolean;
   name: string;
   isBot?: boolean;
+  botKind?: "random" | "agent";
 }
 
 interface WarMatch {
@@ -97,6 +99,7 @@ interface WarMatch {
   finishedAt: number | null;
   createdAt: number;
   resultRecorded: boolean;
+  agent?: WarAgentController;
 }
 
 const matches = new Map<string, WarMatch>();
@@ -475,7 +478,13 @@ function broadcastPlayers(match: WarMatch): void {
 }
 
 function broadcastSnapshot(match: WarMatch): void {
-  broadcast(match, { type: "snapshot", snapshot: warWireCodec.snapshot(match) });
+  broadcast(match, { type: "snapshot", snapshot: snapshotForMatch(match) });
+}
+
+function snapshotForMatch(match: WarMatch) {
+  const snapshot = warWireCodec.snapshot(match);
+  if (match.agent) snapshot.agent = match.agent.state();
+  return snapshot;
 }
 
 function playerIndex(match: WarMatch, socket: WebSocket): number {
@@ -524,7 +533,7 @@ function enterMatch(socket: WebSocket, match: WarMatch, name: string, reconnectT
     reconnectToken: colonyId >= 0 ? match.players[colonyId]!.token : undefined,
     phase: match.phase,
   });
-  send(socket, { type: "snapshot", snapshot: warWireCodec.snapshot(match) });
+  send(socket, { type: "snapshot", snapshot: snapshotForMatch(match) });
   broadcastPlayers(match);
   broadcastLobby();
 }
@@ -571,12 +580,13 @@ function standUp(socket: WebSocket, match: WarMatch): void {
 }
 
 function resetMatch(match: WarMatch): void {
-  const doctrines = match.players.map(player => player?.isBot
+  const doctrines = match.players.map(player => player?.botKind === "random"
     ? randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)
     : DEFAULT_DOCTRINE);
   const recorded = makeRecordedWar(match.settings, doctrines, Boolean(match.players[1]?.isBot));
   match.recorder = recorded.recorder;
   match.war = recorded.war;
+  match.agent = match.players[1]?.botKind === "agent" ? new DeterministicOodaWarAgent(1) : undefined;
   match.phase = "waiting";
   match.finishedAt = null;
   match.simulationAccumulator = 0;
@@ -615,7 +625,11 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     releaseRoomForCapacity();
     if (matches.size >= MAX_MATCHES) return send(socket, { type: "error", message: "The server is at match capacity" });
     roomCreatedBySocket.add(socket);
-    if (!message.randomOpponent) {
+    const opponent = message.opponent ?? (message.randomOpponent ? "random" : "human");
+    if (opponent !== "human" && opponent !== "random" && opponent !== "agent") {
+      return send(socket, { type: "error", message: "Unknown opponent type" });
+    }
+    if (opponent === "human") {
       leaveMatch(socket);
       const { match, token } = createWaitingMatch(socket, name, message.settings);
       send(socket, { type: "room-created", matchId: match.id, reconnectToken: token });
@@ -624,15 +638,22 @@ function handleMessage(socket: WebSocket, message: WarClientMessage): void {
     }
     leaveMatch(socket);
     const { match, token } = createWaitingMatch(socket, name, message.settings);
-    match.players[1] = { token: randomUUID(), socket: null, ready: true, name: "Random Colony", isBot: true };
+    const agentOpponent = opponent === "agent";
+    match.players[1] = {
+      token: randomUUID(), socket: null, ready: true,
+      name: agentOpponent ? "OODA Agent" : "Random Colony",
+      isBot: true,
+      botKind: agentOpponent ? "agent" : "random",
+    };
     match.players[0]!.ready = true;
     const recorded = makeRecordedWar(
       match.settings,
-      [DEFAULT_DOCTRINE, randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)],
+      [DEFAULT_DOCTRINE, agentOpponent ? DEFAULT_DOCTRINE : randomOpponentDoctrine(match.settings.masterSeed, match.settings.topology)],
       true,
     );
     match.recorder = recorded.recorder;
     match.war = recorded.war;
+    match.agent = agentOpponent ? new DeterministicOodaWarAgent(1) : undefined;
     match.phase = "running";
     enterMatch(socket, match, name, token);
     return;
@@ -690,6 +711,16 @@ function advanceMatches(): void {
       match.simulationAccumulator += match.settings.stepsPerSecond / CLOCK_RATE;
       while (match.simulationAccumulator >= 1 && match.war.result === null) {
         match.recorder.step();
+        if (match.agent && match.war.simulation.tick % 25 === 0) {
+          const agentStep = match.agent.advance(warWireCodec.snapshot(match));
+          if (agentStep?.doctrine && validWarDoctrine(agentStep.doctrine)) {
+            match.recorder.command(onlineWarPlayerSource(match.agent.colonyId), {
+              kind: "set-doctrine",
+              colonyId: match.agent.colonyId,
+              doctrine: normalizeWarDoctrine(agentStep.doctrine, match.settings.topology),
+            });
+          }
+        }
         match.simulationAccumulator--;
       }
       if (match.war.result !== null) {
