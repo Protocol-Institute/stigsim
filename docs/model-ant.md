@@ -333,3 +333,40 @@ https://stigsim-model-ant-preview-model-ant-preview.up.railway.app/model-ant
 Gateway credentials and the shared access password live in service variables.
 A local ignored `.env.model-ant-preview.local` retains the generated password
 for the owner. Never commit that file or include the password in the URL.
+
+## Shared Pebbles team experiment
+
+`/swarm-ant` is a separate mode for 2–4 text-generating model agents in one shared
+31×31 maze. Select the same or different server-approved models, seed, loop rate,
+and a total team movement budget (20–800 attempts). All agents start at the nest;
+any agent reaching the exit wins for the team. Agents can share a cell. Each
+starts with 12 reusable, individually identified pebbles. Turns interleave in a
+fixed rotation: logical co-presence, not simultaneous model requests.
+
+An agent receives only its private observation/action history and current local
+view. It can read carried pebbles and pebbles on its cell and four adjacent
+cells, including all inscriptions attached to those pebbles. Nearby agent
+positions are visible, but distant agents, hidden terrain, and other agents'
+private histories are absent. There is no team-wide chat feed in model input.
+Each inscription records author, model, server UTC timestamp, and team turn.
+Messages append; they remain with a pebble when any agent carries or moves it.
+
+The act tool combines movement, optional drop/pick, optional pebble ID and an
+optional inscription up to 300 characters. Transfers and inscriptions happen
+before movement. A message with no transfer targets a pebble on the current
+cell; it cannot create a pebble or write remotely. Invalid transfers or writes
+are recorded, while movement still proceeds. Blocked movement consumes a turn.
+No conventions or navigation policy are prescribed. Jev is unavailable because
+its decision-only interface cannot author free text.
+
+The server owns shared state and private history selection. Retrying an already
+committed turn returns its snapshot without another model call. Sessions are
+bounded, expire after one hour idle, and disappear on server restart. The same
+preview password protects the team API. Aggregate token/cost totals include
+reported failed-request usage and mark missing usage as partial. Browser pacing
+spans the team's successful requests; provider errors pause the run.
+
+The observer may inspect any agent's local pebble view and carried messages;
+observer access does not change model input. Version-1 `stigsim-swarm-ant`
+downloads contain configuration, rules, observations, actions, pebbles,
+inscriptions, outcomes, usage and pricing metadata.

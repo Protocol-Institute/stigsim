@@ -279,3 +279,9 @@ Open `/model-ant` to watch one language model navigate a maze using only adjacen
 cells and its own bounded memory. Step through decisions, run up to 200 moves,
 and download the decision journal. Requires a configured local inference
 connection; see [Model Ant setup](docs/model-ant.md).
+
+### Shared Pebbles experiment
+
+Open `/swarm-ant` to configure 2–4 model agents exploring one maze. Agents
+coordinate through shared pebbles and timestamped inscriptions; any agent
+finding the exit wins for the team. See [experiment details](docs/model-ant.md).

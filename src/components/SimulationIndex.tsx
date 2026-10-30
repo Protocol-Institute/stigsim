@@ -62,6 +62,7 @@ export default function SimulationIndex({ href }: { href: (pathname: string) => 
           accent="#fb7185"
         />
         <SimulationCard eyebrow="Experiment · One ant" title="Model Ant" description="Can a language model find the exit with only a local view and its own memory? Watch one decision at a time." href={href("/model-ant")} accent="#a3e635" />
+        <SimulationCard eyebrow="Experiment · Agent team" title="Shared Pebbles" description="Different models explore one maze, leaving timestamped messages on shared pebbles. One agent finds the exit; the team wins." href={href("/swarm-ant")} accent="#c084fc" />
       </section>
     </main>
   );

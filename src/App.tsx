@@ -1,3 +1,4 @@
+import SwarmAnt from "./modes/swarm-ant/SwarmAnt";
 import ModelAnt from "./modes/model-ant/ModelAnt";
 import AntSim from "./AntSim";
 import InfiniteSim from "./components/InfiniteSim";
@@ -15,7 +16,8 @@ export default function App() {
   if (route === "index") return <SimulationIndex href={href} />;
 
   let content;
-  if (route === "model-ant") content = <ModelAnt />;
+  if (route === "swarm-ant") content = <SwarmAnt />;
+  else if (route === "model-ant") content = <ModelAnt />;
   else if (route === "war") content = <LocalWarMode />;
   else if (route === "multiplayer") content = <OnlineWarMode />;
   else if (route === "not-found") content = <NotFound href={href} />;

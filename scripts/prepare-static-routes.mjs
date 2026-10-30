@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 const outputDir = resolve("dist");
 const entryPage = resolve(outputDir, "index.html");
 const fallbackPage = resolve(outputDir, "404.html");
-const staticRoutes = ["model-ant", "maze", "war", "multiplayer", "infinite"];
+const staticRoutes = ["swarm-ant", "model-ant", "maze", "war", "multiplayer", "infinite"];
 
 const entryHtml = await readFile(entryPage, "utf8");
 

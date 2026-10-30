@@ -13,6 +13,10 @@
 
 ## Done
 
+- **2026-10-29** — Added Shared Pebbles (`/swarm-ant`): mixed-model teams,
+  private local histories, shared movable pebbles with timestamped inscriptions,
+  round-robin turns, team victory, observer inspection and research downloads.
+
 - **2026-10-29** — Published the Model Ant feature branch and configured an
   isolated, password-protected Railway preview from GitHub. Production world
   services and database settings are unchanged.
