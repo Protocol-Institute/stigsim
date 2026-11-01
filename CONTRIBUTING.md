@@ -169,3 +169,18 @@ never populated `discoveredSources` before removing a source.
 ## Shared-world mode
 
 Run `pnpm dev:server` alongside `pnpm dev`. Production must use one server replica and Postgres persistence; see `server/README.md`.
+
+## Strategy Lab
+
+`src/modes/strategy-lab` hosts the versioned food-collection challenge using
+`mazeMode.create`, not a second simulation implementation. Controllers execute
+inside a pinned QuickJS WebAssembly interpreter with no host callbacks or I/O;
+a background Worker keeps the browser responsive. All accepted changes go
+through the command bus and export as ordinary Maze traces. See
+[`docs/strategy-lab.md`](docs/strategy-lab.md) before changing its rules.
+
+`pnpm test:app` covers controller isolation, resource limits, entrant-selected
+observation timing, scoring, and replay. `pnpm strategy-round` runs the same
+controller/engine path headlessly. Check `pnpm build` and smoke-test practice in
+the built preview too: Node tests alone do not verify WebAssembly asset loading
+inside a browser Worker. The new route and its engine are loaded on demand.

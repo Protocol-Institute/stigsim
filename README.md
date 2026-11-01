@@ -14,8 +14,17 @@ head-to-head War matches, and a persistent multiplayer world.
 
 ### [Open Stigsim →](https://stigsim.protocol-institute.org/)
 
-Start at the simulation index to compare all four modes and choose an
+Start at the simulation index to compare the modes and choose an
 experience.
+
+### Strategy Lab (local preview)
+
+Open `/strategy-lab` to edit an ant controller, compare it with a fixed reference
+on shared practice mazes, watch deterministic replays, and export entries for
+others to remix. Controllers choose their own observation schedule and compute
+their own detectors from raw field observations. No account or server is needed.
+See the [Strategy Lab guide](docs/strategy-lab.md) for the versioned challenge,
+controller contract, fair budgets, and organizer round runner.
 
 ### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/maze)
 
