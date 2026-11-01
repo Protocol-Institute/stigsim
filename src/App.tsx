@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import AntSim from "./AntSim";
 import InfiniteSim from "./components/InfiniteSim";
 import NotFound from "./components/NotFound";
@@ -5,6 +6,8 @@ import SimulationIndex from "./components/SimulationIndex";
 import LocalWarMode from "./modes/war/LocalWarMode";
 import OnlineWarMode from "./modes/war/OnlineWarMode";
 import { appHref, resolveAppRoute } from "./routes";
+
+const StrategyLab = lazy(() => import("./modes/strategy-lab/StrategyLab"));
 
 export default function App() {
   const basePath = import.meta.env.BASE_URL;
@@ -14,7 +17,8 @@ export default function App() {
   if (route === "index") return <SimulationIndex href={href} />;
 
   let content;
-  if (route === "war") content = <LocalWarMode />;
+  if (route === "strategy-lab") content = <Suspense fallback={<p>Loading Strategy Lab…</p>}><StrategyLab /></Suspense>;
+  else if (route === "war") content = <LocalWarMode />;
   else if (route === "multiplayer") content = <OnlineWarMode />;
   else if (route === "not-found") content = <NotFound href={href} />;
   else content = route === "maze" ? <AntSim /> : <InfiniteSim simulationsHref={href("/")} />;
