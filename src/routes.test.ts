@@ -11,6 +11,7 @@ test("normalizes trailing slashes without changing the root", () => {
 test("resolves every public simulation route explicitly", () => {
   assert.equal(resolveAppRoute("/"), "index");
   assert.equal(resolveAppRoute("/maze"), "maze");
+  assert.equal(resolveAppRoute("/strategy-lab/"), "strategy-lab");
   assert.equal(resolveAppRoute("/war"), "war");
   assert.equal(resolveAppRoute("/multiplayer"), "multiplayer");
   assert.equal(resolveAppRoute("/multiplayer/ABC123"), "multiplayer");
@@ -25,6 +26,7 @@ test("resolves routes when the app is deployed below the domain root", () => {
   assert.equal(normalizePathname("/stigsim/maze/", "/stigsim/"), "/maze");
   assert.equal(resolveAppRoute("/stigsim/", "/stigsim/"), "index");
   assert.equal(resolveAppRoute("/stigsim/infinite", "/stigsim/"), "infinite");
+  assert.equal(resolveAppRoute("/stigsim/strategy-lab", "/stigsim/"), "strategy-lab");
   assert.equal(resolveAppRoute("/stigsim/multiplayer/ABC123", "/stigsim/"), "multiplayer");
 });
 

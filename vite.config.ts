@@ -11,6 +11,7 @@ if (!Number.isInteger(port) || port <= 0 || port > 65535) {
 export default defineConfig({
   base,
   plugins: [react()],
+  worker: { format: "es" },
   server: {
     host: "0.0.0.0",
     port,
