@@ -104,3 +104,75 @@ test('setting-change and total compute limits disqualify without a fallback', as
   const cumulative = { ...usage(), interrupts: LIMITS.interruptsPerTrial };
   await assert.rejects(decide(STARTERS[0].source, {}, null, 0, cumulative));
 });
+
+test('interactive pause/step batches preserve headless outcomes and existing challenge fingerprints', async () => {
+  const { TrialSession } = await import('./engine');
+  const headless = await runTrial(STARTERS[2], 'interactive-test', 0);
+  const session = new TrialSession(STARTERS[2], 'interactive-test');
+  assert.equal(session.snapshot().observation.tick, 0);
+  await session.advance(1);
+  assert.equal(session.snapshot().observation.tick, 1);
+  await session.advance(137);
+  assert.equal(session.snapshot().observation.tick, 138);
+  while (!session.done) await session.advance(16);
+  assert.deepEqual(session.result(), headless);
+  await session.advance(1);
+  assert.deepEqual(session.result(), headless);
+  await assert.rejects(session.advance(0));
+  // Recorded before the interactive host refactor, on the same versioned rules.
+  const reference = await runTrial(STARTERS[0], 'strategy-practice-1', 0);
+  assert.equal(reference.food, 206);
+  assert.equal(reference.fingerprint, 'ebfa44da');
+});
+
+test('split observer/controller sources round-trip and carry separate state through the sandbox', async () => {
+  const { composeSource, readEditors } = await import('./authoring');
+  const editors = {
+    observer: `function observe(o,s){return {signals:{value:(s||0)+1},state:(s||0)+1,nextTick:o.tick+17};}`,
+    controller: `function control(signal,s,c){return {state:(s||0)+signal.value,settings:{...c.initial,trailBias:signal.value}};}`,
+  };
+  const source = composeSource(editors);
+  assert.deepEqual(readEditors(source), editors);
+  assert.equal(readEditors('function step(o){return {nextTick:3001,state:null}}'), null);
+  assert.equal(readEditors(source + '\n// preserve arbitrary custom code'), null);
+  const a = await decide(source, { tick: 0, settings: BASELINE }, null, 0, usage());
+  const b = await decide(source, { tick: 17, settings: a.settings }, a.state, 17, usage());
+  assert.equal(b.nextTick, 34);
+  assert.deepEqual(b.state, { initial: BASELINE, observer: 2, controller: 3, signals: { value: 2 } });
+  assert.equal(b.settings!.trailBias, 2);
+  await assert.rejects(decide(composeSource({ ...editors, controller: 'async function control(){return {state:null};}' }),
+    { tick: 0, settings: BASELINE }, null, 0, usage()));
+  for (const starter of STARTERS) {
+    const trial = await runTrial(starter, 'split-starter-check', 0);
+    assert.equal(trial.error, undefined, starter.name + ': ' + trial.error);
+  }
+});
+
+test('100-maze evaluation is reproducible, streams every trial, and limits replay storage', async () => {
+  const { evaluationRound, summarizeTrials } = await import('./evaluation');
+  const round = evaluationRound('fixed-evaluation-seed');
+  assert.deepEqual(round, evaluationRound('fixed-evaluation-seed'));
+  assert.equal(new Set(round.seeds).size, 100);
+  assert.notDeepEqual(round.seeds, evaluationRound('another-set').seeds);
+  assert.throws(() => evaluationRound(''));
+  let completed = 0;
+  const report = await runRound([STARTERS[0]], round, undefined, undefined, {
+    traces: 'first', onTrial: (_trial, count) => { assert.equal(count, ++completed); },
+  });
+  assert.equal(report.trials.length, 100);
+  assert.equal(completed, 100);
+  assert.equal(report.trials.filter(t => t.trace).length, 1);
+  assert.ok(report.trials[0].trace);
+  const rerun = await runTrial(STARTERS[0], round.seeds[1], 0);
+  assert.equal(rerun.fingerprint, report.trials[1].fingerprint);
+  const summary = summarizeTrials(report.trials);
+  assert.equal(summary.n, 100);
+  assert.equal(summary.failures, 0);
+  assert.equal(summary.mean, standings(report)[0].mean);
+  assert.ok(summary.standardError! >= 0);
+  const sample = report.trials.slice(0, 2).map((t, i) => ({ ...t, food: i ? 14 : 10 }));
+  assert.deepEqual(summarizeTrials(sample), { n: 2, mean: 12, standardError: 2, min: 10, max: 14, failures: 0 });
+  report.trials[3].error = 'failed';
+  assert.equal(summarizeTrials(report.trials).mean, null);
+  assert.equal(standings(report)[0].eligible, false);
+});

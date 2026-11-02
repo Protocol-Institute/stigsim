@@ -180,7 +180,8 @@ through the command bus and export as ordinary Maze traces. See
 [`docs/strategy-lab.md`](docs/strategy-lab.md) before changing its rules.
 
 `pnpm test:app` covers controller isolation, resource limits, entrant-selected
-observation timing, scoring, and replay. `pnpm strategy-round` runs the same
-controller/engine path headlessly. Check `pnpm build` and smoke-test practice in
+observation timing, interactive/headless equivalence, 100-maze evaluations,
+scoring, and replay. `pnpm strategy-round` runs the same
+controller/engine path headlessly. Check `pnpm build` and smoke-test sandbox play and evaluation in
 the built preview too: Node tests alone do not verify WebAssembly asset loading
 inside a browser Worker. The new route and its engine are loaded on demand.

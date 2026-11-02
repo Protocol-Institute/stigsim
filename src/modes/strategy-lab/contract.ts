@@ -67,5 +67,3 @@ export function parseRound(value: unknown): Round {
   }
   return { format: r.format, name: r.name, seeds: [...r.seeds], replicates: r.replicates };
 }
-export const PRACTICE_ROUND: Round = { format: 'stigsim-strategy-round@1', name: 'Public practice',
-  seeds: ['strategy-practice-1', 'strategy-practice-2', 'strategy-practice-3'], replicates: 1 };

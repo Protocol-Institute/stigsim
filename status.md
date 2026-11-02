@@ -3,8 +3,8 @@
 ## Active
 
 - Build a focused Strategy Lab preview: portable controllers with entrant-defined
-  observation schedules, paired food-collection trials, deterministic replay,
-  and a headless organizer runner. Hosted submission and leaderboard services
+  observation schedules, a live single-maze sandbox, 100-maze local evaluations,
+  deterministic replay, and a headless organizer runner. Hosted submission and leaderboard services
   are deferred; the experimental model and research modes are outside this PR.
 
 - Reconcile the energy, starvation, death, and colony-extinction mechanics

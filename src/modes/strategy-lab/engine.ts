@@ -41,43 +41,74 @@ export function createTrial(seed: string, replicate: number, settings: Settings)
   sim.enqueue({ kind: 'setDoctrine', colony: 0, doctrine: doctrine(settings) });
   return sim;
 }
-export async function runTrial(strategy: Strategy, seed: string, replicate: number,
-  onFrame?: (o: Observation) => void, yieldControl?: () => Promise<void>): Promise<Omit<Trial, 'entry' | 'maze'>> {
-  const entry = parseStrategy(strategy);
-  let settings = entry.initial;
-  const sim = createTrial(seed, replicate, settings);
-  const metrics = new MetricsRecorder();
-  const usage: Usage = { calls: 0, observationBytes: 0, interrupts: 0 };
-  const actions: Action[] = [];
-  let state: unknown = null, nextTick = 0, error: string | undefined;
-  try {
-    while (sim.tick < CHALLENGE.ticks) {
-      if (sim.tick === nextTick) {
-        const decision = await decide(entry.source, observe(sim, settings), state, sim.tick, usage);
-        state = decision.state;
-        nextTick = decision.nextTick;
-        if (decision.settings && JSON.stringify(decision.settings) !== JSON.stringify(settings)) {
-          if (actions.length >= LIMITS.actionsPerTrial) throw new Error('Setting-change budget exhausted.');
-          settings = decision.settings;
-          actions.push({ tick: sim.tick, effectiveTick: sim.tick + 1, settings });
-          sim.enqueue({ kind: 'setDoctrine', colony: 0, doctrine: doctrine(settings) });
+/** One trial, advanced either interactively or headlessly through the same path. */
+export class TrialSession {
+  readonly sim: Simulation;
+  readonly usage: Usage = { calls: 0, observationBytes: 0, interrupts: 0 };
+  readonly actions: Action[] = [];
+  readonly strategy: Strategy;
+  readonly metrics = new MetricsRecorder();
+  settings: Settings;
+  state: unknown = null;
+  nextTick = 0;
+  error: string | undefined;
+  constructor(strategy: Strategy, seed: string, readonly replicate = 0, readonly recordTrace = true) {
+    this.strategy = parseStrategy(strategy);
+    this.settings = this.strategy.initial;
+    this.sim = createTrial(seed, replicate, this.settings);
+  }
+  get done() { return !!this.error || this.sim.tick >= CHALLENGE.ticks; }
+  snapshot() {
+    return { observation: observe(this.sim, this.settings), usage: { ...this.usage },
+      actions: [...this.actions], signals: (this.state as { signals?: unknown } | null)?.signals ?? null,
+      done: this.done, error: this.error };
+  }
+  async advance(ticks: number) {
+    if (!Number.isInteger(ticks) || ticks < 1 || ticks > 1000) throw new Error('Advance by 1–1000 ticks.');
+    try {
+      const target = Math.min(CHALLENGE.ticks, this.sim.tick + ticks);
+      while (!this.done && this.sim.tick < target) {
+        if (this.sim.tick === this.nextTick) {
+          const decision = await decide(this.strategy.source, observe(this.sim, this.settings), this.state, this.sim.tick, this.usage);
+          this.state = decision.state;
+          this.nextTick = decision.nextTick;
+          if (decision.settings && JSON.stringify(decision.settings) !== JSON.stringify(this.settings)) {
+            if (this.actions.length >= LIMITS.actionsPerTrial) throw new Error('Setting-change budget exhausted.');
+            this.settings = decision.settings;
+            this.actions.push({ tick: this.sim.tick, effectiveTick: this.sim.tick + 1, settings: this.settings });
+            this.sim.enqueue({ kind: 'setDoctrine', colony: 0, doctrine: doctrine(this.settings) });
+          }
         }
+        this.sim.step();
+        if (this.recordTrace) this.metrics.maybeSample(this.sim);
       }
-      sim.step();
-      metrics.maybeSample(sim);
-      if (sim.tick % 50 === 0) {
-        onFrame?.(observe(sim, settings));
-        await yieldControl?.();
-      }
-    }
-  } catch (e) { error = e instanceof Error ? e.message : 'Controller failed.'; }
-  return { replicate, food: sim.colonies[0].foodCollected, endTick: sim.tick,
-    fingerprint: fingerprint(sim), usage, actions, ...(error ? { error } : {}),
-    // Fixed metadata timestamp keeps rerun files comparable; no wall clock feeds the trial.
-    trace: buildTrace(sim, metrics, '1970-01-01T00:00:00.000Z') };
+    } catch (e) { this.error = e instanceof Error ? e.message : 'Controller failed.'; }
+  }
+  result(): Omit<Trial, 'entry' | 'maze'> {
+    return { replicate: this.replicate, food: this.sim.colonies[0].foodCollected, endTick: this.sim.tick,
+      fingerprint: fingerprint(this.sim), usage: { ...this.usage }, actions: [...this.actions],
+      ...(this.error ? { error: this.error } : {}),
+      // Stable metadata makes rerun files comparable; no wall clock feeds the trial.
+      ...(this.recordTrace ? { trace: buildTrace(this.sim, this.metrics, '1970-01-01T00:00:00.000Z') } : {}) };
+  }
+}
+export type SandboxSnapshot = ReturnType<TrialSession['snapshot']>;
+export async function runTrial(strategy: Strategy, seed: string, replicate: number,
+  onFrame?: (o: Observation) => void, yieldControl?: () => Promise<void>, recordTrace = true): Promise<Omit<Trial, 'entry' | 'maze'>> {
+  const session = new TrialSession(strategy, seed, replicate, recordTrace);
+  while (!session.done) {
+    await session.advance(50);
+    onFrame?.(observe(session.sim, session.settings));
+    await yieldControl?.();
+  }
+  return session.result();
+}
+export interface RoundOptions {
+  traces?: 'all' | 'first' | 'none';
+  onTrial?: (trial: Trial, completed: number) => void;
 }
 export async function runRound(strategies: Strategy[], round: Round,
-  onFrame?: (p: Progress) => void, yieldControl?: () => Promise<void>): Promise<Report> {
+  onFrame?: (p: Progress) => void, yieldControl?: () => Promise<void>, options: RoundOptions = {}): Promise<Report> {
   const manifest = parseRound(round);
   if (strategies.length < 1 || strategies.length > 20) throw new Error('Use 1–20 entries per round.');
   const entries = await Promise.all(strategies.map(async s => ({ id: await strategyId(s), strategy: parseStrategy(s) })));
@@ -86,9 +117,12 @@ export async function runRound(strategies: Strategy[], round: Round,
   for (let maze = 0; maze < manifest.seeds.length; maze++) {
     for (let replicate = 0; replicate < manifest.replicates; replicate++) {
       for (const entry of entries) {
+        const recordTrace = options.traces === undefined || options.traces === 'all' || (options.traces === 'first' && maze === 0 && replicate === 0);
         const trial = await runTrial(entry.strategy, manifest.seeds[maze], replicate,
-          o => onFrame?.({ entry: entry.id, name: entry.strategy.name, maze, replicate, observation: o }), yieldControl);
+          onFrame ? o => onFrame({ entry: entry.id, name: entry.strategy.name, maze, replicate, observation: o }) : undefined,
+          yieldControl, recordTrace);
         trials.push({ entry: entry.id, maze, ...trial });
+        options.onTrial?.(trials[trials.length - 1], trials.length);
       }
     }
   }

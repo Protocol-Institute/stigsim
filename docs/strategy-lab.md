@@ -1,11 +1,12 @@
 # Strategy Lab preview
 
-The question is simple: can a controller bring home more food than a strong
-fixed setting? Players publish a strategy file, inspect each other's logic,
-and remix it. A round tests frozen entries on the same fresh mazes.
+Players invent strategies for collecting food, inspect each other's observer
+and controller logic, and remix it. Fixed settings are ordinary entries.
+A round tests frozen entries on the same fresh mazes.
 
-The preview provides a local editor, three editable examples, paired practice,
-animated command replay, portable strategy/result files, and an organizer CLI.
+The preview provides split observer/controller editors, a live single-maze
+sandbox, a 100-maze evaluation, portable strategy/result files and replay traces,
+and an organizer CLI.
 Sharing happens through files or a repository. There is no hosted submission
 service, public leaderboard, account system, or model provider dependency.
 
@@ -35,6 +36,64 @@ schema, resource budgets, sandbox engine or scoring requires a new challenge
 version. Changes to simulation behavior also follow the repository's
 `SIM_VERSION` and golden-trace rules. Keep an old version runnable if publishing
 results that rely on it. Practice results are not official records.
+
+## Sandbox and evaluation
+
+The main workspace places observer/controller code on the left and a live maze
+on the right. Play, pause, single-step, reset, change speed, choose a seed or
+create a new maze. Edits pause playback and require **Apply edits & restart**;
+program/settings changes never silently enter an already-running trial. The
+sandbox displays current delivered food, ant count, trail bias, interventions,
+and an expandable signal/action inspector. Completed runs export a Maze replay
+trace. One trial is for debugging, not a leaderboard score.
+
+**Test on 100 mazes** evaluates only the selected strategy, with one ant-stream
+replicate per maze. The test-set seed starts as a random UUID. Maze seeds are
+`${testSetSeed}:maze:${i}`, with i from 1 to 100. Repeated tests reuse that exact
+set, so strategies listed together have identical evaluation conditions.
+**New test set** starts a fresh set and clears the session's local result table.
+
+The evaluation shows per-trial progress, mean food, standard error across mazes
+and failures. Cancellation terminates the worker and leaves a partial progress
+summary, never a ranked score. Any failed trial makes a completed entry unranked.
+Result exports contain all 100 outcomes and the reproducible manifest; only
+maze 1 retains a full trace to bound storage. The CLI continues to retain every
+trace by default. The local result table is session-lived: export files to save
+results. No special reference competitor is automatically inserted.
+
+## Observer and controller editors
+
+Both functions belong to one submitted strategy. The observer chooses what to
+measure, the signals' names/definitions, history and sampling times:
+
+```js
+function observe(o, state) {
+  return { signals: { food: o.foodDelivered }, state: null,
+    nextTick: Math.min(o.tickLimit + 1, o.tick + 10) };
+}
+```
+
+The controller consumes those author-defined signals and returns settings:
+
+```js
+function control(signals, state, context) {
+  return { state: null }; // Hold the initial settings.
+}
+```
+
+Context includes `tick`, `tickLimit`, current `settings` and `initial` settings.
+Each observation invokes the controller. The functions have separate JSON
+state, initialized to null. Both must be synchronous. A small exported adapter
+combines them into the existing `step` contract below; it retains initial
+settings, observer state, controller state and the last signals. These all count
+toward the same state and compute budgets. The signals are visible in the
+sandbox inspector. Independent controller timers are not provided in this
+version; the observer must schedule a call when restoration is needed.
+
+Exports still use `stigsim-strategy@1`: the source contains both functions and
+the adapter. Existing arbitrary `step` files import into a combined editor and
+remain executable without rewriting. Split editors are shown only for a
+lossless, recognized adapter source; custom code is never discarded.
 
 ## Portable strategy: `stigsim-strategy@1`
 
@@ -144,13 +203,12 @@ execution service. Organizer CLI runs should use an unprivileged isolated
 process/container with no credentials, alongside the VM limits. A future hosted
 service needs a separate security and operations review.
 
-## Practice and interpretation
+## Evaluation and interpretation
 
-The browser compares the editable entry with the fixed reference on three public
-seeds, one ant-stream replicate each. It shows means, paired win/tie/loss counts
-and the standard error of per-maze differences. These three mazes are useful
-for debugging, not enough to establish a general advantage. Tuning repeatedly
-on public practice seeds can overfit.
+A 100-maze local evaluation is substantially more useful than a single sandbox
+run. It is still possible to overfit through repeated tuning on the same set.
+Use another fresh set before making general claims. Official rounds should
+freeze entries before selecting fresh organizer-held seeds.
 
 For a larger round, average replicate outcomes within each maze, then compare
 paired maze means. The reported standard error treats mazes as independent
@@ -186,7 +244,7 @@ the test size and compare on fresh held-out seeds before claiming improvement.
 
    There must be 1–20 entries and no duplicate content IDs. The runner refuses
    to overwrite an existing result. It evaluates entrant source only inside
-   QuickJS, using the same path as browser practice.
+   QuickJS, using the same path as browser sandbox/evaluation.
 6. Publish results, the manifest, all entry files and the repository commit/Node
    version used. A result includes entry sources/hashes, rules, budgets, engine
    version, per-trial fingerprints, action timing, resource usage and traces.
