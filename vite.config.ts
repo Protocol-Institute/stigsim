@@ -1,6 +1,10 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type ProxyOptions } from "vite";
 
+const localMemory = process.env.MAZE_MEMORY_LOCAL === "1";
+const memoryProxy: Record<string, ProxyOptions> = localMemory
+  ? { "/local-maze-memory": { target: "http://127.0.0.1:3016" } }
+  : {};
 const port = Number(process.env.PORT ?? 3000);
 const base = process.env.BASE_PATH ?? "/";
 
@@ -12,10 +16,11 @@ export default defineConfig({
   base,
   plugins: [react()],
   server: {
-    host: "0.0.0.0",
+    host: localMemory ? "127.0.0.1" : "0.0.0.0",
     port,
     strictPort: true,
     proxy: {
+      ...memoryProxy,
       "/api": {
         target: "http://localhost:3001",
         changeOrigin: true,
@@ -24,7 +29,8 @@ export default defineConfig({
     },
   },
   preview: {
-    host: "0.0.0.0",
+    proxy: memoryProxy,
+    host: localMemory ? "127.0.0.1" : "0.0.0.0",
     port,
     strictPort: true,
   },

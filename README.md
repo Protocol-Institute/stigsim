@@ -14,8 +14,15 @@ head-to-head War matches, and a persistent multiplayer world.
 
 ### [Open Stigsim →](https://stigsim.protocol-institute.org/)
 
-Start at the simulation index to compare all four modes and choose an
+Start at the simulation index to compare the modes and choose an
 experience.
+
+### Maze Memory Lab (local setup)
+
+Design local JSON notes and instructions for a model navigator. Watch memory
+changes, replay decisions, and evaluate a frozen strategy sequentially on up to
+100 mazes. Requires a local inference runner and your own model endpoint.
+See [setup and strategy contract](docs/maze-memory.md).
 
 ### [Play the Maze Simulator →](https://stigsim.protocol-institute.org/maze)
 
