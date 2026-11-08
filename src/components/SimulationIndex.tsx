@@ -33,6 +33,7 @@ export default function SimulationIndex({ href }: { href: (pathname: string) => 
       </header>
 
       <section className="simulation-grid" aria-label="Simulations">
+        <SimulationCard eyebrow="Local · Individual-agent benchmark" title="Maze Agent Lab" description="Build a system with local sensing and your own memory, practice on 20 mazes, then freeze and test on 100." href={href("/maze-agent-lab")} accent="#bddb91" />
         <SimulationCard eyebrow="Local · Strategy challenge" title="Strategy Lab" description="Build an ant controller, compare it on shared mazes, and export a strategy others can improve." href={href("/strategy-lab")} accent="#91e4c7" />
         <SimulationCard
           eyebrow="Local · Sandbox"

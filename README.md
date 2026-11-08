@@ -17,6 +17,15 @@ head-to-head War matches, and a persistent multiplayer world.
 Start at the simulation index to compare the modes and choose an
 experience.
 
+### Maze Agent Lab (individual-agent benchmark)
+
+Open `/maze-agent-lab` to build an executable maze-solving system with local
+sensing and reliable coordinates. Design your own memory and navigation,
+refine on 20 practice mazes, then freeze and test on 100. Includes an AI starter
+briefing, local observation/memory inspector, scored evaluations, replayable
+movement logs and a headless organizer runner.
+See the [benchmark guide](docs/maze-agent-benchmark.md) for rules and limitations.
+
 ### Strategy Lab (local preview)
 
 Open `/strategy-lab` to edit an observer and controller beside a live single-maze

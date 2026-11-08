@@ -1,4 +1,4 @@
-export type AppRoute = "index" | "strategy-lab" | "maze" | "war" | "multiplayer" | "infinite" | "not-found";
+export type AppRoute = "index" | "maze-agent-lab" | "strategy-lab" | "maze" | "war" | "multiplayer" | "infinite" | "not-found";
 
 function normalizeBasePath(basePath: string): string {
   const withLeadingSlash = basePath.startsWith("/") ? basePath : `/${basePath}`;
@@ -32,6 +32,7 @@ export function resolveAppRoute(pathname: string, basePath = "/"): AppRoute {
   const path = normalizePathname(pathname, basePath);
 
   if (path === "/") return "index";
+  if (path === "/maze-agent-lab") return "maze-agent-lab";
   if (path === "/strategy-lab") return "strategy-lab";
   if (path === "/maze") return "maze";
   if (path === "/war") return "war";

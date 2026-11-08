@@ -1,0 +1,40 @@
+.maze-agent-lab { max-width: 1400px; padding: 30px 24px 80px; margin: auto; color: #e1e9df; font-family: system-ui,sans-serif; }
+.maze-agent-lab header { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 25px; }
+.maze-agent-lab h1 { font-size: 30px; letter-spacing: -.04em; margin: 5px 0; }
+.maze-agent-lab h2 { font-size: 15px; margin: 0; }
+.maze-agent-lab h3 { font-size: 12px; }
+.maze-agent-lab p { font-size: 12px; line-height: 1.65; color: #a2b29e; }
+.maze-agent-lab .ma-kicker { color: #a5c68a; font-size: 10px; text-transform: uppercase; letter-spacing: .14em; }
+.ma-workbench { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+.ma-panel { background: #151b15; border: 1px solid #364232; border-radius: 9px; padding: 18px; overflow: hidden; }
+.ma-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.ma-row > span, .ma-actions > span { font-size: 11px; color: #96a58d; }
+.maze-agent-lab label { display: grid; gap: 6px; margin: 12px 0; font-size: 11px; color: #a5b59c; }
+.maze-agent-lab input, .maze-agent-lab select, .maze-agent-lab textarea { box-sizing: border-box; width: 100%; background: #0c120d; color: #dce8d6; border: 1px solid #43533b; border-radius: 5px; padding: 9px 11px; font: inherit; }
+.maze-agent-lab :is(input,select,textarea,button):focus-visible { outline: 2px solid #bbd38f; outline-offset: 2px; }
+.maze-agent-lab select { width: auto; max-width: 280px; font-size: 11px; }
+.maze-agent-lab .ma-code { min-height: 540px; resize: vertical; font: 12px/1.7 ui-monospace,monospace; white-space: pre; tab-size: 2; }
+.maze-agent-lab button { background: #293524; border: 1px solid #526543; border-radius: 5px; padding: 9px 12px; color: #d9e5cd; cursor: pointer; font: 12px system-ui,sans-serif; }
+.maze-agent-lab button:hover:not(:disabled) { border-color: #b3cc8f; }
+.maze-agent-lab button:disabled { opacity: .4; cursor: default; }
+.maze-agent-lab .ma-primary { background: #bddb91; border-color: #bddb91; color: #17200e; font-weight: 700; padding: 14px 18px; }
+.ma-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
+.ma-actions label { display: flex; align-items: center; gap: 5px; margin: 0; }
+.maze-agent-lab canvas { width: 100%; height: auto; aspect-ratio: 1; display: block; border: 1px solid #3a4b33; border-radius: 5px; }
+.ma-metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; border-top: 1px solid #364232; margin-top: 16px; padding-top: 16px; }
+.ma-metrics > div { display: grid; gap: 7px; text-align: center; }
+.ma-metrics strong { font: 20px ui-monospace,monospace; color: #c4d89e; }
+.ma-metrics span { font-size: 10px; color: #96a58d; }
+.ma-results { margin-top: 18px; }
+.maze-agent-lab details { border-top: 1px solid #364232; margin-top: 16px; padding-top: 13px; font-size: 11px; }
+.maze-agent-lab summary { cursor: pointer; color: #b2c79d; }
+.maze-agent-lab pre { font: 11px/1.5 ui-monospace,monospace; max-height: 180px; overflow: auto; background: #0c120d; padding: 12px; }
+.maze-agent-lab .ma-error { color: #ffb89d; overflow-wrap: anywhere; }
+.maze-agent-lab progress { width: 100%; accent-color: #bddb91; }
+.maze-agent-lab table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 16px 0; }
+.maze-agent-lab td, .maze-agent-lab th { text-align: left; padding: 10px 5px; border-bottom: 1px solid #364232; }
+.maze-agent-lab small { display: block; color: #7d9071; font-family: ui-monospace,monospace; margin-top: 4px; }
+.ma-modal { position: fixed; z-index: 100; inset: 0; background: #000b; display: grid; place-items: center; padding: 24px; }
+.ma-modal > div { width: min(900px,100%); max-height: 90vh; overflow: auto; box-sizing: border-box; }
+.ma-modal textarea { height: 55vh; resize: vertical; font: 12px/1.5 ui-monospace,monospace; }
+@media(max-width:900px) { .ma-workbench { grid-template-columns: 1fr; } .maze-agent-lab header { align-items: start; flex-direction: column; gap: 0; } .ma-code { min-height: 350px; } }

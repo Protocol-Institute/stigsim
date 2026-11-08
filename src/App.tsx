@@ -7,6 +7,7 @@ import LocalWarMode from "./modes/war/LocalWarMode";
 import OnlineWarMode from "./modes/war/OnlineWarMode";
 import { appHref, resolveAppRoute } from "./routes";
 
+const MazeAgentLab = lazy(() => import("./modes/maze-agent/MazeAgentLab"));
 const StrategyLab = lazy(() => import("./modes/strategy-lab/StrategyLab"));
 
 export default function App() {
@@ -17,7 +18,8 @@ export default function App() {
   if (route === "index") return <SimulationIndex href={href} />;
 
   let content;
-  if (route === "strategy-lab") content = <Suspense fallback={<p>Loading Strategy Lab…</p>}><StrategyLab /></Suspense>;
+  if (route === "maze-agent-lab") content = <Suspense fallback={<p>Loading Maze Agent Lab…</p>}><MazeAgentLab /></Suspense>;
+  else if (route === "strategy-lab") content = <Suspense fallback={<p>Loading Strategy Lab…</p>}><StrategyLab /></Suspense>;
   else if (route === "war") content = <LocalWarMode />;
   else if (route === "multiplayer") content = <OnlineWarMode />;
   else if (route === "not-found") content = <NotFound href={href} />;

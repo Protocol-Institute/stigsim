@@ -2,6 +2,11 @@
 
 ## Active
 
+- Add the individual-agent Maze Agent Lab: local sensing with reliable position,
+  agent-designed executable memory/navigation, 20 public practice mazes,
+  frozen 100-maze evaluations and organizer-held-out execution. External AI
+  authoring budgets and a trusted hosted leaderboard remain future work.
+
 - Build a focused Strategy Lab preview: portable controllers with entrant-defined
   observation schedules, a live single-maze sandbox, 100-maze local evaluations,
   deterministic replay, and a headless organizer runner. Hosted submission and leaderboard services

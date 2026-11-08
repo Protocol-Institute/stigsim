@@ -12,6 +12,8 @@ test("resolves every public simulation route explicitly", () => {
   assert.equal(resolveAppRoute("/"), "index");
   assert.equal(resolveAppRoute("/maze"), "maze");
   assert.equal(resolveAppRoute("/strategy-lab/"), "strategy-lab");
+  assert.equal(resolveAppRoute("/maze-agent-lab/"), "maze-agent-lab");
+  assert.equal(resolveAppRoute("/stigsim/maze-agent-lab", "/stigsim/"), "maze-agent-lab");
   assert.equal(resolveAppRoute("/war"), "war");
   assert.equal(resolveAppRoute("/multiplayer"), "multiplayer");
   assert.equal(resolveAppRoute("/multiplayer/ABC123"), "multiplayer");

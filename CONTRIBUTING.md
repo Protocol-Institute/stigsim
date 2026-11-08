@@ -185,3 +185,18 @@ scoring, and replay. `pnpm strategy-round` runs the same
 controller/engine path headlessly. Check `pnpm build` and smoke-test sandbox play and evaluation in
 the built preview too: Node tests alone do not verify WebAssembly asset loading
 inside a browser Worker. The new route and its engine are loaded on demand.
+
+## Maze Agent Lab
+
+`src/modes/maze-agent` defines `maze-agent@1` through the Mode SDK. All hosts use
+`mazeAgentMode.create`; `MazeTrial.apply` is the only movement mutation path,
+shared with action replay. It reuses the seeded core maze generator but owns
+its own local observation contract, executable-agent sandbox, budgets, scores
+and records. It does not use ant/colony physics. Keep global map/goal/scoring
+information out of `observation()`. See
+[`docs/maze-agent-benchmark.md`](docs/maze-agent-benchmark.md).
+
+Tests cover local information isolation, explicit memory reset, resource
+limits, all 20 practice mazes, a frozen 100-maze evaluation, scoring and replay.
+Smoke-test the built Worker/WASM, playback and evaluation in the browser too.
+`pnpm maze-agent-round` is the same runner for organizer-held private manifests.

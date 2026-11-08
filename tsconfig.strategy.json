@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "include": [
-    "scripts/strategy-round.ts"
+    "scripts/strategy-round.ts",
+    "scripts/maze-agent-round.ts"
   ]
 }
