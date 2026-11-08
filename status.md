@@ -2,6 +2,12 @@
 
 ## Active
 
+- Add the focused Maze Memory Lab: model-selected navigation with code-managed
+  local JSON notes, a strategy sandbox, memory-aware replay, sequential 1–100
+  maze evaluation, import/export and a loopback inference runner. Hosted
+  submissions, private-memory modes and automatic strategy optimization are
+  outside this MVP.
+
 - Reconcile the energy, starvation, death, and colony-extinction mechanics
   shared by War and Infinite Mode; War reproduction remains an explicit
   mode-specific policy.

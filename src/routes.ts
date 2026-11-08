@@ -1,4 +1,11 @@
-export type AppRoute = "index" | "maze" | "war" | "multiplayer" | "infinite" | "not-found";
+export type AppRoute =
+  | "index"
+  | "maze-memory"
+  | "maze"
+  | "war"
+  | "multiplayer"
+  | "infinite"
+  | "not-found";
 
 function normalizeBasePath(basePath: string): string {
   const withLeadingSlash = basePath.startsWith("/") ? basePath : `/${basePath}`;
@@ -18,7 +25,8 @@ export function normalizePathname(pathname: string, basePath = "/"): string {
 
   if (
     baseWithoutTrailingSlash &&
-    (normalized === baseWithoutTrailingSlash || normalized.startsWith(`${baseWithoutTrailingSlash}/`))
+    (normalized === baseWithoutTrailingSlash ||
+      normalized.startsWith(`${baseWithoutTrailingSlash}/`))
   ) {
     normalized = normalized.slice(baseWithoutTrailingSlash.length) || "/";
   }
@@ -32,9 +40,11 @@ export function resolveAppRoute(pathname: string, basePath = "/"): AppRoute {
   const path = normalizePathname(pathname, basePath);
 
   if (path === "/") return "index";
+  if (path === "/maze-memory") return "maze-memory";
   if (path === "/maze") return "maze";
   if (path === "/war") return "war";
-  if (path === "/multiplayer" || path.startsWith("/multiplayer/")) return "multiplayer";
+  if (path === "/multiplayer" || path.startsWith("/multiplayer/"))
+    return "multiplayer";
   if (path === "/infinite") return "infinite";
   return "not-found";
 }

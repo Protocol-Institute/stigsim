@@ -169,3 +169,13 @@ never populated `discoveredSources` before removing a source.
 ## Shared-world mode
 
 Run `pnpm dev:server` alongside `pnpm dev`. Production must use one server replica and Postgres persistence; see `server/README.md`.
+
+## Maze Memory Lab
+
+`src/modes/maze-memory` defines `maze-memory@1`. Keep strategy preparation local
+and stateless: only local environmental JSON notes persist between decisions.
+`Trial.apply` owns movement and write commits; replay uses that same path without
+executing imported source. Inference credentials stay in the loopback runner,
+never the browser or shared server. See [the guide](docs/maze-memory.md) before
+changing observation, write, budget or scoring rules. `pnpm test:maze-memory`
+uses injected providers; CI must not make paid inference calls.

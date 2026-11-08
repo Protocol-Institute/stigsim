@@ -6,9 +6,19 @@ type SimulationCardProps = {
   accent: string;
 };
 
-function SimulationCard({ eyebrow, title, description, href, accent }: SimulationCardProps) {
+function SimulationCard({
+  eyebrow,
+  title,
+  description,
+  href,
+  accent,
+}: SimulationCardProps) {
   return (
-    <a className="simulation-card" href={href} style={{ "--card-accent": accent } as React.CSSProperties}>
+    <a
+      className="simulation-card"
+      href={href}
+      style={{ "--card-accent": accent } as React.CSSProperties}
+    >
       <span className="simulation-card__eyebrow">{eyebrow}</span>
       <h2>{title}</h2>
       <p>{description}</p>
@@ -20,19 +30,30 @@ function SimulationCard({ eyebrow, title, description, href, accent }: Simulatio
   );
 }
 
-export default function SimulationIndex({ href }: { href: (pathname: string) => string }) {
+export default function SimulationIndex({
+  href,
+}: {
+  href: (pathname: string) => string;
+}) {
   return (
     <main className="simulation-index">
       <header className="simulation-index__header">
         <p className="simulation-index__kicker">Protocol Institute</p>
         <h1>Stigsim</h1>
         <p className="simulation-index__intro">
-          Explore how ant colonies coordinate through shared signals—alone, head-to-head,
-          or inside a persistent world.
+          Explore how ant colonies coordinate through shared signals—alone,
+          head-to-head, or inside a persistent world.
         </p>
       </header>
 
       <section className="simulation-grid" aria-label="Simulations">
+        <SimulationCard
+          eyebrow="Local setup · AI strategy workshop"
+          title="Maze Memory Lab"
+          description="Design environmental notes and instructions for a model navigator. Inspect memory, replay decisions, and evaluate strategies."
+          href={href("/maze-memory")}
+          accent="#d9eba2"
+        />
         <SimulationCard
           eyebrow="Local · Sandbox"
           title="Maze Simulator"
