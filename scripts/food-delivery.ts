@@ -1,0 +1,20 @@
+import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {dirname} from 'node:path';
+import {DELIVERY_QUICK,runDeliverySearch,runSwitchComparison,rankDelivery,pairedFood} from '../src/modes/delivery/benchmark';
+import {SIM_VERSION} from '../packages/sim-trace/src/trace';
+const args=process.argv.slice(2),adapt=args.includes('--adapt'),pos=args.filter(a=>a!=='--adapt');
+if(args.includes('--help')){console.log('pnpm delivery [config.json] [output.json] [--adapt]\nDefault: small pilot. --adapt also selects and evaluates a one-switch policy. See docs/food-delivery-benchmark.md.');process.exit(0);}
+if(pos.length>2)throw new Error('Expected optional config and output paths.');
+const supplied=pos[0]?JSON.parse(readFileSync(pos[0],'utf8')):{};
+if(!supplied||typeof supplied!=='object'||Array.isArray(supplied))throw new Error('Expected a config object.');
+for(const key of Object.keys(supplied))if(!(key in DELIVERY_QUICK))throw new Error(`Unknown configuration key: ${key}`);
+const config={...DELIVERY_QUICK,...supplied};let count=0;
+const progress=(_row:unknown,stage:string)=>{count++;if(count%20===0)process.stderr.write(`${stage}: ${count} trials completed\n`);};
+const report=runDeliverySearch(config,progress),adaptive=adapt?runSwitchComparison(report,progress):undefined;
+const output=pos[1]??'food-delivery-results.json';mkdirSync(dirname(output),{recursive:true});
+writeFileSync(output,JSON.stringify({format:'stigsim-food-delivery-experiment@1',simVersion:SIM_VERSION,complete:true,report,adaptive},null,2)+'\n');
+console.log('Frozen training baseline:',report.baseline);console.table(rankDelivery(report.test));
+const baseline=report.test.filter(r=>r.candidate===report.baseline.id);
+for(const r of rankDelivery(report.test))console.log(r.candidate,pairedFood(report.test.filter(t=>t.candidate===r.candidate),baseline));
+if(adaptive)console.log('Intervention policy:',adaptive.policy,'\nPaired held-out result:',adaptive.comparison);
+console.log('Saved',output);

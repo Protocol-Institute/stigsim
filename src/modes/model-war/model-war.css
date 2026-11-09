@@ -1,0 +1,24 @@
+.model-war-selection { display: flex; flex-wrap: wrap; gap: 18px; margin: 24px 0; }
+.model-war-selection label { display: grid; gap: 8px; flex: 1 1 200px; color: #d5c3a5; font-size: .85rem; }
+.model-war-selection select, .model-war-selection input { width: 100%; min-width: 0; padding: 12px; border: 1px solid #49371e; border-radius: 8px; color: #f4ead7; background: #171007; font: inherit; }
+.model-war-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin: 16px 0; color: #bda989; font-size: .8rem; }
+.model-war-status strong { color: #f4ead7; font-variant-numeric: tabular-nums; }
+.model-war-model { margin: 0 0 16px; color: var(--colony-color); font-size: 1rem; overflow-wrap: anywhere; }
+.model-war-strategy { margin: 14px 0; }
+.model-war-strategy h3 { color: #d5c3a5; font-size: .8rem; }
+.model-war-strategy p, .model-war-journal p { color: #bda989; font-size: .76rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-war-page details { margin: 14px 0; }
+.model-war-page summary { color: #d5c3a5; font-size: .8rem; cursor: pointer; }
+.model-war-page .war-maze { position: sticky; top: 16px; }
+@media (max-width: 1100px) { .model-war-page .war-maze { position: static; } }
+@media (min-width: 761px) {
+  .model-war-page .war-arena { grid-template-columns: minmax(180px, 1fr) minmax(280px, 496px) minmax(180px, 1fr); gap: 12px; }
+  .model-war-page .war-maze { grid-column: auto; grid-row: auto; width: 100%; position: sticky; top: 16px; }
+  .model-war-page .war-colony { padding: 12px; }
+}
+@media (max-width: 760px) {
+  .model-war-page .war-arena { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .model-war-page .war-maze { grid-column: 1 / -1; grid-row: 1; width: min(496px, 100%); }
+  .model-war-page .war-colony { grid-column: auto; }
+}
+@media (max-width: 480px) { .model-war-page .war-arena { grid-template-columns: 1fr; } }

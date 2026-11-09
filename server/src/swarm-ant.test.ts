@@ -80,3 +80,35 @@ test('invalid notebook response is atomic and private notes never enter a teamma
   await post(path,{turn:2});const own=JSON.parse(payloads[3].messages[1].content);assert.equal(own.observation.privateNotebook.text,'SECRET agent one route');assert.ok(payloads[3].tools[0].function.parameters.properties.notebook);
  }finally{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 });
+
+test('local planning is bounded, private, idempotent and frozen before exploration',async()=>{
+ const payloads:any[]=[];let calls=0;
+ const mock:typeof fetch=async(_url,options)=>{
+  const body=JSON.parse(String(options?.body));payloads.push(body);calls++;
+  const planning=body.tool_choice.function.name==='plan';
+  const args=planning?{message:`Public convention ${calls}`,notebook:calls===1?'PRIVATE planning note':null}:{direction:'south',pebbleAction:'none',pebbleId:null,message:'',notebook:null};
+  return Response.json({usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120},choices:[{message:{tool_calls:[{function:{name:planning?'plan':'act',arguments:JSON.stringify(args)}}]}}]});
+ };
+ const app=express();app.use(express.json());
+ const env={ANT_MODEL:'gpt-5-mini',ANT_MODEL_BASE_URL:'http://test/v1',ANT_ALLOWED_MODELS:'gpt-5-mini,claude-sonnet-4-6'};
+ app.use('/enabled',swarmAntRouter({...env,SWARM_PLANNING_ENABLED:'true'},mock));app.use('/default',swarmAntRouter(env,mock));
+ const server=app.listen(0,'127.0.0.1');await new Promise<void>(resolve=>server.once('listening',resolve));const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+ const post=(path:string,body:unknown)=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ try{
+  const settings={...config,planningRounds:1,privateNotebooks:true};
+  assert.equal((await post('/default/runs',settings)).status,400);
+  assert.equal((await post('/enabled/runs',{...settings,planningRounds:4})).status,400);
+  const initial=await(await post('/enabled/runs',settings)).json() as any;assert.equal(initial.phase,'planning');
+  const path=`/enabled/runs/${initial.id}/step`;
+  const first=await(await post(path,{turn:0,planningTurn:0})).json() as any;
+  assert.equal(first.entries.length,0);assert.equal(first.agents[0].moves,0);assert.equal(first.pebbles.filter((p:any)=>p.carrier===null).length,0);
+  assert.equal(first.planning[0].usage.totalTokens,120);assert.equal(first.nextAgent,'ant-2');
+  await post(path,{turn:0,planningTurn:0});assert.equal(calls,1);
+  const planned=await(await post(path,{turn:0,planningTurn:1})).json() as any;
+  assert.equal(planned.phase,'exploring');assert.equal(planned.nextAgent,'ant-1');assert.equal(planned.planning.length,2);
+  const teammate=JSON.parse(payloads[1].messages[1].content);assert.equal(teammate.transcript[0].message,'Public convention 1');assert.doesNotMatch(JSON.stringify(teammate),/PRIVATE planning note/);assert.equal(teammate.observation.cells,undefined);
+  const moved=await(await post(path,{turn:0,planningTurn:2})).json() as any;
+  assert.equal(moved.entries.length,1);assert.equal(moved.planning.length,2);
+  const exploration=JSON.parse(payloads[2].messages[1].content);assert.equal(exploration.teamPlan.length,2);assert.equal(exploration.observation.privateNotebook.text,'PRIVATE planning note');assert.equal(payloads[2].tool_choice.function.name,'act');
+ }finally{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
+});

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RunPacing } from './pacing';
-export default function ModelAntControls({ pacing, running, busy, ready, done, onToggle, onStep }: {
-  pacing: RunPacing; running: boolean; busy: boolean; ready: boolean; done: boolean;
+export default function ModelAntControls({ pacing, running, busy, ready, done, onToggle, onStep, stepLabel = 'One step →' }: {
+  stepLabel?: string; pacing: RunPacing; running: boolean; busy: boolean; ready: boolean; done: boolean;
   onToggle: () => void; onStep: () => void;
 }) {
   const [, updateClock] = useState(0);
@@ -13,7 +13,7 @@ export default function ModelAntControls({ pacing, running, busy, ready, done, o
   return <>
     <div className="ant-controls">
       <button className="ant-primary" disabled={!ready || done} onClick={onToggle}>{running ? 'Pause' : 'Run experiment'}</button>
-      <button disabled={!ready || busy || running || done || seconds > 0} onClick={onStep}>One step →</button>
+      <button disabled={!ready || busy || running || done || seconds > 0} onClick={onStep}>{stepLabel}</button>
     </div>
     <div className="ant-caption ant-pacing-status" role="status" aria-live="polite">
       {!busy && !done && seconds > 0 && <>

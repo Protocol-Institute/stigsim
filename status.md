@@ -2,6 +2,48 @@
 
 ## Active
 
+- Integrate PR #32 Strategy Lab (`/strategy-lab`) and PR #34 Maze Memory Lab
+  (`/maze-memory`) into `codex/model-ant-preview`, preserving all existing modes.
+  The memory API uses the isolated preview's password/auth and gateway; the
+  ordinary production service has no memory endpoint.
+
+
+- Mill-breaking pulse experiment: training-selected temporary evaporation/bias
+  pulse, held-out baseline/scheduled/component controls, and frozen-policy
+  confirmation on 200 fresh mazes. Results in `artifacts/mill-pulse/README.md`;
+  not pushed or deployed.
+
+- Food Delivery Lab (`/delivery-lab`, `pnpm delivery`): paired finite-food search,
+  training-selected fixed baseline, unseen-seed validation and one-switch
+  intervention comparison. Initial pilot/confirmation records in
+  `artifacts/food-delivery/`. Not pushed or deployed.
+
+- Model War (`/model-war`): two configured models adapt doctrines every 500 ticks,
+  review games, inspect bounded movement/route/pheromone evidence, and carry
+  private strategy memory through a best-of-five local
+  series with alternating seats and downloadable game records. Not pushed or deployed.
+
+- Local highway benchmark (`/highway-lab` UI and `pnpm highway` CLI): live maze
+  previews, background-worker execution, paired maze/ant seeds,
+  fixed colony settings, inexhaustible food, sustained single-route detection,
+  and exported time-to-confirmation rankings. Not pushed or deployed.
+
+- Local-only Protocol Workshop (`/protocol-lab`): model-designed finite-state
+  controllers, practice feedback/revision, frozen held-out evaluation and
+  shared/private/off marker comparisons. Not pushed or deployed.
+
+- Local-only deterministic Coordination Lab (`/coordination-lab`): same-maze
+  coordinated versus independent DFS teams, inspectable local claims, equal
+  round timing and curated illustrative seed. Not pushed or deployed.
+
+- Local-only single-ant deterministic right-hand baseline: selectable solver,
+  configurable heading, matching maze controls, zero model calls/cost and
+  version-12 records. Not pushed or deployed.
+
+- Local-only Shared Pebbles planning experiment: bounded initial team exchange,
+  frozen transcript during exploration, private notebooks, phase-safe retries
+  and version-3 records. Opt-in flags only; not pushed or deployed.
+
 - Reconcile the energy, starvation, death, and colony-extinction mechanics
   shared by War and Infinite Mode; War reproduction remains an explicit
   mode-specific policy.

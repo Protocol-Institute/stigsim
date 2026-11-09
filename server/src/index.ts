@@ -1,3 +1,5 @@
+import { modelWarRouter } from './model-war';
+import {protocolLabRouter} from './protocol-lab';
 import { swarmAntRouter } from './swarm-ant';
 import { createServer } from "http";
 import { existsSync } from "fs";
@@ -37,6 +39,8 @@ app.use(cors({
     callback(null, !origin || allowedOrigins.includes(origin));
   },
 }));
+app.use("/api/model-war", express.json({limit:"64kb"}), modelWarRouter());
+app.use("/api/protocol-lab",express.json({limit:"64kb"}),protocolLabRouter());
 app.use(express.json({ limit: "16kb" }));
 app.use("/api/model-ant", modelAntRouter());
 app.use("/api/swarm-ant", swarmAntRouter());

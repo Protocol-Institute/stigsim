@@ -1,0 +1,4 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["./*.ts", "../highway-benchmark.ts", "../food-delivery.ts", "../mill-pulse.ts", "../mill-pulse-confirmation.ts"]
+}

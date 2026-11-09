@@ -1,3 +1,4 @@
+import { DETERMINISTIC_MODEL, deterministicStep } from './deterministic';
 import { modelErrorMessage } from './provider-error';
 import ExperimentSetup, { strategyLabel } from './ExperimentSetup';
 import { strategyText, type ExperimentConfig } from '../../../shared/model-ant-config';
@@ -30,14 +31,16 @@ function ExperimentRun({config,onNew,suspended}: {config: ExperimentConfig; onNe
   const lock = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const deterministic = config.model===DETERMINISTIC_MODEL;
   const mapSupport = config.observationSupport === 'observed-map';
   const explicitPolicy = config.strategy !== 'none';
   const observation = agentObservation(observe(maze));
   const done = solved(maze) || maze.turn >= 200;
   const pacing = getRunPacing(runId.current);
   // Hot updates preserve React state, but recent request timestamps may be unavailable.
-  if (entries.length > 0 && pacing.consecutiveRateLimits === 0) pacing.resumeExistingRun();
+  if (!deterministic && entries.length > 0 && pacing.consecutiveRateLimits === 0) pacing.resumeExistingRun();
   async function connect() {
+    if(deterministic){setConnection({ready:true,model:DETERMINISTIC_MODEL,mode:'selection',message:'Browser-local deterministic solver.'});return;}
     try {
       const response = await fetch('/api/model-ant/status');
       if (!response.ok) throw new Error();
@@ -46,7 +49,12 @@ function ExperimentRun({config,onNew,suspended}: {config: ExperimentConfig; onNe
   }
   useEffect(() => { void connect(); return () => { generation.current++; controller.current?.abort(); }; }, []);
   async function step() {
-    if (lock.current || done || !connection.ready || pacing.delayMs() > 0) return;
+    if (lock.current || done || !connection.ready || (!deterministic && pacing.delayMs() > 0)) return;
+    if(deterministic){
+      const heading=[...entries].reverse().find(entry=>entry.observation.neighbors[entry.decision.direction]!=='wall')?.decision.direction??config.initialHeading;
+      const result=deterministicStep(observation,heading);const next=move(maze,result.decision);
+      setMaze(next);setEntries(previous=>[...previous,{...result,outcome:next.lastResult,observation}]);return;
+    }
     lock.current = true; setBusy(true); setError('');
     const version = generation.current;
     const abort = new AbortController(); controller.current = abort;
@@ -87,31 +95,31 @@ function ExperimentRun({config,onNew,suspended}: {config: ExperimentConfig; onNe
     return () => clearTimeout(timer);
   });
   function download() {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ format: 'stigsim-model-ant-experiment@11', configuration:config, suppliedPolicy: selectionMode && explicitPolicy ? strategyText(config.strategy,config.customPolicy) : null, observationSupport: selectionMode && mapSupport ? 'observed-map' : 'raw-history', mode: connection.mode ?? 'agent', requestPacing: PACING, pebbleBudget: PEBBLE_BUDGET, finalPebbles: maze.pebbles, finalPolicy: entries.at(-1)?.policy ?? '', policyRevision: entries.at(-1)?.policyRevision ?? 0, seed: maze.seed, environment: { generator: '@stigsim/sim-core/generateMaze', layout: 'random', loopRate: maze.loopRate, width: MAZE_WIDTH, height: MAZE_HEIGHT }, prompt: AGENT_PROMPT, mechanics: selectionMode ? (mapSupport ? OBSERVED_MAP_RULES : SELECTION_RULES) : AGENT_RULES, tools: selectionMode ? [] : AGENT_TOOLS, ...(selectionMode ? { actionOptions: ACTION_OPTIONS, actionQuestion: entries.at(-1)?.actionQuestion ?? (entries.length === 0 && explicitPolicy ? POLICY_ACTION_QUESTION : ACTION_QUESTION) } : {}), entries, failedAttempts: failures, accounting: { ...usageSummary, basis: 'catalog input/output rates; cache discounts excluded; input-only decision models have zero output rate', pricingAsOf: pricing.asOf, pricingSource: pricing.source, rates: Object.fromEntries([...new Set(usageRecords.map(record => record.model).filter((model): model is string => !!model))].map(model => [model, (pricing.rates as Record<string, { input: number; output: number }>)[model] ?? null])) } }, null, 2)], { type: 'application/json' }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ format: 'stigsim-model-ant-experiment@12', solver:deterministic?'deterministic-right-hand':'model', configuration:config, suppliedPolicy: selectionMode && explicitPolicy ? strategyText(config.strategy,config.customPolicy) : null, observationSupport: selectionMode && mapSupport ? 'observed-map' : 'raw-history', mode: connection.mode ?? 'agent', requestPacing: deterministic?null:PACING, pebbleBudget: PEBBLE_BUDGET, finalPebbles: maze.pebbles, finalPolicy: entries.at(-1)?.policy ?? '', policyRevision: entries.at(-1)?.policyRevision ?? 0, seed: maze.seed, environment: { generator: '@stigsim/sim-core/generateMaze', layout: 'random', loopRate: maze.loopRate, width: MAZE_WIDTH, height: MAZE_HEIGHT }, prompt: deterministic?null:AGENT_PROMPT, controllerInputs:deterministic?'Adjacent terrain and heading only':null, mechanics: deterministic?strategyText('right-hand'):selectionMode ? (mapSupport ? OBSERVED_MAP_RULES : SELECTION_RULES) : AGENT_RULES, tools: selectionMode ? [] : AGENT_TOOLS, ...(selectionMode ? { actionOptions: ACTION_OPTIONS, actionQuestion: deterministic?null:entries.at(-1)?.actionQuestion ?? (entries.length === 0 && explicitPolicy ? POLICY_ACTION_QUESTION : ACTION_QUESTION) } : {}), entries, failedAttempts: failures, accounting: { ...usageSummary, basis: 'catalog input/output rates; cache discounts excluded; input-only decision models have zero output rate', pricingAsOf: pricing.asOf, pricingSource: pricing.source, rates: Object.fromEntries([...new Set(usageRecords.map(record => record.model).filter((model): model is string => !!model))].map(model => [model, model===DETERMINISTIC_MODEL?{input:0,output:0}:(pricing.rates as Record<string, { input: number; output: number }>)[model] ?? null])) } }, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `model-ant-${maze.seed}.json`; link.click(); URL.revokeObjectURL(url);
   }
   const latest = entries.at(-1);
   const modelId = connection.model;
   const selectionMode = connection.mode === 'selection';
-  const modelName = modelId === 'claude-sonnet-4-6' ? 'Claude Sonnet 4.6'
+  const modelName = deterministic ? 'Deterministic · right-hand rule' : modelId === 'claude-sonnet-4-6' ? 'Claude Sonnet 4.6'
     : modelId === 'gpt-5-mini' ? 'GPT-5 mini' : modelId === 'typesafeai-jev-1-14-0' ? 'Jev 1.14' : modelId === 'openjev-qwen35-4b' ? 'OpenJev (Qwen 3.5 4B)' : modelId || 'No model configured';
   const usageRecords = [...entries.map(entry => ({ model: entry.model, usage: entry.usage })),
     ...failures.map(failure => ({ model: failure.model ?? connection.model, usage: failure.usage }))];
-  const usageSummary = summarizeUsage(usageRecords);
+  const usageSummary = summarizeUsage(usageRecords,{...pricing.rates,[DETERMINISTIC_MODEL]:{input:0,output:0}});
 
 
   return <main className="model-ant">
     <header className="ant-header">
       <div className="ant-header__intro">
         <span className="ant-kicker">STIGSIM / MODEL ANT EXPERIMENT</span>
-        <h1>A language model<br /><em>in a maze.</em></h1>
-        <p>Explore strategy, memory, and stigmergy. A model controls one ant with a local view of the maze, choosing how to use pebbles{selectionMode ? '' : ' and its own policy'} to find the exit.</p>
+        <h1>{deterministic?'A deterministic ant':'A language model'}<br /><em>in a maze.</em></h1>
+        <p>{deterministic ? 'Browser-local right-hand wall following. The same maze and local view, with no model calls.' : <>Explore strategy, memory, and stigmergy. A model controls one ant with a local view of the maze, choosing how to use pebbles{selectionMode ? '' : ' and its own policy'} to find the exit.</>}</p>
       </div>
       <div className="ant-active-model" aria-label="Active model">
         <span className="ant-active-model__label">EXPERIMENT</span>
         <strong>{modelName}</strong>
         {modelId && <code>{modelId}</code>}
-        <div className="ant-active-model__caption"><span>{selectionMode ? 'Action-only comparison' : 'Policy-authoring agent'}</span><dl className="ant-config-facts"><div><dt>Seed</dt><dd>{maze.seed}</dd></div><div><dt>Extra holes</dt><dd>{Math.round(maze.loopRate * 100)}%</dd></div><div><dt>Information</dt><dd>{mapSupport ? 'History + automatic map' : 'History only'}</dd></div><div><dt>Strategy</dt><dd>{strategyLabel(config.strategy)}</dd></div>{config.strategy === 'right-hand' && <div><dt>Initial heading</dt><dd>{config.initialHeading}</dd></div>}</dl></div>
+        <div className="ant-active-model__caption"><span>{deterministic?'Deterministic baseline':selectionMode ? 'Action-only comparison' : 'Policy-authoring agent'}</span><dl className="ant-config-facts"><div><dt>Seed</dt><dd>{maze.seed}</dd></div><div><dt>Extra holes</dt><dd>{Math.round(maze.loopRate * 100)}%</dd></div><div><dt>Information</dt><dd>{deterministic?'Local terrain + heading':mapSupport ? 'History + automatic map' : 'History only'}</dd></div><div><dt>Strategy</dt><dd>{strategyLabel(config.strategy)}</dd></div>{config.strategy === 'right-hand' && <div><dt>Initial heading</dt><dd>{config.initialHeading}</dd></div>}</dl></div>
         <button disabled={busy} onClick={() => { setRunning(false); onNew(); }}>New experiment</button>
       </div>
     </header>
@@ -132,7 +140,7 @@ function ExperimentRun({config,onNew,suspended}: {config: ExperimentConfig; onNe
         <p className="ant-caption">{fullMap ? 'You see the whole maze. The ant never does.' : 'The ant can sense only the four cells around it.'}</p>
       </section>
       <aside className="ant-panel">
-        <h2>Live experiment</h2>
+        <h2>Live experiment</h2>{deterministic&&<p className="ant-caption">Right → straight → left → reverse. No pebbles or model usage. Run is animated at two moves per second.</p>}
         {!connection.ready && <div className="ant-notice">{connection.message}<button onClick={() => void connect()}>Check connection</button></div>}
         {error && <p role="alert" className="ant-error">{modelErrorMessage(error)}</p>}
         <div className="ant-stats"><div><strong>{maze.turn}<small> / 200</small></strong><span>Moves</span></div><div><strong>{maze.visited.length}</strong><span>Cells visited</span></div><div><strong>{latest ? `${(latest.elapsedMs / 1000).toFixed(1)}s` : '—'}</strong><span>Last decision</span></div>
@@ -153,7 +161,7 @@ function ExperimentRun({config,onNew,suspended}: {config: ExperimentConfig; onNe
             </details>))}</div>
           </details>}
         </section>}
-        <h3>{selectionMode ? 'Observation history' : 'Conversation context'} <small>{selectionMode ? `${latest?.contextMessages ?? 0} observations in the last request` : `${latest?.contextMessages ?? 0} messages · ${latest?.compactions ?? 0} model-chosen summaries`}</small></h3>
+        <h3>{deterministic?'Controller memory':selectionMode ? 'Observation history' : 'Conversation context'} <small>{deterministic?`Heading: ${latest?.decision.direction??config.initialHeading}`:selectionMode ? `${latest?.contextMessages ?? 0} observations in the last request` : `${latest?.contextMessages ?? 0} messages · ${latest?.compactions ?? 0} model-chosen summaries`}</small></h3>
         {selectionMode && mapSupport && <details><summary>Map supplied to the model · {latest?.observedMap?.length ?? 0} observed cells</summary><p className="ant-caption">Snapshot from the last request, before its move. Visits = 0 means seen but not entered. Missing coordinates are unknown.</p><pre>{JSON.stringify(latest?.observedMap ?? [], null, 2)}</pre></details>}
         {selectionMode && explicitPolicy && <section aria-label="Supplied strategy"><h3>Strategy compliance</h3>{config.strategy !== 'custom' ? <p>Policy departures: {entries.filter(entry => entry.policyCheck?.compliant === false).length} / {entries.filter(entry => entry.policyCheck?.compliant != null).length} checked moves.</p> : <p className="ant-caption">Custom strategy · automatic compliance scoring unavailable.</p>}</section>}
         <h3>Model usage <small>{usageSummary.requests} requests · {formatTokenTotal(usageSummary)} tokens</small></h3>
@@ -170,10 +178,10 @@ function ExperimentRun({config,onNew,suspended}: {config: ExperimentConfig; onNe
       </aside>
     </div>
     <details className="ant-guide"><summary>About this experiment · rules, strategy and accounting</summary><div className="ant-guide-grid">
-      <section><h3>Environment and information</h3><p>{MAZE_WIDTH} × {MAZE_HEIGHT} maze · 200-move limit. The model senses adjacent cells; the observer view does not change its information. Pause finishes the current move.</p><p>{selectionMode ? (mapSupport ? 'Full observation and action history plus an automatic map of seen cells and entry counts. Missing coordinates are unknown.' : 'Full observation and action history; the model reconstructs its own map.') : 'The model can write and revise a persistent policy and summarize older history. Policies survive summaries. Optional public explanations are supported; private reasoning is not exposed.'}</p><p>Drop or pick transfers one pebble on the current cell before moving. Pebbles persist and stack; their meaning is up to the model.</p></section>
-      <section><h3>Strategy and scoring</h3><p>{explicitPolicy ? strategyText(config.strategy,config.customPolicy) : selectionMode ? 'No strategy is supplied. The model chooses its own approach through its actions.' : 'The model starts with a blank policy and decides what to write and when to revise it.'}</p>{explicitPolicy && <p>Decision question: {latest?.actionQuestion ?? POLICY_ACTION_QUESTION}</p>}<p>Built-in strategy compliance is checked after each choice and never changes a move. Custom strategies have no automatic compliance score. Reported confidence and probabilities are not verified accuracy.</p></section>
+      <section><h3>Environment and information</h3><p>{MAZE_WIDTH} × {MAZE_HEIGHT} maze · 200-move limit. The model senses adjacent cells; the observer view does not change its information. Pause finishes the current move.</p><p>{deterministic?'Only adjacent terrain and the current heading are used. No observation history or automatic map is consulted.':selectionMode ? (mapSupport ? 'Full observation and action history plus an automatic map of seen cells and entry counts. Missing coordinates are unknown.' : 'Full observation and action history; the model reconstructs its own map.') : 'The model can write and revise a persistent policy and summarize older history. Policies survive summaries. Optional public explanations are supported; private reasoning is not exposed.'}</p><p>Drop or pick transfers one pebble on the current cell before moving. Pebbles persist and stack; their meaning is up to the model.</p></section>
+      <section><h3>Strategy and scoring</h3><p>{explicitPolicy ? strategyText(config.strategy,config.customPolicy) : selectionMode ? 'No strategy is supplied. The model chooses its own approach through its actions.' : 'The model starts with a blank policy and decides what to write and when to revise it.'}</p>{explicitPolicy && !deterministic && <p>Decision question: {latest?.actionQuestion ?? POLICY_ACTION_QUESTION}</p>}<p>Built-in strategy compliance is checked after each choice and never changes a move. Custom strategies have no automatic compliance score. Reported confidence and probabilities are not verified accuracy.</p></section>
       <section><h3>Tokens and cost</h3><p>Totals cover this run, including repeated context and policy-writing requests. Missing usage is shown as partial. Estimated USD uses catalog rates from {pricing.asOf}, before cache discounts; actual billing may differ.{modelId?.includes('jev') ? ' Jev bills input tokens only.' : ''}</p></section>
-      <section><h3>Instructions supplied to the model</h3><p>{AGENT_PROMPT}</p><p>{selectionMode ? (mapSupport ? OBSERVED_MAP_RULES : SELECTION_RULES) : AGENT_RULES}</p></section>
+      <section><h3>{deterministic?'Deterministic controller':'Instructions supplied to the model'}</h3>{deterministic?<p>Only adjacent terrain and heading enter the controller. No history, map, exit coordinates or model are consulted. The animation delay is for viewing, not computation.</p>:<><p>{AGENT_PROMPT}</p><p>{selectionMode ? (mapSupport ? OBSERVED_MAP_RULES : SELECTION_RULES) : AGENT_RULES}</p></>}</section>
     </div></details>
   </main>;
 }

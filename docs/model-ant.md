@@ -395,3 +395,51 @@ private notebook edits and observation snapshots, and inscription origins.
 No initial team planning exchange or shared notebook is added. Agents still
 communicate only through locally visible pebbles; observers can inspect each
 agent's notebook separately. The original no-aid inputs remain available.
+
+### Local-only planning experiment (not deployed)
+
+The optional planning phase is behind two local flags and is unavailable in
+production. Normal local and preview runs retain their existing no-planning
+behavior. To opt in for development, start an isolated API and frontend:
+
+```bash
+PORT=3002 SWARM_PLANNING_ENABLED=true pnpm dev:model-ant
+PORT=3010 DEV_API_TARGET=http://localhost:3002 VITE_SWARM_PLANNING=true pnpm dev
+```
+
+Open `http://localhost:3010/swarm-ant`. Choose 0–3 planning turns per agent
+(default 2 in this opt-in UI). Each agent sends one concise public message per
+turn in round-robin order, sees earlier public messages and its own initial
+local observation, and may update its private notebook. No movement or pebble
+changes are permitted. No roles, vocabulary or exploration policy are supplied.
+After the fixed budget, the transcript freezes and exploration begins. Every
+agent receives that frozen transcript during movement; later communication is
+only through pebbles. The phase does not claim consensus or require agreement.
+
+Planning calls contribute to tokens, estimated cost and recorded request
+latency, but not the team move budget. Retry identity includes both planning
+and movement counters. Planning messages omit notebooks and private observation
+snapshots when forwarded to teammates. Version-3 downloads retain planning
+rules, transcript, per-request observations, usage and aid settings. Turn
+planning off to compare against the same aids without an initial discussion.
+Stop both temporary servers after testing. These changes are local working-tree
+changes and have not been pushed or deployed to the shared preview.
+
+### Deterministic right-hand baseline (local working tree)
+
+Single-ant setup now includes `Deterministic · right-hand rule` under Active
+solver. It runs in the browser with only adjacent terrain and its current
+heading: right, straight, left, then reverse. Initial heading is configurable;
+heading changes only after successful movement. It never places pebbles, calls
+a model, consults coordinates/history/maps, or consumes tokens. It remains
+usable without the model service. Model experiment options are hidden or fixed
+for this solver. Run animates at two moves per second for observation; that
+presentation delay is not controller computation time.
+
+Use the same seed, loop rate and initial heading when contrasting it with a
+model following the right-hand strategy. Both retain the 200-move limit. Wall
+following may loop in mazes with cycles; it is a baseline, not a universally
+optimal solver or a guarantee of success. Version-12 single-ant downloads label
+the solver and controller inputs, record zero model usage and AI cost, and keep
+per-step observations, actions and rule compliance. These changes are local;
+no push or preview deployment has been performed.

@@ -10,10 +10,20 @@ test("normalizes trailing slashes without changing the root", () => {
 
 test("resolves every public simulation route explicitly", () => {
   assert.equal(resolveAppRoute("/"), "index");
+  for (const route of ["strategy-lab", "maze-memory"] as const) {
+    assert.equal(resolveAppRoute(`/${route}/`), route);
+    assert.equal(resolveAppRoute(`/stigsim/${route}`, "/stigsim/"), route);
+  }
   assert.equal(resolveAppRoute("/maze"), "maze");
+  assert.equal(resolveAppRoute("/highway-lab/"), "highway-lab");
+  assert.equal(resolveAppRoute("/stigsim/highway-lab", "/stigsim/"), "highway-lab");
   assert.equal(resolveAppRoute("/model-ant"), "model-ant");
   assert.equal(resolveAppRoute("/swarm-ant/"), "swarm-ant");
   assert.equal(resolveAppRoute("/war"), "war");
+  assert.equal(resolveAppRoute("/delivery-lab/"), "delivery-lab");
+  assert.equal(resolveAppRoute("/stigsim/delivery-lab", "/stigsim/"), "delivery-lab");
+  assert.equal(resolveAppRoute("/model-war/"), "model-war");
+  assert.equal(resolveAppRoute("/stigsim/model-war", "/stigsim/"), "model-war");
   assert.equal(resolveAppRoute("/multiplayer"), "multiplayer");
   assert.equal(resolveAppRoute("/multiplayer/ABC123"), "multiplayer");
   assert.equal(resolveAppRoute("/infinite"), "infinite");

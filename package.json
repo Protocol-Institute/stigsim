@@ -8,8 +8,8 @@
     "dev": "vite --host 0.0.0.0",
     "dev:server": "pnpm --dir server dev",
     "build": "tsc --noEmit && vite build && node scripts/prepare-static-routes.mjs",
-    "test": "pnpm typecheck && pnpm test:app && pnpm test:presets && pnpm test:replay && pnpm test:coverage && pnpm test:server",
-    "test:app": "tsx --test src/routes.test.ts src/modes/war/*.test.ts src/modes/model-ant/*.test.ts",
+    "test": "pnpm typecheck && pnpm test:app && pnpm test:highway && pnpm test:presets && pnpm test:replay && pnpm test:coverage && pnpm test:server && pnpm test:maze-memory",
+    "test:app": "tsx --test src/modes/delivery/*.test.ts src/routes.test.ts src/modes/war/*.test.ts src/modes/model-ant/*.test.ts src/modes/model-war/*.test.ts src/modes/coordination-lab/*.test.ts src/modes/protocol-lab/*.test.ts src/modes/strategy-lab/*.test.ts",
     "test:routes": "tsx --test src/routes.test.ts",
     "test:presets": "tsx --test src/doctrine-presets.test.ts src/topology-choices.test.ts",
     "test:client": "tsx --test packages/sim-core/src/*.test.ts packages/sim-trace/src/*.test.ts",
@@ -18,17 +18,26 @@
     "golden": "tsx packages/sim-trace/src/fixtures/make-golden.ts",
     "matchup": "tsx scripts/doctrine-matchup.ts",
     "test:persistence": "pnpm --dir server exec tsx --test src/sim.persistence.test.ts",
-    "test:server": "pnpm --dir server exec tsx --test src/degraded-status.test.ts src/fixed-step.test.ts src/infinite-mode.equivalence.test.ts src/sim.equivalence.test.ts src/sim.persistence.test.ts src/sim.phero-bookkeeping.test.ts src/sim.starvation.test.ts src/security.test.ts src/transport.test.ts src/war-agent.test.ts src/war.test.ts src/war.integration.test.ts src/ws.integration.test.ts src/model-ant.test.ts src/swarm-ant.test.ts",
-    "typecheck": "tsc --noEmit && pnpm --dir packages/sim-core typecheck && pnpm --dir packages/sim-trace typecheck && pnpm --dir server typecheck",
+    "test:server": "pnpm --dir server exec tsx --test src/degraded-status.test.ts src/fixed-step.test.ts src/infinite-mode.equivalence.test.ts src/sim.equivalence.test.ts src/sim.persistence.test.ts src/sim.phero-bookkeeping.test.ts src/sim.starvation.test.ts src/security.test.ts src/transport.test.ts src/war-agent.test.ts src/war.test.ts src/war.integration.test.ts src/ws.integration.test.ts src/model-ant.test.ts src/swarm-ant.test.ts src/protocol-lab.test.ts src/model-war.test.ts src/maze-memory-preview.test.ts",
+    "typecheck": "tsc --noEmit && pnpm --dir packages/sim-core typecheck && pnpm --dir packages/sim-trace typecheck && pnpm --dir server typecheck && tsc -p scripts/highway/tsconfig.json && tsc -p tsconfig.strategy.json && tsc -p tsconfig.maze-memory.json",
     "preview": "vite preview --host 0.0.0.0",
     "preview:model-ant": "node --import tsx server/src/model-ant-preview.ts",
-    "dev:model-ant": "node --env-file=.env.model-ant.local --import tsx server/src/index.ts"
+    "dev:model-ant": "node --env-file=.env.model-ant.local --import tsx server/src/index.ts",
+    "highway": "node --import tsx scripts/highway-benchmark.ts",
+    "delivery": "node --import tsx scripts/food-delivery.ts",
+    "test:highway": "node --import tsx --test scripts/highway/*.test.ts",
+    "test:maze-memory": "tsx --test src/modes/maze-memory/*.test.ts scripts/maze-memory*.test.ts",
+    "maze-memory:runner": "node --import tsx scripts/maze-memory-server.ts",
+    "maze-memory:round": "tsx scripts/maze-memory-round.ts",
+    "strategy-round": "tsx scripts/strategy-round.ts"
   },
   "dependencies": {
     "@stigsim/sim-core": "workspace:*",
     "@stigsim/sim-trace": "workspace:*",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "quickjs-emscripten-core": "0.32.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

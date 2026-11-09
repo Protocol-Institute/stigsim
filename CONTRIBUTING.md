@@ -169,3 +169,14 @@ never populated `discoveredSources` before removing a source.
 ## Shared-world mode
 
 Run `pnpm dev:server` alongside `pnpm dev`. Production must use one server replica and Postgres persistence; see `server/README.md`.
+
+## Strategy and Maze Memory preview modes
+
+`src/modes/strategy-lab` is the PR #32 browser/QuickJS observer-controller
+challenge; see [its contract](docs/strategy-lab.md). `src/modes/maze-memory`
+is the PR #34 local-observation navigator, with model decisions and free-form
+environmental JSON notes; see [its contract](docs/maze-memory.md).
+Both reuse the shared seeded maze engine. The preview-only inference adapter
+is `server/src/maze-memory-preview.ts`; do not mount it on ordinary production.
+Run the strategy and memory tests, full typecheck/build, and browser-check the
+Worker/WASM paths and replay when changing either integration.

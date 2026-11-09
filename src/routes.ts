@@ -1,4 +1,4 @@
-export type AppRoute = "index" | "swarm-ant" | "model-ant" | "maze" | "war" | "multiplayer" | "infinite" | "not-found";
+export type AppRoute = "strategy-lab" | "maze-memory" | "delivery-lab" | "model-war" | "highway-lab" | "index" | "protocol-lab" | "coordination-lab" | "swarm-ant" | "model-ant" | "maze" | "war" | "multiplayer" | "infinite" | "not-found";
 
 function normalizeBasePath(basePath: string): string {
   const withLeadingSlash = basePath.startsWith("/") ? basePath : `/${basePath}`;
@@ -31,7 +31,14 @@ export function normalizePathname(pathname: string, basePath = "/"): string {
 export function resolveAppRoute(pathname: string, basePath = "/"): AppRoute {
   const path = normalizePathname(pathname, basePath);
 
+  if (path === "/strategy-lab") return "strategy-lab";
+  if (path === "/maze-memory") return "maze-memory";
+  if (path === "/model-war") return "model-war";
+  if (path === "/delivery-lab") return "delivery-lab";
   if (path === "/") return "index";
+  if (path === "/highway-lab") return "highway-lab";
+  if (import.meta.env?.DEV && path === "/protocol-lab") return "protocol-lab";
+  if (import.meta.env?.DEV && path === "/coordination-lab") return "coordination-lab";
   if (path === "/swarm-ant") return "swarm-ant";
   if (path === "/model-ant") return "model-ant";
   if (path === "/maze") return "maze";

@@ -285,3 +285,107 @@ connection; see [Model Ant setup](docs/model-ant.md).
 Open `/swarm-ant` to configure 2–4 model agents exploring one maze. Agents
 coordinate through shared pebbles and timestamped inscriptions; any agent
 finding the exit wins for the team. See [experiment details](docs/model-ant.md).
+
+### Local deterministic Coordination Lab
+
+During development, open `/coordination-lab` to compare two deterministic DFS
+explorers with and without shared local markers. Inspect branch claims and
+step both teams on the same maze. See [lab assumptions](docs/coordination-lab.md).
+
+### Local Protocol Workshop
+
+Open `/protocol-lab` during development to have a model design bounded
+deterministic controllers and marker conventions, revise on practice mazes,
+then freeze and test on unseen mazes with shared/private/off signal ablations.
+See [the experimental contract](docs/protocol-lab.md).
+
+### Highway formation benchmark
+
+Open `/highway-lab` for a browser UI with live maze previews, progress, rankings,
+and downloads, or run `pnpm highway` to compare evaporation and trail bias across identical seeded
+mazes, with a fixed colony and a single inexhaustible food source. It measures
+sustained concentration on one near-shortest route with repeated deliveries,
+and exports per-trial results and a ranking that includes timeouts. See the
+[benchmark definition and configuration](docs/highway-benchmark.md).
+
+### Model War
+
+Open `/model-war` to choose two different configured language models for a local
+best-of-five War series. Both receive the same public metrics, doctrines and food
+snapshot every 500 ticks; neither sees the other's private strategy memory.
+They review each completed game and carry lessons and opening doctrines into the
+next game. Mirrored maps use fresh seeds, and colony seats alternate. First to
+three wins takes the series; draws count toward the five-game maximum, with a
+30,000-tick draw limit per game. The simulation pauses during inference. Model War uses the Local War battlefield
+layout with live colony metrics, visible strategy notes, Play/Pause controls and
+15–600 steps-per-second animation between observations.
+
+Use the existing [Model Ant endpoint setup](docs/model-ant.md), with at least two
+text models in `ANT_ALLOWED_MODELS`. Run `pnpm dev:model-ant` and `pnpm dev`, then
+open the mode from the simulation index. Action-only Jev models are excluded
+because this mode requires doctrine and strategy authoring. Model inference is
+available locally and in the password-protected model preview; it is disabled
+on the ordinary production server. Provider charges apply (up to 610 requests
+for a full series, plus failed attempts). Pause takes effect after the current
+observation turn. Failed decisions pause for explicit retry, retaining any
+successful reply from the other player.
+
+Download series saves strategy journals, reported provider usage, and replayable
+Local War research records for each game. Extract an individual game record to
+load it in Local War. Games run in the browser, while public observations and
+private model memory are sent through the local server to the configured model
+provider. Live series are not persisted across refreshes.
+
+Model War observations explicitly label your model/colony and the opponent,
+include authoritative completed-game history and win/loss/draw totals, and
+state the review outcome from each player's perspective. Per-player metric
+deltas compare consecutive observations within the same game. Private strategy
+memory is advisory and must be corrected when it conflicts with those facts.
+Each decision journal entry exports the exact public observation supplied to
+that player, making identity and outcome interpretation auditable.
+
+Model War also supplies version-3 spatial observations: the maze grid, nest-to-food
+shortest path distances, current food-pheromone hotspots, traffic samples and
+per-source searching counts. A rolling 500-tick history sampled every 25 ticks
+reports possible circulation; food-carrying paths are tracked every simulation
+tick and loop-erased to count repeated delivered routes. A possible highway
+requires at least three returns on one route, a majority of tracked returns,
+at least 50% delivery coverage, and 250 ticks of history. These are bounded
+heuristics, not confirmed mills/highways or causal evidence of spoiler effects.
+Path displays truncate after 64 cells; top routes, traffic and pheromone cells
+are bounded. The colony panels expose the last spatial evidence sent to the
+models, and exports retain it with each observation. No battlefield image or
+private opponent memory is sent.
+
+Version-4 Model War observations include an authoritative action ledger. It records
+accepted numeric doctrine changes, topology adjustments, next-tick runtime
+confirmation, and the following observation's metric deltas for both players.
+Unchanged commands are explicit no-ops; overwritten same-tick opening commands
+are marked superseded, and review prose is never treated as an action. The model
+receives four recent commands plus bounded per-game parameter histories; exports
+retain the complete ledger. Before/after outcomes are observational and do not
+establish causation. Colony panels expose accepted changes alongside model prose.
+
+### Food Delivery Lab
+
+Open `/delivery-lab` to lock maze/food/population rules, search evaporation,
+trail-following strength and food-trail deposition across paired random mazes,
+then validate frozen finalists on unseen seeds. A separate second stage tests
+one mid-run change against the frozen fixed baseline. Includes live worker
+previews, target-time metrics, paired uncertainty intervals and full downloads.
+Run `pnpm delivery` from the command line; add `--adapt` for phase 2. See the
+[experimental protocol](docs/food-delivery-benchmark.md).
+
+### Strategy Lab · PR #32
+
+Open `/strategy-lab` to design an observer/controller beside a live colony,
+then evaluate food collection on 100 reproducible mazes. This runs in a
+browser Worker without inference. See [Strategy Lab](docs/strategy-lab.md).
+
+### Maze Memory Lab · PR #34
+
+Open `/maze-memory` to design instructions and free-form local JSON memory
+for Jev. The protected model preview supplies the inference service; Jev
+chooses every movement. Compare completion and tokens per solution, inspect
+memory playback, and export strategies/results. Requests consume the preview's
+configured inference credits. See [Maze Memory Lab](docs/maze-memory.md).

@@ -1,0 +1,217 @@
+.mm-lab {
+  max-width: 1440px;
+  margin: auto;
+  padding: 28px 24px 90px;
+  color: #e5eadc;
+  font-family: system-ui, sans-serif;
+}
+.mm-lab h1 {
+  font-size: 34px;
+  margin: 4px 0;
+}
+.mm-lab h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+.mm-lab h3 {
+  font-size: 15px;
+}
+.mm-lab p {
+  color: #b8c1ad;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.mm-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px !important;
+}
+.mm-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.mm-panel {
+  background: #171e13;
+  border: 1px solid #39432f;
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 18px;
+  min-width: 0;
+}
+.mm-lab label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: #b8c1ad;
+  margin: 10px 0;
+  min-width: 0;
+}
+.mm-row,
+.mm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mm-actions {
+  justify-content: flex-start;
+  margin: 12px 0;
+}
+.mm-lab button,
+.mm-lab select,
+.mm-lab input,
+.mm-lab textarea {
+  font: inherit;
+  color: #e5eadc;
+  background: #28341f;
+  border: 1px solid #536147;
+  border-radius: 5px;
+  padding: 9px;
+  max-width: 100%;
+}
+.mm-lab button {
+  font-size: 13px;
+  cursor: pointer;
+}
+.mm-lab button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mm-lab button:focus-visible,
+.mm-lab input:focus-visible,
+.mm-lab textarea:focus-visible,
+.mm-lab select:focus-visible {
+  outline: 2px solid #d9eba2;
+  outline-offset: 3px;
+}
+.mm-lab input[type="number"] {
+  width: 130px;
+}
+.mm-lab input[type="range"] {
+  width: 100%;
+  padding: 0;
+  accent-color: #d9eba2;
+}
+.mm-lab textarea.mm-code {
+  width: 100%;
+  height: 620px;
+  resize: vertical;
+  background: #10160c;
+  font:
+    13px/1.6 ui-monospace,
+    monospace;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+.mm-lab canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #10160c;
+  border-radius: 6px;
+}
+.mm-lab pre {
+  background: #10160c;
+  padding: 12px;
+  border-radius: 5px;
+  max-height: 350px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    12px/1.5 ui-monospace,
+    monospace;
+}
+.mm-lab code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.mm-lab details {
+  border-top: 1px solid #39432f;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.mm-lab summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.mm-lab table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.mm-lab th,
+.mm-lab td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid #39432f;
+}
+.mm-error {
+  color: #ffbca3 !important;
+  border-left: 3px solid #e18d69;
+  padding: 10px;
+}
+.mm-lab .mm-primary {
+  background: #cddd9d;
+  color: #18200f;
+  font-weight: 650;
+}
+.mm-change {
+  border-left: 3px solid #dfb572;
+  padding-left: 12px;
+}
+.mm-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000c;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.mm-modal > .mm-panel {
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+}
+.mm-modal textarea {
+  display: block;
+  width: 100%;
+  height: 55vh;
+  background: #10160c;
+  font:
+    13px/1.5 ui-monospace,
+    monospace;
+  margin: 14px 0;
+}
+@media (max-width: 900px) {
+  .mm-grid {
+    grid-template-columns: 1fr;
+  }
+  .mm-lab {
+    padding: 18px 12px 80px;
+  }
+  .mm-lab textarea.mm-code {
+    height: 420px;
+  }
+}
+
+.mm-eval-link {
+  display: inline-block;
+  padding: 9px 12px;
+  border: 1px solid #cddd9d;
+  border-radius: 5px;
+  color: #d9eba2;
+  text-decoration: none;
+  font-size: 13px;
+}
+.mm-lab progress {
+  width: 100%;
+  accent-color: #cddd9d;
+}

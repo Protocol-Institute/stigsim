@@ -33,6 +33,10 @@ export default function SimulationIndex({ href }: { href: (pathname: string) => 
       </header>
 
       <section className="simulation-grid" aria-label="Simulations">
+        <SimulationCard eyebrow="PR #32 · Colony strategies" title="Strategy Lab" description="Work with an AI to design an observer and controller. Watch one maze, then test food collection across 100 mazes." href={href("/strategy-lab")} accent="#91e4c7" />
+        <SimulationCard eyebrow="PR #34 · Model-directed navigation" title="Maze Memory Lab" description="Design instructions and environmental memory for Jev. Inspect its choices and improve tokens per maze solved." href={href("/maze-memory")} accent="#bddb91" />
+        <SimulationCard eyebrow="Local · Paired benchmark" title="Food Delivery Lab" description="Find strong fixed ant settings on training mazes, validate on unseen seeds, then test a mid-run intervention." href={href("/delivery-lab")} accent="#86efac" />
+        <SimulationCard eyebrow="Local · Model vs model" title="Model War" description="Two models command competing colonies, adapt during each game, and learn between games in a best-of-five series." href={href("/model-war")} accent="#f0abfc" />
         <SimulationCard
           eyebrow="Local · Sandbox"
           title="Maze Simulator"
@@ -63,6 +67,9 @@ export default function SimulationIndex({ href }: { href: (pathname: string) => 
         />
         <SimulationCard eyebrow="Experiment · One ant" title="Model Ant" description="Can a language model find the exit with only a local view and its own memory? Watch one decision at a time." href={href("/model-ant")} accent="#a3e635" />
         <SimulationCard eyebrow="Experiment · Agent team" title="Shared Pebbles" description="Different models explore one maze, leaving timestamped messages on shared pebbles. One agent finds the exit; the team wins." href={href("/swarm-ant")} accent="#c084fc" />
+        {import.meta.env.DEV && <SimulationCard eyebrow="Local lab · Deterministic team" title="Coordination Lab" description="Watch two deterministic explorers share branch claims, compared with independent exploration on the same maze." href={href("/coordination-lab")} accent="#2dd4bf" />}
+        {import.meta.env.DEV && <SimulationCard eyebrow="Local research · Protocol design" title="Protocol Workshop" description="Let a model invent deterministic controllers and marker conventions, revise on practice mazes, then freeze and test on unseen mazes." href={href("/protocol-lab")} accent="#f5c77e" />}
+        <SimulationCard eyebrow="Local experiment · Seeded comparisons" title="Highway Lab" description="Compare ant settings across the same random mazes. Watch routes emerge and measure how quickly stable highways form." href={href("/highway-lab")} accent="#5eead4" />
       </section>
     </main>
   );

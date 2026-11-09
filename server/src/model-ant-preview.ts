@@ -1,3 +1,5 @@
+import { mazeMemoryPreviewRouter } from "./maze-memory-preview";
+import { modelWarRouter } from './model-war';
 import { swarmAntRouter } from './swarm-ant';
 // Isolated preview: no production world, database or multiplayer services.
 import express from 'express';
@@ -9,6 +11,8 @@ if (!previewEnabled(process.env)) throw new Error('Preview requires MODEL_ANT_PR
 const app = express();
 app.get('/api/healthz', (_req,res) => res.json({ok:true}));
 app.use(previewAccess(process.env.MODEL_ANT_PREVIEW_PASSWORD!));
+app.use('/api/maze-memory',mazeMemoryPreviewRouter());
+app.use('/api/model-war',express.json({limit:'64kb'}),modelWarRouter());
 app.use(express.json({limit:'16kb'}));
 app.use('/api/model-ant',modelAntRouter());
 app.use('/api/swarm-ant',swarmAntRouter());
