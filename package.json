@@ -9,7 +9,7 @@
     "dev:server": "pnpm --dir server dev",
     "build": "tsc --noEmit && vite build && node scripts/prepare-static-routes.mjs",
     "test": "pnpm typecheck && pnpm test:app && pnpm test:highway && pnpm test:presets && pnpm test:replay && pnpm test:coverage && pnpm test:server && pnpm test:maze-memory",
-    "test:app": "tsx --test src/modes/delivery/*.test.ts src/routes.test.ts src/modes/war/*.test.ts src/modes/model-ant/*.test.ts src/modes/model-war/*.test.ts src/modes/coordination-lab/*.test.ts src/modes/protocol-lab/*.test.ts src/modes/strategy-lab/*.test.ts",
+    "test:app": "tsx --test src/modes/delivery/*.test.ts src/routes.test.ts src/modes/war/*.test.ts src/modes/model-ant/*.test.ts src/modes/model-war/*.test.ts src/modes/coordination-lab/*.test.ts src/modes/protocol-lab/*.test.ts src/modes/strategy-lab/*.test.ts src/modes/onboarding/*.test.ts",
     "test:routes": "tsx --test src/routes.test.ts",
     "test:presets": "tsx --test src/doctrine-presets.test.ts src/topology-choices.test.ts",
     "test:client": "tsx --test packages/sim-core/src/*.test.ts packages/sim-trace/src/*.test.ts",

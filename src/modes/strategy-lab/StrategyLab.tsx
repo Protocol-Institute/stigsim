@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { W, H } from '@stigsim/sim-core';
 import { BASELINE, CHALLENGE, parseStrategy, strategyId, type Settings, type Strategy } from './contract';
 import { composeSource, readEditors } from './authoring';
+import { codingAgentBrief } from './brief';
 import { STARTERS } from './starters';
 import { evaluationRound, summarizeTrials } from './evaluation';
 import type { Observation, Report, SandboxSnapshot, Trial } from './engine';
@@ -54,6 +55,16 @@ export default function StrategyLab() {
   const [snapshot, setSnapshot] = useState<SandboxSnapshot | null>(null), [lastTrial, setLastTrial] = useState<Trial | null>(null);
   const [running, setRunning] = useState(false), [pending, setPending] = useState(false), [speed, setSpeed] = useState(1);
   const [error, setError] = useState(''), [evaluationError, setEvaluationError] = useState('');
+  const [brief, setBrief] = useState(''), [copyStatus, setCopyStatus] = useState('');
+  const briefDialog = useRef<HTMLDialogElement>(null);
+  async function copyStarterKit() {
+    try {
+      const text = await codingAgentBrief(strategy);
+      setBrief(text); setCopyStatus(''); briefDialog.current?.showModal();
+      try { await navigator.clipboard.writeText(text); setCopyStatus('Copied. Paste this into your coding agent.'); }
+      catch { setCopyStatus('Select the briefing below and copy it manually.'); }
+    } catch (e) { setCopyStatus('Could not prepare the kit: '+(e instanceof Error ? e.message : 'Check your strategy.')); }
+  }
   const [testSet, setTestSet] = useState(() => crypto.randomUUID() as string);
   const [batch, setBatch] = useState<Batch | null>(null), [evaluating, setEvaluating] = useState(false);
   const [reports, setReports] = useState<Report[]>([]);
@@ -130,7 +141,9 @@ export default function StrategyLab() {
     <div className="sl-workbench">
       <section className="sl-editor sl-panel" aria-label="Strategy editor">
         <div className="sl-panel-heading"><h2>Your strategy</h2><select aria-label="Load starter strategy" defaultValue="" onChange={e => { void selectStarter(Number(e.target.value)); e.target.value = ''; }}><option value="" disabled>Load a starter…</option>{STARTERS.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}</select></div>
+        <div className="sl-agent-handoff"><button onClick={() => void copyStarterKit()}>Copy starter kit for your coding agent</button><p>Includes the rules, current code and import format. Paste it into your AI, then import its strategy under Share strategy.</p><span role="status">{copyStatus}</span></div>
         <label className="sl-name">Name<input maxLength={80} value={strategy.name} onChange={e => update({ name: e.target.value })} /></label>
+        <label className="sl-name sl-hypothesis">Hypothesis<textarea rows={3} maxLength={2000} placeholder="What do you expect this strategy to improve, and why?" value={strategy.description} onChange={e => update({ description: e.target.value })} /></label>
         {editors ? <>
           <div className="sl-code-heading"><h3><span>01</span> Observer</h3><small>Raw field → your signals</small></div>
           <textarea className="sl-code sl-observer" aria-label="Observer JavaScript" spellCheck={false} value={editors.observer} onChange={e => update({ source: composeSource({ ...editors, observer: e.target.value }) })} />
@@ -140,7 +153,7 @@ export default function StrategyLab() {
         <div className="sl-editor-footer"><button className={dirty ? 'sl-apply' : ''} disabled={evaluating} onClick={() => reset()}>{dirty ? 'Apply edits & restart' : 'Restart with this code'}</button><span>{dirty ? 'Edits not applied to sandbox' : 'Code applied'}</span></div>
         <details><summary>Initial ant settings</summary><div className="sl-settings">{(Object.keys(BASELINE) as (keyof Settings)[]).map(key => <label key={key}>{settingLabels[key]}<input type="number" min={0} max={key === 'evaporation' ? 1 : key === 'trailBias' ? 32 : 3} step={key === 'evaporation' ? 0.001 : key === 'trailBias' ? 0.5 : 1} value={strategy.initial[key]} onChange={e => update({ initial: { ...strategy.initial, [key]: Number(e.target.value) } })} /></label>)}</div></details>
         <details><summary>Code reference & limits</summary><p><code>observe(o, state)</code> returns <code>{'{ signals, state, nextTick }'}</code>. Choose the next absolute observation tick (later than now, at most 3001). Signals are entirely your own design.</p><p><code>control(signals, state, context)</code> returns <code>{'{ state, settings? }'}</code>. Context includes tick, tickLimit, current settings and initial settings. Each observation calls the controller. Each function keeps its own JSON state.</p><p>Raw inputs: tick, tickLimit, cols, rows, open, nest, ants, food, trails, foodDelivered, settings. Ants have id, x, y, carrying. Positions use cell units; map and trails are row-major arrays.</p><p>Complete settings object: evaporation (0–1), trailBias (0–32 in half steps), foodDeposition (integer 0–3). Settings apply before the following tick. Every trial has the same limits: 16 MB observations, 64 KB state, 128 changes, 128 compute units per call and 8,192 total. No host IO, clock or randomness.</p><p>Legacy <code>step(o, state)</code> files remain supported. Exports include the adapter that connects the two functions.</p></details>
-        <details><summary>Share strategy</summary><label>Description<textarea rows={2} maxLength={2000} value={strategy.description} onChange={e => update({ description: e.target.value })} /></label><div className="sl-actions"><button onClick={() => { try { download('strategy.json', parseStrategy(strategy)); } catch (e) { setError(String(e)); } }}>Export strategy</button><button onClick={() => file.current?.click()}>Import strategy</button></div>{strategy.parent && <p className="sl-hash">Parent: {strategy.parent}</p>}</details>
+        <details><summary>Share strategy</summary><div className="sl-actions"><button onClick={() => { try { download('strategy.json', parseStrategy(strategy)); } catch (e) { setError(String(e)); } }}>Export strategy</button><button onClick={() => file.current?.click()}>Import strategy</button></div>{strategy.parent && <p className="sl-hash">Parent: {strategy.parent}</p>}</details>
         <input ref={file} hidden type="file" accept=".json,application/json" onChange={async e => {
           const f = e.target.files?.[0]; if (!f) return;
           try { if (f.size > 100_000) throw new Error('Strategy file exceeds 100 KB.'); const entry = parseStrategy(JSON.parse(await f.text())); setStrategy(entry); reset(entry); }
@@ -164,5 +177,11 @@ export default function StrategyLab() {
         </section>
       </section>
     </div>
+    <dialog className="sl-agent-dialog" ref={briefDialog} aria-labelledby="sl-agent-title">
+      <div className="sl-panel-heading"><h2 id="sl-agent-title">Starter kit for your coding agent</h2><button onClick={() => briefDialog.current?.close()}>Close</button></div>
+      <p>Paste this into your coding agent. Ask it to develop your hypothesis and return a strategy JSON file.</p>
+      <textarea aria-label="Coding agent starter kit" value={brief} readOnly onFocus={e => e.currentTarget.select()} />
+      <div className="sl-actions"><button onClick={async () => { try { await navigator.clipboard.writeText(brief); setCopyStatus('Copied. Paste this into your coding agent.'); } catch { setCopyStatus('Select the briefing and copy it manually.'); } }}>Copy briefing</button><span role="status">{copyStatus}</span></div>
+    </dialog>
   </main>;
 }

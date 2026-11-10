@@ -17,8 +17,9 @@ The existing gateway variables are reused. `MAZE_MEMORY_MODEL` can override
 `ANT_MODEL`; the default is Jev. Calls serialize across this lab's runs.
 
 Use `pnpm preview:model-ant` after building. For Vite development, run the
-protected backend on port 3018 (or set `DEV_MEMORY_API_TARGET`) and `pnpm dev`;
-the development proxy sends `/api/maze-memory` to that backend. The browser uses
+loopback runner on port 3016 and `pnpm dev`; the development proxy rewrites
+`/api/maze-memory` to `/local-maze-memory` on that runner. Set
+`DEV_MEMORY_API_TARGET` to use a protected backend instead (no path rewrite). The browser uses
 relative same-origin API paths. All pages retain the existing preview password.
 
 Starting a sandbox allocates a run but makes no paid request. Play/step makes

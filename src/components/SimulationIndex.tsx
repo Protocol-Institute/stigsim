@@ -33,6 +33,7 @@ export default function SimulationIndex({ href }: { href: (pathname: string) => 
       </header>
 
       <section className="simulation-grid" aria-label="Simulations">
+        {<SimulationCard eyebrow="Guided play" title="Learn Stigsim" description="Start as one ant in a fresh maze, watch trails form, then zoom out to guide the same colony." href={href("/onboarding")} accent="#e6b766" />}
         <SimulationCard eyebrow="PR #32 · Colony strategies" title="Strategy Lab" description="Work with an AI to design an observer and controller. Watch one maze, then test food collection across 100 mazes." href={href("/strategy-lab")} accent="#91e4c7" />
         <SimulationCard eyebrow="PR #34 · Model-directed navigation" title="Maze Memory Lab" description="Design instructions and environmental memory for Jev. Inspect its choices and improve tokens per maze solved." href={href("/maze-memory")} accent="#bddb91" />
         <SimulationCard eyebrow="Local · Paired benchmark" title="Food Delivery Lab" description="Find strong fixed ant settings on training mazes, validate on unseen seeds, then test a mid-run intervention." href={href("/delivery-lab")} accent="#86efac" />

@@ -1,3 +1,4 @@
+import Levels from "./components/Levels";
 import { lazy, Suspense } from "react";
 import DeliveryLab from "./modes/delivery/DeliveryLab";
 import ModelWar from "./modes/model-war/ModelWar";
@@ -14,6 +15,7 @@ import LocalWarMode from "./modes/war/LocalWarMode";
 import OnlineWarMode from "./modes/war/OnlineWarMode";
 import { appHref, resolveAppRoute } from "./routes";
 
+const Onboarding = lazy(() => import("./modes/onboarding/Onboarding"));
 const StrategyLab = lazy(() => import("./modes/strategy-lab/StrategyLab"));
 const MazeMemoryLab = lazy(() => import("./modes/maze-memory/MazeMemoryLab"));
 
@@ -22,10 +24,12 @@ export default function App() {
   const route = resolveAppRoute(window.location.pathname, basePath);
   const href = (pathname: string) => appHref(pathname, basePath);
 
+  if (route === "levels") return <Levels href={href} />;
   if (route === "index") return <SimulationIndex href={href} />;
 
   let content;
-  if (route === "strategy-lab") content = <Suspense fallback={<p>Loading Strategy Lab…</p>}><StrategyLab /></Suspense>;
+  if (route === "onboarding") content = <Suspense fallback={<p>Loading onboarding…</p>}><Onboarding /></Suspense>;
+  else if (route === "strategy-lab") content = <Suspense fallback={<p>Loading Strategy Lab…</p>}><StrategyLab /></Suspense>;
   else if (route === "maze-memory") content = <Suspense fallback={<p>Loading Maze Memory Lab…</p>}><MazeMemoryLab /></Suspense>;
   else if (route === "delivery-lab") content = <DeliveryLab />;
   else if (route === "model-war") content = <ModelWar />;
@@ -43,7 +47,7 @@ export default function App() {
     <>
       {content}
       {route !== "infinite" && (
-        <a className="simulation-backlink" href={href("/")}>← All simulations</a>
+        <a className="simulation-backlink" href={href("/levels")}>← Levels</a>
       )}
     </>
   );

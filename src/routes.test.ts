@@ -44,3 +44,10 @@ test("builds links relative to the configured app base", () => {
   assert.equal(appHref("/", "/stigsim/"), "/stigsim/");
   assert.equal(appHref("/maze", "/stigsim/"), "/stigsim/maze");
 });
+
+test("overview and onboarding resolve in preview builds", () => {
+  assert.equal(resolveAppRoute("/levels"), "levels");
+  assert.equal(resolveAppRoute("/stigsim/levels/", "/stigsim/"), "levels");
+  assert.equal(resolveAppRoute("/onboarding"), "onboarding");
+  assert.equal(resolveAppRoute("/stigsim/onboarding/", "/stigsim/"), "onboarding");
+});

@@ -389,3 +389,16 @@ for Jev. The protected model preview supplies the inference service; Jev
 chooses every movement. Compare completion and tokens per solution, inspect
 memory playback, and export strategies/results. Requests consume the preview's
 configured inference credits. See [Maze Memory Lab](docs/maze-memory.md).
+
+### Local onboarding prototype
+
+Open /onboarding (or **Learn Stigsim** in the index).
+Start as a randomly chosen ant on maze seed rustic-ember-1253 with 99 other ants and
+no pheromone trails. Bring your own food home, then zoom out to control the
+same colony's settings. Maze, ants, food, trails and elapsed time carry over.
+No authored mill is inserted. Uses one colony, two sources of 250 food, and 60 ticks/second. Includes hints and restart.
+Available locally and in the password-protected Model Ant preview.
+See [onboarding notes](docs/onboarding.md).
+
+For the initiative overview, open /levels. Level 1 opens onboarding; level 2 opens Maze Simulator directly. The later
+levels link to Strategy Lab, Maze Memory Lab and Model War.

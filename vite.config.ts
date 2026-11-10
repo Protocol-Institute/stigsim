@@ -18,7 +18,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api/maze-memory": {
-        target: process.env.DEV_MEMORY_API_TARGET ?? "http://localhost:3018",
+        target: process.env.DEV_MEMORY_API_TARGET ?? "http://127.0.0.1:3016",
+        rewrite: path => process.env.DEV_MEMORY_API_TARGET ? path : path.replace(/^\/api\/maze-memory/, "/local-maze-memory"),
         changeOrigin: true,
       },
       "/api": {

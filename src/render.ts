@@ -37,6 +37,7 @@ export function render(
   editMode: EditMode = "none",
   hoverCell: { x: number; y: number } | null = null,
   antOpacity?: (ant: Ant) => number,
+  viewHalf: number = VIEW_HALF,
 ) {
   const allAnts = sim.allAnts;
   const safeIdx = allAnts.length > 0 ? Math.min(watchedAntIdx, allAnts.length - 1) : -1;
@@ -47,7 +48,7 @@ export function render(
 
   if (viewMode === "one" && safeIdx >= 0) {
     const ant = allAnts[safeIdx];
-    const zoom = W / (VIEW_HALF * 2);
+    const zoom = W / (viewHalf * 2);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, W, H);

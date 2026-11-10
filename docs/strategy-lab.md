@@ -255,3 +255,14 @@ the test size and compare on fresh held-out seeds before claiming improvement.
 The preview does not authenticate result files or establish trusted organizer
 identity. An official leaderboard needs human verification or a trusted runner;
 local practice cannot submit an authoritative score.
+
+## Work with a coding agent
+
+Use **Copy starter kit for your coding agent** above the strategy editors.
+The briefing includes the current draft (even unapplied edits), its parent
+hash for remixing, the observer/controller and combined-step contracts, raw
+observations, allowed actions, scheduling, resource limits and JSON import
+format. It copies to the clipboard and opens a selectable preview as a fallback.
+Paste it into your coding assistant with your hypothesis. Import the returned
+strategy through Share strategy, inspect it on one maze, then test on 100.
+The button does not call a model or submit code to an external service.

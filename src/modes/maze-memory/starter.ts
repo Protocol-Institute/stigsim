@@ -5,13 +5,15 @@ export const STARTER: Strategy = {
   description:
     "Code updates local JSON passage notes after successful movement; Jev chooses every direction.",
   parent: null,
-  source: `function prepare(o) {
+  source: `// Prefer the least-used open passage. Jev chooses the move; code updates its count.
+function prepare(o) {
  const passageUses = {};
  const writes = [];
  for (const d of ['N','E','S','W']) {
    if (!o.exits[d]) continue;
    const note = o.environment.passages[d] || {};
    passageUses[d] = note.visits || 0;
+   // Update only the passage Jev successfully crosses.
    writes.push({ target: d, when: 'chosen', value: { ...note, visits: passageUses[d] + 1 } });
  }
  return {

@@ -3,11 +3,15 @@ import { newQuickJSWASMModuleFromVariant } from 'quickjs-emscripten-core';
 import { LIMITS, parseDecision, type Decision } from './contract';
 
 let engine: ReturnType<typeof newQuickJSWASMModuleFromVariant> | undefined;
+async function loadEngine() {
+  const variant = typeof self === 'undefined' ? RELEASE_SYNC : (await import('./browser-variant')).default;
+  return newQuickJSWASMModuleFromVariant(variant);
+}
 export interface Usage { calls: number; observationBytes: number; interrupts: number }
 
 /** No host callbacks, module loader, browser, filesystem or network enter the VM. */
 export async function decide(source: string, observation: unknown, state: unknown, tick: number, usage: Usage): Promise<Decision> {
-  const QuickJS = await (engine ??= newQuickJSWASMModuleFromVariant(RELEASE_SYNC));
+  const QuickJS = await (engine ??= loadEngine().catch(error => { engine = undefined; throw error; }));
   const payload = JSON.stringify({ observation, state });
   usage.observationBytes += new TextEncoder().encode(JSON.stringify(observation)).length;
   usage.calls++;

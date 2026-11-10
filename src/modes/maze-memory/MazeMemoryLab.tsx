@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   PRACTICE_SEEDS,
   parseStrategy,
   type Strategy,
   type Limits,
 } from "./contract";
+import { Trial } from "./engine";
 import { STARTER } from "./starter";
 import { briefing } from "./brief";
 import { loadRecording } from "./load-recording";
@@ -217,6 +218,10 @@ export default function MazeMemoryLab() {
       setPending(false);
     }
   }
+  const preview = useMemo(() => {
+    const trial = new Trial(PRACTICE_SEEDS[index], limits.movesPerMaze);
+    return { ...trial.view(), cells: trial.grid.flatMap((row,y) => row.map((open,x) => ({x,y,open:open===1}))) };
+  }, [index, limits.movesPerMaze]);
   const m = snapshot?.metrics;
   return (
     <main className="mm-lab">
@@ -394,7 +399,8 @@ export default function MazeMemoryLab() {
                 {connection?.ready ? connection.model : "not configured"} · one
                 model request at a time
               </p>
-              <MazeCanvas view={snapshot?.view ?? null} />
+              <MazeCanvas view={snapshot?.view ?? preview} />
+              {!snapshot && <p>Practice maze preview. Apply your strategy to start; unexplored areas will be hidden during the run.</p>}
               <div className="mm-actions">
                 <button
                   disabled={

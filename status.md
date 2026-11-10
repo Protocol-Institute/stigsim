@@ -2,6 +2,11 @@
 
 ## Active
 
+- Local onboarding prototype (`/onboarding`, Model Ant preview): fresh random Maze,
+  randomly selected manual ant, trails emerging from zero, personal-delivery
+  unlock, and continuous zoom-out to the same colony and route objective. No inference. Included with `/levels` in the isolated Model Ant preview.
+
+
 - Integrate PR #32 Strategy Lab (`/strategy-lab`) and PR #34 Maze Memory Lab
   (`/maze-memory`) into `codex/model-ant-preview`, preserving all existing modes.
   The memory API uses the isolated preview's password/auth and gateway; the
